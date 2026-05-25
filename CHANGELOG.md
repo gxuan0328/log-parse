@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `analyze_iis`: per-server **client-IP roster** section listing every
+  distinct `c-ip` with its request count and percentage share of total
+  traffic, sorted by request count descending. Aids security triage
+  (health-checker dominance, scanner bursts, unexpected client identities).
+- `IIS_AWK` emits a new `CLIENT_IP\t<ip>\t<count>` record type.
+- `tests/run_tests.sh`: five new baselines (B15–B19) covering header,
+  percentage column, primary-client presence, row-count expectation, and
+  per-region rendering. Total test count: 103 → 108.
+
+### Changed
+- `client_ips[]` in `IIS_AWK` is now a counter (`++`) rather than a set
+  marker (`= 1`); `UNIQUE_IPS` continues to derive from `length()`, so
+  the documented top-line counter is unchanged.
+- `docs/design.md`, `docs/design.zh-TW.md`, `docs/usage.md`,
+  `docs/usage.zh-TW.md` updated to document the new section, its
+  rationale, and its empty-input semantics.
+- `examples/sample-outputs/iis_*.txt` and dependent `log_report_*.txt`
+  regenerated from the bundled dataset.
+
 ## [1.0.0] — 2026-05-25
 
 ### Added

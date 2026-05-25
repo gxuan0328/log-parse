@@ -226,12 +226,19 @@ Other paths are reported verbatim.
 | `health503`        | Rows where `status == 503` **AND** `uri == /health`                                 |
 | `slow`             | Rows where `time-taken >= --slow-ms` **AND** `uri != /health`                       |
 | `redirect`         | Rows where `status == 302`                                                          |
-| `client_ips`       | `length(unique(c-ip))` excluding `-`                                                |
+| `client_ips`       | Hash of `c-ip → request_count`; `length()` yields unique-IP count; iterated for the per-IP roster. `-` excluded. |
 | `top endpoints`    | Top 15 endpoints by request count (after DICOM grouping)                            |
+| `client_ip_roster` | Every unique `c-ip` with its request count and percentage share of `total`         |
 
 Health-check 503s are surfaced as a **separate metric** (not just a 5xx
 count) because they indicate dependency-health failure, not application
 fault — the response is intentionally 503 when OracleDB is unhealthy.
+
+The client-IP roster is **uncapped** by design: under normal medical
+operations the per-server cardinality stays in the low tens, and an
+unexpectedly large list is itself a useful diagnostic signal (scanner /
+credential-leak indicator). If future deployments outgrow this assumption,
+add a `--top-ips N` flag rather than silently truncating.
 
 #### 3.2.5 Output sections
 
@@ -239,6 +246,9 @@ For each server in the selected region(s):
 1. Top-line counters (`Total`, `Unique IPs`, `5xx`, `Health 503`, `Slow`).
 2. Status-code table (sorted by count descending).
 3. Top-15 endpoint table (sorted by count descending).
+4. Client-IP roster — every distinct client IP with its request count and
+   `% of total`, sorted descending. Empty when no resolvable client IP
+   appears (all rows have `c-ip = -`).
 
 ---
 

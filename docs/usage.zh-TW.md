@@ -170,7 +170,17 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
     -------------------------------------------------------------------
     472    /health
     11     /api/GetLungCancerReportURL
+
+    Count  Client IP          % of total
+    ------------------------------------------
+    472    192.168.139.28      97.7%
+    6      192.168.139.110      1.2%
+    5      10.22.63.37          1.0%
 ```
+
+末段 **Client IP 清單** 列舉每個至少發出一筆請求之客戶端 IP，依請求
+數降冪排序並標示其占 total 之百分比。可用於檢視健康檢查器是否主導
+流量、是否有掃描器爆量、或是否出現未預期之客戶端身分。
 
 > 含三台伺服器之完整輸出見
 > [`../examples/sample-outputs/iis_taipei_2026-05-21.txt`](../examples/sample-outputs/iis_taipei_2026-05-21.txt)（台北）

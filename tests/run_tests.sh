@@ -262,6 +262,20 @@ _ok  B13 "taipei --from --to 日期範圍執行成功"  "$rc"
 range_sum=$(_sum "$out_range" "Total requests")
 _gte B14 "兩日累計 Total requests >= 單日 1954"  "$range_sum"  "1954"
 
+# B8: Client IP 清單區段（新功能）
+out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/null); rc=$?
+_has B15 "輸出含 Client IP 清單表頭"  "$out" "Count  Client IP"
+_has B16 "Client IP 清單含 % of total 欄位"  "$out" "% of total"
+# 台北 10.22.63.37 主要客戶端 192.168.139.28 應占多數請求（> 95%）
+_has B17 "Client IP 清單列出主要客戶端"  "$out" "192.168.139.28"
+# 計數列至少 3 行（taipei 3 台伺服器各列出多個 IP）
+ip_lines=$(printf '%s\n' "$out" | gawk '/% of total/{flag=1;next} flag && /^    [0-9]+ +[0-9]/{c++} END{print c+0}')
+_gte B18 "Client IP 計數列數 >= 9 (三台伺服器各列出多 IP)"  "$ip_lines"  "9"
+
+# B9: Client IP 區段在台中 OracleDB 中斷日仍正確呈現
+out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung 2>/dev/null); rc=$?
+_has B19 "taichung Client IP 清單存在"  "$out" "Count  Client IP"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Section C — analyze_errors.sh  應用程式錯誤與重啟事件
 # Baselines (2026-05-21):

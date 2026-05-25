@@ -173,7 +173,18 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
     -------------------------------------------------------------------
     472    /health
     11     /api/GetLungCancerReportURL
+
+    Count  Client IP          % of total
+    ------------------------------------------
+    472    192.168.139.28      97.7%
+    6      192.168.139.110      1.2%
+    5      10.22.63.37          1.0%
 ```
+
+The trailing **client-IP roster** lists every distinct client IP that
+issued at least one request, ranked by request count, with the share of
+total traffic. Useful for spotting health-checker dominance, scanner
+bursts, or unexpected client identities.
 
 > Full multi-server sample in [`../examples/sample-outputs/iis_taipei_2026-05-21.txt`](../examples/sample-outputs/iis_taipei_2026-05-21.txt) (Taipei) and [`../examples/sample-outputs/iis_taichung_2026-05-21.txt`](../examples/sample-outputs/iis_taichung_2026-05-21.txt) (Taichung — exhibits 50 Health-503 events from the simulated OracleDB outage).
 

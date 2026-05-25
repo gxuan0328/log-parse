@@ -217,11 +217,16 @@ DELTA_SEC, VERIFY_STATUS`。
 | `health503`       | `status == 503` 且 `uri == /health` 之列數                                          |
 | `slow`            | `time-taken >= --slow-ms` 且 `uri != /health` 之列數                                |
 | `redirect`        | `status == 302` 之列數                                                              |
-| `client_ips`      | `length(unique(c-ip))`，排除 `-`                                                    |
+| `client_ips`      | `c-ip → 請求數` 之 hash；`length()` 得唯一 IP 數，迭代後產出 IP 清單。`-` 排除。   |
 | `top endpoints`   | 端點計數 Top 15（DICOM 分組後）                                                     |
+| `client_ip_roster`| 每個唯一 `c-ip` 及其請求數與占 `total` 之百分比                                     |
 
 健康檢查 503 之所以**獨立計數**而非合併進 5xx，是因為它代表相依服務
 不健康（OracleDB 不健康時應用程式刻意回傳 503），而非應用程式錯誤。
+
+Client IP 清單**刻意不設上限**：醫療營運下單台伺服器的客戶端 cardinality
+通常落在數十以內，若意外膨脹（例如掃描器、憑證外洩）本身即是有用之
+偵測訊號。若未來情境需要截斷，建議新增 `--top-ips N` 旗標而非靜默裁減。
 
 #### 3.2.5 輸出區段
 
@@ -229,6 +234,9 @@ DELTA_SEC, VERIFY_STATUS`。
 1. 頂部計數列（`Total`、`Unique IPs`、`5xx`、`Health 503`、`Slow`）。
 2. 狀態碼表（按計數降冪）。
 3. Top-15 端點表（按計數降冪）。
+4. Client IP 清單 — 列舉每個唯一 client IP 之請求數與占 `total` 之
+   百分比（按請求數降冪）；當所有列之 `c-ip = -`（無可解析客戶端）時
+   為空。
 
 ---
 

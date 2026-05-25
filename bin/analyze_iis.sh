@@ -110,6 +110,8 @@ IIS_AWK='
 #            UNIQUE_IPS\t<n>
 #            STATUS\t<status>\t<count>     (one row per observed status)
 #            ENDPOINT\t<uri>\t<count>      (top 15, count desc)
+#            CLIENT_IP\t<ip>\t<count>      (one row per unique client IP,
+#                                            count desc; "-" excluded)
 # ----------------------------------------------------------------------------
 BEGIN {
     health_path    = "/health"
@@ -135,8 +137,9 @@ NF < 17 { next }
     total++
     status_count[status]++
 
-    # Unique-IP set; "-" appears when IIS could not resolve the client.
-    if (client != "-") client_ips[client] = 1
+    # Per-client request counter; "-" appears when IIS could not resolve
+    # the client and is excluded from the unique-IP set.
+    if (client != "-") client_ips[client]++
 
     # DICOM endpoints embed study/series UIDs in the path; collapse them so
     # the top-endpoint table reflects logical endpoints, not UID variants.
@@ -175,6 +178,13 @@ END {
     n = asorti(ep_count, ep_sorted, "@val_num_desc")
     for (i = 1; i <= (n < 15 ? n : 15); i++)
         printf "ENDPOINT\t%s\t%d\n", ep_sorted[i], ep_count[ep_sorted[i]]
+
+    # All unique client IPs with request counts, sorted descending.
+    # No top-N cap: under normal medical operations the cardinality stays
+    # in the low tens; a flood would itself be a useful signal.
+    m = asorti(client_ips, ip_sorted, "@val_num_desc")
+    for (i = 1; i <= m; i++)
+        printf "CLIENT_IP\t%s\t%d\n", ip_sorted[i], client_ips[ip_sorted[i]]
 }
 '
 
@@ -223,6 +233,19 @@ analyze_server_iis() {
     printf "    %-6s %-55s\n" "Count" "Endpoint"
     printf "    %s\n" "-------------------------------------------------------------------"
     echo "$stats" | gawk -F'\t' '$1=="ENDPOINT" {printf "    %-6d %s\n", $3, $2}'
+
+    # Unique client IP roster — every IP that issued at least one request,
+    # ranked by request count. The "% of total" column helps spot whether
+    # one client dominates traffic (e.g. health-checker, leaked credential).
+    echo ""
+    printf "    %-6s %-18s %s\n" "Count" "Client IP" "% of total"
+    printf "    %s\n" "------------------------------------------"
+    echo "$stats" | gawk -F'\t' -v total="${total:-0}" '
+        $1 == "CLIENT_IP" {
+            pct = (total > 0) ? ($3 / total * 100) : 0
+            printf "    %-6d %-18s %5.1f%%\n", $3, $2, pct
+        }
+    '
 }
 
 analyze_region_iis() {
