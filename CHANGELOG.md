@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Project-scoped workflow skill** at
+  `.claude/skills/feature-workflow/SKILL.md` defining the standardised
+  feature-development & modification process (7 phases: pre-dev impact
+  analysis → implementation → validation gate → docs sync → cross-validation
+  → commit/release → terminal summary). Auto-triggered by `CLAUDE.md §13`
+  for every code-touching request in this repository.
+- `CLAUDE.md §13` declares the auto-trigger contract, lists qualifying
+  request kinds, and enumerates the seven enforced phases.
 - `analyze_iis`: per-server **client-IP roster** section listing every
   distinct `c-ip` with its request count and percentage share of total
   traffic, sorted by request count descending. Aids security triage

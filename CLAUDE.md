@@ -318,3 +318,49 @@ make lint       # shellcheck must be clean if installed
 ```
 
 …and update every file listed in §9.
+
+---
+
+## 13. Auto-triggered feature workflow (MANDATORY)
+
+This repository ships a project-scoped workflow skill at
+[`.claude/skills/feature-workflow/SKILL.md`](.claude/skills/feature-workflow/SKILL.md).
+
+**When to auto-trigger** — you MUST invoke (read & follow) the
+`feature-workflow` skill at the start of any request that meets ANY of:
+
+- Adds, removes, renames, or modifies a CLI flag, output section, metric,
+  detection rule, threshold, default value, file, or library function.
+- Changes parsing logic, awk programs, formatters, region config, or
+  test baselines.
+- Modifies anything under `bin/`, `lib/`, `conf/`, `tests/`, `docs/`,
+  `examples/`, `.claude/`, or root project files (`README*`, `CLAUDE.md`,
+  `CHANGELOG.md`, `Makefile`, `LICENSE`, `.gitignore`, `.gitattributes`,
+  `.editorconfig`).
+- Produces a tag, release, or remote push.
+
+**When to skip** — strictly read-only conversations (e.g. "explain X",
+"summarise CHANGELOG", "show me file Y") do not trigger the workflow.
+
+**What the skill enforces** — seven phases, in order, none optional:
+
+| Phase | Purpose                                                                                  |
+|-------|------------------------------------------------------------------------------------------|
+| 1     | **Pre-development impact analysis** — module map, design alignment, risk surface         |
+| 2     | **Implementation discipline** — §4/§5/§6 conventions, local sanity, performance-aware    |
+| 3     | **Validation gate** — regression + new baselines + cross-mode + lint + quality + perf    |
+| 4     | **Documentation & example sync** — bilingual docs, in-code comments, samples, CHANGELOG  |
+| 5     | **Cross-validation** — doc↔code, EN↔zh-TW parity, link validity, baseline integrity      |
+| 6     | **Commit & release** — Conventional Commits, semver decision, tag/release if requested   |
+| 7     | **Terminal-only execution summary** — no extra files, no persistent reports              |
+
+**Why this matters**
+
+- Prevents drift between code, tests, English docs, and Traditional Chinese docs.
+- Bakes test-pass + lint-clean + samples-regenerated into every change.
+- Standardises commit / version / release decisions so the repo history
+  remains auditable.
+
+Override only on explicit user instruction such as "skip the workflow"
+or "no tests this time". When overridden, state in the terminal summary
+which phases were skipped and why.
