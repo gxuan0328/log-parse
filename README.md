@@ -90,7 +90,9 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 ├── examples/             Sample outputs & scripted scenarios
 ├── tests/
 │   └── run_tests.sh      103-test functional suite
-├── CLAUDE.md             Coding conventions & design principles
+├── .claude/
+│   ├── CLAUDE.md         Coding conventions & design principles
+│   └── skills/           Project-scoped automation skills (e.g. feature-workflow)
 ├── CHANGELOG.md          Release history
 ├── LICENSE               MIT
 └── Makefile              Convenience targets (test / lint / report)
@@ -142,7 +144,7 @@ from the bundled `examples/sample-logs/LUNG-CANCER-REPORT-LOG/` sample data.
 |-------------------------------------|--------------------|------------------------------------------------------------|
 | [`docs/design.md`](docs/design.md)  | New contributors   | Architecture, modules, data flow, output field semantics   |
 | [`docs/usage.md`](docs/usage.md)    | Operators / SREs   | Every CLI flag with copy-pasteable examples                |
-| [`CLAUDE.md`](CLAUDE.md)            | AI assistants & devs | Coding conventions, bash idioms, awk patterns            |
+| [`.claude/CLAUDE.md`](.claude/CLAUDE.md) | AI assistants & devs | Coding conventions, bash idioms, awk patterns            |
 | [`CHANGELOG.md`](CHANGELOG.md)      | Everyone           | Release history (Keep a Changelog format)                  |
 
 ---

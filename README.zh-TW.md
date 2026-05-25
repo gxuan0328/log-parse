@@ -93,7 +93,9 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   └── *.sh              情境驅動腳本
 ├── tests/
 │   └── run_tests.sh      103 項功能測試套件
-├── CLAUDE.md             程式碼慣例與設計理念
+├── .claude/
+│   ├── CLAUDE.md         程式碼慣例與設計理念
+│   └── skills/           專案層級自動化技能（如 feature-workflow）
 ├── CHANGELOG.md          版本紀錄
 ├── LICENSE               MIT 授權
 └── Makefile              常用任務（test / lint / report）
@@ -145,7 +147,7 @@ make test            # 執行 tests/run_tests.sh
 |-------------------------------------------------------------------|---------------------|-------------------------------------------|
 | [`docs/design.md`](docs/design.md) · [中文](docs/design.zh-TW.md) | 新進貢獻者          | 架構、模組、資料流、輸出欄位語意          |
 | [`docs/usage.md`](docs/usage.md) · [中文](docs/usage.zh-TW.md)    | 系統營運 / SRE      | 每個旗標的完整參考與可貼上的範例命令      |
-| [`CLAUDE.md`](CLAUDE.md)                                          | AI 助理與開發人員   | 程式碼慣例、bash 寫法、awk 模板           |
+| [`.claude/CLAUDE.md`](.claude/CLAUDE.md)                          | AI 助理與開發人員   | 程式碼慣例、bash 寫法、awk 模板           |
 | [`CHANGELOG.md`](CHANGELOG.md)                                    | 所有人              | 版本紀錄（Keep a Changelog 格式）         |
 
 ---

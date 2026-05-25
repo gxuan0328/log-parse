@@ -5,7 +5,7 @@
 
 This document specifies **what** the system does and **why** it is structured
 the way it is. For command-line usage see [`usage.md`](usage.md); for coding
-conventions see [`../CLAUDE.md`](../CLAUDE.md).
+conventions see [`../.claude/CLAUDE.md`](../.claude/CLAUDE.md).
 
 ---
 

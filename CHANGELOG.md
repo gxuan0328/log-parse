@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Project conventions consolidated under `.claude/`**: the file formerly
+  at `./CLAUDE.md` is now the single authoritative document at
+  `.claude/CLAUDE.md`. Per the official Claude Code documentation
+  (`https://code.claude.com/docs/en/memory` — "Choose where to put
+  CLAUDE.md files"), `./CLAUDE.md` and `./.claude/CLAUDE.md` are
+  equivalent project-scope locations and both auto-load at session start.
+  The root stub was removed to enforce a single source of truth; all
+  cross-document references (`README.md`, `README.zh-TW.md`,
+  `docs/design.md`, `docs/design.zh-TW.md`, `.claude/skills/feature-workflow/SKILL.md`)
+  now point to `.claude/CLAUDE.md`.
+
 ### Added
 - **Project-scoped workflow skill** at
   `.claude/skills/feature-workflow/SKILL.md` defining the standardised

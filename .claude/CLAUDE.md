@@ -324,7 +324,8 @@ make lint       # shellcheck must be clean if installed
 ## 13. Auto-triggered feature workflow (MANDATORY)
 
 This repository ships a project-scoped workflow skill at
-[`.claude/skills/feature-workflow/SKILL.md`](.claude/skills/feature-workflow/SKILL.md).
+[`skills/feature-workflow/SKILL.md`](skills/feature-workflow/SKILL.md)
+(relative to this file at `.claude/CLAUDE.md`).
 
 **When to auto-trigger** — you MUST invoke (read & follow) the
 `feature-workflow` skill at the start of any request that meets ANY of:

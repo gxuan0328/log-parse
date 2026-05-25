@@ -4,7 +4,7 @@
 > **語言**：[English](design.md) · **繁體中文**
 
 本文件描述系統「做了什麼」與「為什麼這樣設計」。CLI 用法請見
-[`usage.zh-TW.md`](usage.zh-TW.md)；程式碼慣例請見 [`../CLAUDE.md`](../CLAUDE.md)。
+[`usage.zh-TW.md`](usage.zh-TW.md)；程式碼慣例請見 [`../.claude/CLAUDE.md`](../.claude/CLAUDE.md)。
 
 ---
 

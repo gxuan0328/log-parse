@@ -21,9 +21,12 @@ metadata:
 # log-parse — Feature Workflow
 
 > **Status**: Project-scoped, auto-triggered.
-> Project's [`CLAUDE.md`](../../../CLAUDE.md) §13 mandates that every
+> Project's [`CLAUDE.md`](../../CLAUDE.md) §13 mandates that every
 > code-touching request in this repository follow this workflow.
-> Skip steps only with explicit user override.
+> `.claude/CLAUDE.md` is the single authoritative location — Claude Code
+> auto-loads it as the project's instructions (per the official docs:
+> `./CLAUDE.md` and `./.claude/CLAUDE.md` are equivalent project-scope
+> locations). Skip steps only with explicit user override.
 
 ---
 
