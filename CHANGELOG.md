@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Prompt structure refactor for LLM attention efficiency**:
+  - `.claude/CLAUDE.md` slimmed from 367 → 113 lines (≤ 200-line target
+    per official Claude Code memory guidance).
+  - `.claude/skills/feature-workflow/SKILL.md` slimmed from 317 → 156
+    lines (narrative re-written as actionable checklists).
+  - Detailed conventions split into five **path-scoped rule files** under
+    `.claude/rules/` (frontmatter `paths:` glob, loaded on demand):
+    `bash.md` (91), `awk.md` (72), `library.md` (42), `testing.md` (63),
+    `documentation.md` (88).
+  - Effect on per-session context load:
+    - Pure conversation: 684 → 113 lines (-83%)
+    - Edit `docs/usage.md`: 684 → 201 lines (-71%)
+    - Edit `bin/analyze_iis.sh`: 684 → 276 lines (-60%)
+    - Worst case (edit `lib/csv_utils.sh`): 684 → 318 lines (-54%)
+  - No information lost — every prior convention now lives in exactly
+    one place; cross-references replaced narrative duplication.
 - **Project conventions consolidated under `.claude/`**: the file formerly
   at `./CLAUDE.md` is now the single authoritative document at
   `.claude/CLAUDE.md`. Per the official Claude Code documentation

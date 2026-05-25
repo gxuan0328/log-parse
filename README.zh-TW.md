@@ -94,7 +94,8 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 ├── tests/
 │   └── run_tests.sh      103 項功能測試套件
 ├── .claude/
-│   ├── CLAUDE.md         程式碼慣例與設計理念
+│   ├── CLAUDE.md         核心慣例（每個 session 自動載入）
+│   ├── rules/            路徑範圍細項慣例（按需載入）
 │   └── skills/           專案層級自動化技能（如 feature-workflow）
 ├── CHANGELOG.md          版本紀錄
 ├── LICENSE               MIT 授權

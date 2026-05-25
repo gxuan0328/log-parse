@@ -91,8 +91,9 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 ├── tests/
 │   └── run_tests.sh      103-test functional suite
 ├── .claude/
-│   ├── CLAUDE.md         Coding conventions & design principles
-│   └── skills/           Project-scoped automation skills (e.g. feature-workflow)
+│   ├── CLAUDE.md         Core conventions (auto-loaded every session)
+│   ├── rules/            Path-scoped detailed conventions (loaded on demand)
+│   └── skills/           Project automation skills (e.g. feature-workflow)
 ├── CHANGELOG.md          Release history
 ├── LICENSE               MIT
 └── Makefile              Convenience targets (test / lint / report)
