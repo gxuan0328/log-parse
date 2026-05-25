@@ -1,5 +1,7 @@
 # Sample Outputs
 
+> **Language**: **English** · [繁體中文](README.zh-TW.md)
+
 Pre-generated reports from the bundled sample dataset
 (`examples/sample-logs/LUNG-CANCER-REPORT-LOG/`, dates 2026-05-18 → 2026-05-25).
 
