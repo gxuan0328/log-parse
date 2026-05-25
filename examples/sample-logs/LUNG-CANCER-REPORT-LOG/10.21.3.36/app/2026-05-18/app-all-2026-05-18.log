@@ -1,0 +1,6 @@
+2026-05-18 02:01:03.4039|eventId: 0|level: INFO|traceId: N/A|logger: NHI_AI_MedReportViewerWebApi.Program|message: Allowed origin: http://localhost:5173
+2026-05-18 02:01:03.5859|eventId: 0|level: INFO|traceId: N/A|logger: NHI_AI_MedReportViewerWebApi.Program|message: Authentication enabled with JWT Bearer tokens
+2026-05-18 02:01:03.8941|eventId: 0|level: INFO|traceId: N/A|logger: NHI_AI_MedReportViewerWebApi.Program|message: Exceptionless 設定完成，ServerUrl: "https://h30lhclogsvr.intra.nhi.gov.tw:8443"
+2026-05-18 02:01:04.7653|eventId: 50|level: WARN|traceId: N/A|logger: Microsoft.AspNetCore.DataProtection.Repositories.EphemeralXmlRepository|message: Using an in-memory repository. Keys will not be persisted to storage.
+2026-05-18 02:01:04.7750|eventId: 59|level: WARN|traceId: N/A|logger: Microsoft.AspNetCore.DataProtection.KeyManagement.XmlKeyManager|message: Neither user profile nor HKLM registry available. Using an ephemeral key repository. Protected data will be unavailable when application exits.
+2026-05-18 02:01:04.7995|eventId: 35|level: WARN|traceId: N/A|logger: Microsoft.AspNetCore.DataProtection.KeyManagement.XmlKeyManager|message: No XML encryptor configured. Key {0ec9bd67-9a7c-44b5-9934-0cc31662b1ed} may be persisted to storage in unencrypted form.

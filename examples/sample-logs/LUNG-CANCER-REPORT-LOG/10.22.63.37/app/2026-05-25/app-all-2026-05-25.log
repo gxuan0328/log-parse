@@ -1,0 +1,2 @@
+2026-05-25 10:02:35.2527|pid:3088|eventId: 0|level: INFO|logger: NHI_AI_LungCancerReportWebApi.Services.UrlTokenIssuer|message: 正在簽發 URL Token。存活秒數=60, 到期時間(UTC)=05/25/2026 02:03:35, kid=UX-2025-02
+2026-05-25 10:02:35.2765|pid:3088|eventId: 0|level: INFO|logger: NHI_AI_LungCancerReportWebApi.Controllers.PatientController|message: 成功產生報告 URL，有效期限 05/25/2026 02:03:35

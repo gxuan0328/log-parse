@@ -1,0 +1,244 @@
+2026-05-23 00:36:14.1276 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-25ff76642a0d44f34ef543e89fd89ef1-191672a3c4ed617b-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18966.174ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18966.174; EventId=103; EventName=HealthCheckEnd; RequestId=40000080-0004-ef00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 00:58:07.5292 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-db1b82dfcf22bc838243b028242ae1dd-64c2a91361c620bf-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18971.762ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18971.762; EventId=103; EventName=HealthCheckEnd; RequestId=40000086-0004-ef00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 02:04:41.7430 [INFO] [NHI_AI_MedReportViewerWebApi.Program] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: Allowed origin: http://localhost:5173
+  Properties: 
+  ======================================================================
+
+2026-05-23 02:04:42.0831 [INFO] [NHI_AI_MedReportViewerWebApi.Program] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: Authentication enabled with JWT Bearer tokens
+  Properties: 
+  ======================================================================
+
+2026-05-23 02:04:42.6137 [INFO] [NHI_AI_MedReportViewerWebApi.Program] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: Exceptionless 設定完成，ServerUrl: "https://h30lhclogsvr.intra.nhi.gov.tw:8443"
+  Properties: ServerUrl=https://h30lhclogsvr.intra.nhi.gov.tw:8443
+  ======================================================================
+
+2026-05-23 02:04:44.7927 [ERROR] [NHI_AI_MedReportViewerWebApi.Middleware.GlobalExceptionMiddleware] [TraceID: 00-927cb6e4821bfb6462b75c858d5ea2e0-0b696c0dccca5786-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: 系統在處理請求時發生發生未預期例外：A task was canceled.
+堆疊追蹤：   at Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService.CheckHealthAsync(Func`2 predicate, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckMiddleware.InvokeAsync(HttpContext httpContext)
+   at Microsoft.AspNetCore.Authorization.AuthorizationMiddleware.Invoke(HttpContext context)
+   at Microsoft.AspNetCore.Authentication.AuthenticationMiddleware.Invoke(HttpContext context)
+   at NHI_AI_MedReportViewerWebApi.Middleware.GlobalExceptionMiddleware.Invoke(HttpContext context) in C:\Users\Public\Documents\AI_AP\NHI-AI-MedReportViewerWebApi\NHI-AI-MedReportViewerWebApi\Middleware\GlobalExceptionMiddleware.cs:line 20
+  Properties: Message=A task was canceled.; StackTrace=   at Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService.CheckHealthAsync(Func`2 predicate, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckMiddleware.InvokeAsync(HttpContext httpContext)
+   at Microsoft.AspNetCore.Authorization.AuthorizationMiddleware.Invoke(HttpContext context)
+   at Microsoft.AspNetCore.Authentication.AuthenticationMiddleware.Invoke(HttpContext context)
+   at NHI_AI_MedReportViewerWebApi.Middleware.GlobalExceptionMiddleware.Invoke(HttpContext context) in C:\Users\Public\Documents\AI_AP\NHI-AI-MedReportViewerWebApi\NHI-AI-MedReportViewerWebApi\Middleware\GlobalExceptionMiddleware.cs:line 20; RequestId=40000056-0001-f400-b63f-84710c7967bb; RequestPath=/health
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService.CheckHealthAsync(Func`2 predicate, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckMiddleware.InvokeAsync(HttpContext httpContext)
+   at Microsoft.AspNetCore.Authorization.AuthorizationMiddleware.Invoke(HttpContext context)
+   at Microsoft.AspNetCore.Authentication.AuthenticationMiddleware.Invoke(HttpContext context)
+   at NHI_AI_MedReportViewerWebApi.Middleware.GlobalExceptionMiddleware.Invoke(HttpContext context) in C:\Users\Public\Documents\AI_AP\NHI-AI-MedReportViewerWebApi\NHI-AI-MedReportViewerWebApi\Middleware\GlobalExceptionMiddleware.cs:line 20
+======================================================================
+
+2026-05-23 04:52:35.0045 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-fb1e53f646c8662eec8699779c82e947-3d80ede7c21439e1-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18968.2185ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18968.2185; EventId=103; EventName=HealthCheckEnd; RequestId=40000693-0003-ad00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 05:22:04.6782 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-dc5c5e84447ac166512ab4dca40c4697-7b09cc38568f7a77-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18971.9958ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18971.9958; EventId=103; EventName=HealthCheckEnd; RequestId=40000066-0001-f400-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 07:09:59.2754 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-574fd6278cb3527702644cab536b4bfa-c2530230110d028d-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18979.5687ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18979.5687; EventId=103; EventName=HealthCheckEnd; RequestId=400002cd-0002-f300-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 07:32:26.2849 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-b5f6882b9157e277a32cd548c33e81a4-cb8c5f9b2e96fed6-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18967.868ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18967.868; EventId=103; EventName=HealthCheckEnd; RequestId=40000646-0007-fe00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 09:22:01.7681 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-b1ff192aeb996ec4ed734a1a0c8ccdf7-a62ffe53aab56192-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18968.9191ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18968.9191; EventId=103; EventName=HealthCheckEnd; RequestId=4000069d-0003-ad00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 09:37:39.0360 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-c259fb312a078930f411e91cf8dc90d2-c8d2463206892e9d-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18971.0941ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18971.0941; EventId=103; EventName=HealthCheckEnd; RequestId=400002d3-0002-f300-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 11:31:22.2674 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-f285e023d4d2f1266c4fc307a92b3a4d-a17ab5b1f5534fdc-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18971.6999ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18971.6999; EventId=103; EventName=HealthCheckEnd; RequestId=400000b3-0001-f500-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 11:45:19.8220 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-58311e88747c3d6a0e7ec9b80e7d8ff8-eba973bdc66ef016-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18966.3473ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18966.3473; EventId=103; EventName=HealthCheckEnd; RequestId=40000bcb-0000-e100-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 13:33:11.2096 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-e901f1a7e765e04c6b604e2e95efbe2a-bce52029c40f8c6a-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18976.0669ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18976.0669; EventId=103; EventName=HealthCheckEnd; RequestId=400002e7-0002-f300-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 13:55:33.3064 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-36eec5a08c54c290faae7144b92ec753-0bbc38a5515c134c-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18963.2883ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18963.2883; EventId=103; EventName=HealthCheckEnd; RequestId=400006a7-0003-ad00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 15:44:47.2730 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-4887dee0d7797444242405d48e106a51-4a65e58cd5a33594-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18971.0165ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18971.0165; EventId=103; EventName=HealthCheckEnd; RequestId=400000dc-0004-ef00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 16:00:10.2652 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-d32f7c92f2124d043ad34753ff0097a4-541441cf58c92a6a-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18975.6662ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18975.6662; EventId=103; EventName=HealthCheckEnd; RequestId=400002f7-0002-f300-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 17:48:59.4177 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-9fe9d21f9647c50eb7f57c708c4ea171-f9f626b550cd62a7-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18979.6161ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18979.6161; EventId=103; EventName=HealthCheckEnd; RequestId=400006bf-0003-ad00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 18:04:54.6524 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-1ebca09d0157fbfc35f786c7c8ccdcf6-7de61f481fffb6c4-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18967.0109ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18967.0109; EventId=103; EventName=HealthCheckEnd; RequestId=400000d6-0005-e900-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 19:38:46.9368 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-4ad1b80974204c8b9ff168e60b6fdabc-746dc91ecb4dc342-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18981.6602ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18981.6602; EventId=103; EventName=HealthCheckEnd; RequestId=40000bed-0000-e100-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 20:00:19.6948 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-26fa53882e0510807628d484dbfdbc02-d75ae46799f13da1-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18980.8222ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18980.8222; EventId=103; EventName=HealthCheckEnd; RequestId=40000088-0001-f400-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 21:54:17.1127 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-127f64fffc1b7fdffc87dd8e74a0ee2b-d2554908a4090e5a-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18974.8989ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18974.8989; EventId=103; EventName=HealthCheckEnd; RequestId=40000092-0001-f400-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-23 22:17:36.5765 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-10a5d6211f27ba5d3743f3969e7ebcba-b8160fda33edeed4-00]
+  Event: 0
+  Request: GET https://10.1.72.36/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 18975.8428ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18975.8428; EventId=103; EventName=HealthCheckEnd; RequestId=400000ba-0006-fb00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+

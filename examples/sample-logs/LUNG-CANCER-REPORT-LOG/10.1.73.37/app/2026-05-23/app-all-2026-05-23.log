@@ -1,0 +1,186 @@
+2026-05-23 00:58:07.5124|pid:1932|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18961.5328ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 02:53:21.6938|pid:1932|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18982.5343ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 03:01:55.3240|pid:10796|eventId: 0|level: INFO|logger: NHI_AI_LungCancerReportWebApi.Program|message: CORS 已允許的來源：https://haima.intra.nhi.gov.tw:5000
+2026-05-23 03:01:57.5718|pid:10796|eventId: 0|level: INFO|logger: NHI_AI_LungCancerReportWebApi.Program|message: Exceptionless 設定完成
+2026-05-23 03:01:57.5718|pid:10796|eventId: 0|level: INFO|logger: NHI_AI_LungCancerReportWebApi.Program|message: ServerUrl: https://h30lhclogsvr.intra.nhi.gov.tw:8443
+2026-05-23 03:02:00.5176|pid:10796|eventId: 0|level: WARN|logger: Microsoft.AspNetCore.DataProtection.Repositories.EphemeralXmlRepository|message: Using an in-memory repository. Keys will not be persisted to storage.
+2026-05-23 03:02:00.5176|pid:10796|eventId: 0|level: WARN|logger: Microsoft.AspNetCore.DataProtection.KeyManagement.XmlKeyManager|message: Neither user profile nor HKLM registry available. Using an ephemeral key repository. Protected data will be unavailable when application exits.
+2026-05-23 03:02:00.5443|pid:10796|eventId: 0|level: WARN|logger: Microsoft.AspNetCore.DataProtection.KeyManagement.XmlKeyManager|message: No XML encryptor configured. Key {733d1ccb-8cf3-458d-90d4-ecd2e5ef5656} may be persisted to storage in unencrypted form.
+2026-05-23 04:52:35.8037|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 19773.2371ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 05:22:04.6976|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18991.6768ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 07:09:59.2684|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18975.8073ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 07:32:26.2734|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18964.4543ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 09:22:01.7822|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18983.7174ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 09:37:39.0323|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18969.9291ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 11:31:22.2694|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18970.9039ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 11:45:19.8247|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18973.3496ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 13:33:11.2090|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18981.6766ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 13:55:32.3318|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18957.4221ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 15:44:47.2814|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18981.3496ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 16:00:10.2508|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18968.9218ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 17:48:59.3936|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18957.4175ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 18:04:54.6578|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18971.339ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 19:38:46.9459|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18999.2934ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 20:00:19.6823|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18972.6806ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 21:54:17.1147|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18975.3423ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+2026-05-23 22:17:36.5945|pid:10796|eventId: 0|level: ERROR|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check OracleDB with status Unhealthy completed after 18989.955ms with message '(null)'--- Exception ---System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34

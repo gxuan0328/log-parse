@@ -1,0 +1,6 @@
+2026-05-24 02:03:07.6336|eventId: 0|level: INFO|traceId: N/A|logger: NHI_AI_MedReportViewerWebApi.Program|message: Allowed origin: http://localhost:5173
+2026-05-24 02:03:07.8165|eventId: 0|level: INFO|traceId: N/A|logger: NHI_AI_MedReportViewerWebApi.Program|message: Authentication enabled with JWT Bearer tokens
+2026-05-24 02:03:08.1059|eventId: 0|level: INFO|traceId: N/A|logger: NHI_AI_MedReportViewerWebApi.Program|message: Exceptionless 設定完成，ServerUrl: "https://h30lhclogsvr.intra.nhi.gov.tw:8443"
+2026-05-24 02:03:09.5837|eventId: 103|level: ERROR|traceId: 00-83d419d2526726ea2f79227c241e9116-dcfb8aa87ddc4450-00|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check S3_儲存服務 with status Unhealthy completed after 422.9365ms with message '所有 S3 伺服器無法連線'
+2026-05-24 02:03:09.6716|eventId: 103|level: ERROR|traceId: 00-83d419d2526726ea2f79227c241e9116-dcfb8aa87ddc4450-00|logger: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService|message: Health check 正式_OracleDB with status Unhealthy completed after 513.9184ms with message '(null)'--- Exception ---System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34

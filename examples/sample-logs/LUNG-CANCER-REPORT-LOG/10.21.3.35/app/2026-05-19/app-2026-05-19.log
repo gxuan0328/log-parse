@@ -1,0 +1,21 @@
+2026-05-19 02:00:57.4941 [INFO] [NHI_AI_MedReportViewerWebApi.Program] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: Allowed origin: http://localhost:5173
+  Properties: 
+  ======================================================================
+
+2026-05-19 02:00:57.6794 [INFO] [NHI_AI_MedReportViewerWebApi.Program] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: Authentication enabled with JWT Bearer tokens
+  Properties: 
+  ======================================================================
+
+2026-05-19 02:00:57.9847 [INFO] [NHI_AI_MedReportViewerWebApi.Program] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: Exceptionless 設定完成，ServerUrl: "https://h30lhclogsvr.intra.nhi.gov.tw:8443"
+  Properties: ServerUrl=https://h30lhclogsvr.intra.nhi.gov.tw:8443
+  ======================================================================
+

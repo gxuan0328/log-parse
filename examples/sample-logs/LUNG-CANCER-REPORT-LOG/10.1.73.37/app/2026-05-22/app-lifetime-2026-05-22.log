@@ -1,0 +1,4 @@
+2026-05-22 03:00:02.9250 | INFO | Microsoft.Hosting.Lifetime | Application is shutting down... 
+2026-05-22 03:02:18.1004 | INFO | Microsoft.Hosting.Lifetime | Application started. Press Ctrl+C to shut down. 
+2026-05-22 03:02:18.1004 | INFO | Microsoft.Hosting.Lifetime | Hosting environment: Production 
+2026-05-22 03:02:18.1004 | INFO | Microsoft.Hosting.Lifetime | Content root path: D:\apps\NHI-AI-LungCancerReportWebApi 

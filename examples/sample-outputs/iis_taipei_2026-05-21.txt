@@ -1,0 +1,101 @@
+
+========================================================================
+  IIS Log Analysis Report
+========================================================================
+  Period                                  2026-05-21  →  2026-05-21  (1 days)
+
+========================================================================
+  IIS Analysis — Region: 台北
+========================================================================
+
+▶ IIS — Server: 10.22.63.37
+------------------------------------------------------------------------
+  Total requests                          483
+  Unique client IPs                       3
+  302 Redirects                           0
+  5xx errors                              0
+    Health 503                            0
+  Slow (>5000ms)                          0
+
+    Status     Count
+    --------------------
+    200        480
+    204        3
+
+    Count  Endpoint                                               
+    -------------------------------------------------------------------
+    472    /health
+    11     /api/GetLungCancerReportURL
+
+▶ IIS — Server: 10.21.3.35
+------------------------------------------------------------------------
+  Total requests                          741
+  Unique client IPs                       3
+  302 Redirects                           3
+  5xx errors                              0
+    Health 503                            0
+  Slow (>5000ms)                          0
+
+    Status     Count
+    --------------------
+    200        695
+    404        30
+    304        13
+    302        3
+
+    Count  Endpoint                                               
+    -------------------------------------------------------------------
+    470    /health
+    146    /api/NhiPatientImage/studies/{uid}/series/{uid}/...
+    67     /api/DigestSummary/hospital
+    15     /api/NhiPatientImage/studies/{uid}/series-uid
+    6      /api/DigestSummary/key-images
+    4      /api/registration/get-target-instance
+    4      /api/digestsummary
+    3      /reports/view
+    3      /assets/react-vendor-CWOlZk79.js
+    3      /assets/index-Cj5Ra9vo.css
+    3      /assets/index-BhWnmaLL.js
+    3      /assets/cornerstone-t3NNYA1R.js
+    2      /expired
+    2      /assets/decodeImageFrameWorker-Be17YydA.js
+    2      /assets/ComparePanel-C-LOqQpI.js
+
+▶ IIS — Server: 10.21.3.36
+------------------------------------------------------------------------
+  Total requests                          730
+  Unique client IPs                       3
+  302 Redirects                           3
+  5xx errors                              0
+    Health 503                            0
+  Slow (>5000ms)                          0
+
+    Status     Count
+    --------------------
+    200        674
+    404        40
+    304        13
+    302        3
+
+    Count  Endpoint                                               
+    -------------------------------------------------------------------
+    472    /health
+    142    /api/NhiPatientImage/studies/{uid}/series/{uid}/...
+    61     /api/DigestSummary/hospital
+    15     /api/NhiPatientImage/studies/{uid}/series-uid
+    5      /api/DigestSummary/key-images
+    4      /api/registration/get-target-instance
+    3      /reports/view
+    3      /assets/react-vendor-CWOlZk79.js
+    3      /assets/openjpegwasm_decode-C4nnCcr6.wasm
+    3      /assets/index-Cj5Ra9vo.css
+    3      /assets/index-BhWnmaLL.js
+    3      /assets/decodeImageFrameWorker-Be17YydA.js
+    3      /assets/cornerstone-t3NNYA1R.js
+    3      /api/digestsummary
+    3      /
+
+========================================================================
+  Generated: 2026-05-25 17:18:06
+========================================================================
+

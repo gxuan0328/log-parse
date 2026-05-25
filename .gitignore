@@ -1,0 +1,44 @@
+# ----------------------------------------------------------------------------
+# log-parse — version control exclusions
+# ----------------------------------------------------------------------------
+# Note: the bundled sample dataset (examples/sample-logs/) IS checked in so
+# clone-and-run works out of the box. Only user-generated artifacts and
+# production logs should be ignored.
+
+# Generated reports
+reports/
+*_report.txt
+*_report.tsv
+access_report*
+iis_report*
+errors_report*
+
+# User-supplied production / NAS-mounted log dirs at the project root
+/LUNG-CANCER-REPORT-LOG/
+/logs/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Shell tooling
+.bash_history
+.shellcheckrc.local
+
+# Build / temp
+tmp/
+build/
+dist/
+*.tmp
+*.bak
+
+# Test artifacts
+tests/output/
+tests/tmp/

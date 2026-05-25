@@ -1,0 +1,24 @@
+2026-05-21 10:48:18.5962 | pid:3088 | [INFO] [NHI_AI_LungCancerReportWebApi.Services.UrlTokenIssuer] 
+  Event: 0
+  Message: PEM 載入完成，簽章憑證 初始化成功。Kid=UX-2025-02, 存活秒數=60
+  Properties: Phase=初始化成功; Kid=UX-2025-02; TTL=60; RequestId=4000000a-0001-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=efb00b9b-eff3-4130-b66d-9725546aed26; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi)
+  ======================================================================
+
+2026-05-21 10:48:18.6210 | pid:3088 | [INFO] [NHI_AI_LungCancerReportWebApi.Controllers.PatientController] 
+  Event: 0
+  Message: 開始處理報告 URL 產生請求
+  Properties: RequestId=4000000a-0001-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=efb00b9b-eff3-4130-b66d-9725546aed26; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712; HospId=1234567890; PrsnId=Z123123123; ClientIp=192.168.139.110
+  ======================================================================
+
+2026-05-21 10:48:18.7932 | pid:3088 | [INFO] [NHI_AI_LungCancerReportWebApi.Services.UrlTokenIssuer] 
+  Event: 0
+  Message: 正在簽發 URL Token。存活秒數=60, 到期時間(UTC)=05/21/2026 02:49:18, kid=UX-2025-02
+  Properties: TTL=60; Exp=05/21/2026 02:49:18; Kid=UX-2025-02; RequestId=4000000a-0001-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=efb00b9b-eff3-4130-b66d-9725546aed26; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712; HospId=1234567890; PrsnId=Z123123123; ClientIp=192.168.139.110
+  ======================================================================
+
+2026-05-21 10:48:18.8270 | pid:3088 | [INFO] [NHI_AI_LungCancerReportWebApi.Controllers.PatientController] 
+  Event: 0
+  Message: 成功產生報告 URL，有效期限 05/21/2026 02:49:18
+  Properties: ExpUtc=05/21/2026 02:49:18; RequestId=4000000a-0001-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=efb00b9b-eff3-4130-b66d-9725546aed26; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712; HospId=1234567890; PrsnId=Z123123123; ClientIp=192.168.139.110
+  ======================================================================
+

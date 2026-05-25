@@ -1,0 +1,420 @@
+2026-05-25 02:03:38.8477 [INFO] [NHI_AI_MedReportViewerWebApi.Program] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: Allowed origin: http://localhost:5173
+  Properties: 
+  ======================================================================
+
+2026-05-25 02:03:39.0214 [INFO] [NHI_AI_MedReportViewerWebApi.Program] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: Authentication enabled with JWT Bearer tokens
+  Properties: 
+  ======================================================================
+
+2026-05-25 02:03:39.3082 [INFO] [NHI_AI_MedReportViewerWebApi.Program] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: Exceptionless 設定完成，ServerUrl: "https://h30lhclogsvr.intra.nhi.gov.tw:8443"
+  Properties: ServerUrl=https://h30lhclogsvr.intra.nhi.gov.tw:8443
+  ======================================================================
+
+2026-05-25 11:11:37.0797 [INFO] [NHI_AI_MedReportViewerWebApi.Services.UrlTokenValidator] [TraceID: 00-d99a5acad32c51eabecd98ccfb4faa3f-8de603965da2966a-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/reports/view 
+  Message: 正在載入 URL 驗證用 JWKS。Issuer=https://auth.cohesion.internal/url-issuer, Audience=viewer-app, Path=Config/url.jwks.json
+  Properties: Issuer=https://auth.cohesion.internal/url-issuer; Audience=viewer-app; Path=Config/url.jwks.json; RequestId=400002fc-0003-fe00-b63f-84710c7967bb; RequestPath=/reports/view; ActionId=1974041e-4ec6-4dc4-bf71-b1b3fd2a8307; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.ReportsController.ViewReport (NHI-AI-MedReportViewerWebApi)
+  ======================================================================
+
+2026-05-25 11:11:37.0915 [INFO] [NHI_AI_MedReportViewerWebApi.Services.UrlTokenValidator] [TraceID: 00-d99a5acad32c51eabecd98ccfb4faa3f-8de603965da2966a-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/reports/view 
+  Message: URL 驗證用 JWKS 載入完成，共 1 把金鑰。
+  Properties: Count=1; RequestId=400002fc-0003-fe00-b63f-84710c7967bb; RequestPath=/reports/view; ActionId=1974041e-4ec6-4dc4-bf71-b1b3fd2a8307; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.ReportsController.ViewReport (NHI-AI-MedReportViewerWebApi)
+  ======================================================================
+
+2026-05-25 11:11:37.0985 [INFO] [NHI_AI_MedReportViewerWebApi.Services.ViewerTokenIssuer] [TraceID: 00-d99a5acad32c51eabecd98ccfb4faa3f-8de603965da2966a-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/reports/view 
+  Message: 正在載入 Viewer 簽章私鑰 PEM (初始化)。Issuer=https://auth.cohesion.internal/viewer-issuer, Audience=viewer-app, PemPath=Config/viewer-issuer-private.pem, Kid=VW-2025-03, TTL=14400s
+  Properties: Phase=初始化; Issuer=https://auth.cohesion.internal/viewer-issuer; Audience=viewer-app; Path=Config/viewer-issuer-private.pem; Kid=VW-2025-03; TTL=14400; RequestId=400002fc-0003-fe00-b63f-84710c7967bb; RequestPath=/reports/view; ActionId=1974041e-4ec6-4dc4-bf71-b1b3fd2a8307; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.ReportsController.ViewReport (NHI-AI-MedReportViewerWebApi)
+  ======================================================================
+
+2026-05-25 11:11:37.1274 [INFO] [NHI_AI_MedReportViewerWebApi.Services.ViewerTokenIssuer] [TraceID: 00-d99a5acad32c51eabecd98ccfb4faa3f-8de603965da2966a-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/reports/view 
+  Message: Viewer 簽章私鑰 PEM 載入完成，簽章設定 初始化成功。Kid=VW-2025-03, 存活秒數=14400
+  Properties: Phase=初始化成功; Kid=VW-2025-03; TTL=14400; RequestId=400002fc-0003-fe00-b63f-84710c7967bb; RequestPath=/reports/view; ActionId=1974041e-4ec6-4dc4-bf71-b1b3fd2a8307; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.ReportsController.ViewReport (NHI-AI-MedReportViewerWebApi)
+  ======================================================================
+
+2026-05-25 11:11:37.1420 [INFO] [NHI_AI_MedReportViewerWebApi.Controllers.ReportsController] [TraceID: 00-d99a5acad32c51eabecd98ccfb4faa3f-8de603965da2966a-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/reports/view 
+  Message: 開始驗證 URL Token。
+  Properties: RequestId=400002fc-0003-fe00-b63f-84710c7967bb; RequestPath=/reports/view; ActionId=1974041e-4ec6-4dc4-bf71-b1b3fd2a8307; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.ReportsController.ViewReport (NHI-AI-MedReportViewerWebApi); TraceId=400002fc-0003-fe00-b63f-84710c7967bb; UrlTokenLen=744
+  ======================================================================
+
+2026-05-25 11:11:37.1827 [INFO] [NHI_AI_MedReportViewerWebApi.Services.UrlTokenValidator] [TraceID: 00-d99a5acad32c51eabecd98ccfb4faa3f-8de603965da2966a-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/reports/view 
+  Message: URL Token 驗證通過。kid=UX-2025-02
+  Properties: Kid=UX-2025-02; RequestId=400002fc-0003-fe00-b63f-84710c7967bb; RequestPath=/reports/view; ActionId=1974041e-4ec6-4dc4-bf71-b1b3fd2a8307; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.ReportsController.ViewReport (NHI-AI-MedReportViewerWebApi); TraceId=400002fc-0003-fe00-b63f-84710c7967bb; UrlTokenLen=744
+  ======================================================================
+
+2026-05-25 11:11:37.1827 [INFO] [NHI_AI_MedReportViewerWebApi.Controllers.ReportsController] [TraceID: 00-d99a5acad32c51eabecd98ccfb4faa3f-8de603965da2966a-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/reports/view 
+  Message: URL Token 驗證通過，準備簽發 Viewer Token。
+  Properties: RequestId=400002fc-0003-fe00-b63f-84710c7967bb; RequestPath=/reports/view; ActionId=1974041e-4ec6-4dc4-bf71-b1b3fd2a8307; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.ReportsController.ViewReport (NHI-AI-MedReportViewerWebApi); TraceId=400002fc-0003-fe00-b63f-84710c7967bb; UrlTokenLen=744; PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712; HospId=1234567890; PrsnId=Z123123123; ClientIp=192.168.139.79
+  ======================================================================
+
+2026-05-25 11:11:37.1943 [INFO] [NHI_AI_MedReportViewerWebApi.Services.ViewerTokenIssuer] [TraceID: 00-d99a5acad32c51eabecd98ccfb4faa3f-8de603965da2966a-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/reports/view 
+  Message: 正在簽發 Viewer Token。存活秒數=14400, 到期時間(UTC)=05/25/2026 07:11:37, kid=VW-2025-03, 最大會話壽命(amax)=05/25/2026 07:11:37
+  Properties: TTL=14400; Exp=05/25/2026 07:11:37; Kid=VW-2025-03; Amax=05/25/2026 07:11:37; RequestId=400002fc-0003-fe00-b63f-84710c7967bb; RequestPath=/reports/view; ActionId=1974041e-4ec6-4dc4-bf71-b1b3fd2a8307; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.ReportsController.ViewReport (NHI-AI-MedReportViewerWebApi); TraceId=400002fc-0003-fe00-b63f-84710c7967bb; UrlTokenLen=744; PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712; HospId=1234567890; PrsnId=Z123123123; ClientIp=192.168.139.79
+  ======================================================================
+
+2026-05-25 11:11:37.2075 [INFO] [NHI_AI_MedReportViewerWebApi.Controllers.ReportsController] [TraceID: 00-d99a5acad32c51eabecd98ccfb4faa3f-8de603965da2966a-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/reports/view 
+  Message: 以 Redirect 模式回應，導向前端頁面。
+  Properties: RequestId=400002fc-0003-fe00-b63f-84710c7967bb; RequestPath=/reports/view; ActionId=1974041e-4ec6-4dc4-bf71-b1b3fd2a8307; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.ReportsController.ViewReport (NHI-AI-MedReportViewerWebApi); TraceId=400002fc-0003-fe00-b63f-84710c7967bb; UrlTokenLen=744; PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712; HospId=1234567890; PrsnId=Z123123123; ClientIp=192.168.139.79
+  ======================================================================
+
+2026-05-25 11:11:39.2379 [INFO] [NHI_AI_MedReportViewerWebApi.Services.OutputGenerationService] [TraceID: 00-21e3552d888a0746bcf639c29c1672cf-8bbe7442544fd393-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/digestsummary 
+  Message: 開始建立 extracted_data for Patient: Z299999830-20251102-1211-00000000001
+  Properties: PatientObjId=Z299999830-20251102-1211-00000000001; RequestId=400000e5-0006-f900-b63f-84710c7967bb; RequestPath=/api/digestsummary; ActionId=5f40d937-f954-4d23-93dd-509801b22ea7; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.DigestSummaryController.Get (NHI-AI-MedReportViewerWebApi)
+  ======================================================================
+
+2026-05-25 11:11:39.6079 [INFO] [NHI_AI_MedReportViewerWebApi.Services.OutputGenerationService] [TraceID: 00-21e3552d888a0746bcf639c29c1672cf-8bbe7442544fd393-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/digestsummary 
+  Message: 完成建立 23 筆 extracted_data
+  Properties: Count=23; RequestId=400000e5-0006-f900-b63f-84710c7967bb; RequestPath=/api/digestsummary; ActionId=5f40d937-f954-4d23-93dd-509801b22ea7; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.DigestSummaryController.Get (NHI-AI-MedReportViewerWebApi)
+  ======================================================================
+
+2026-05-25 11:11:39.6141 [INFO] [NHI_AI_MedReportViewerWebApi.Services.OutputGenerationService] [TraceID: 00-21e3552d888a0746bcf639c29c1672cf-8bbe7442544fd393-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/digestsummary 
+  Message: 開始建立 summary for Patient: Z299999830-20251102-1211-00000000001
+  Properties: PatientObjId=Z299999830-20251102-1211-00000000001; RequestId=400000e5-0006-f900-b63f-84710c7967bb; RequestPath=/api/digestsummary; ActionId=5f40d937-f954-4d23-93dd-509801b22ea7; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.DigestSummaryController.Get (NHI-AI-MedReportViewerWebApi)
+  ======================================================================
+
+2026-05-25 11:11:39.6995 [INFO] [NHI_AI_MedReportViewerWebApi.Services.OutputGenerationService] [TraceID: 00-21e3552d888a0746bcf639c29c1672cf-8bbe7442544fd393-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/digestsummary 
+  Message: 完成建立 4 筆 summary
+  Properties: Count=4; RequestId=400000e5-0006-f900-b63f-84710c7967bb; RequestPath=/api/digestsummary; ActionId=5f40d937-f954-4d23-93dd-509801b22ea7; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.DigestSummaryController.Get (NHI-AI-MedReportViewerWebApi)
+  ======================================================================
+
+2026-05-25 11:11:39.7125 [INFO] [Polly] [TraceID: 00-21e3552d888a0746bcf639c29c1672cf-8bbe7442544fd393-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/digestsummary 
+  Message: Execution attempt. Source: 'OracleResiliencePipeline/(null)/Retry', Operation Key: '', Result: 'NHI_AI_MedReportViewerWebApi.Models.OutputJsonDto', Handled: 'False', Attempt: '0', Execution Time: '574.5581'
+  Properties: PipelineName=OracleResiliencePipeline; PipelineInstance=(null); StrategyName=Retry; Result=NHI_AI_MedReportViewerWebApi.Models.OutputJsonDto; Handled=false; Attempt=0; ExecutionTimeMs=574.5581; EventId=3; EventName=ExecutionAttempt; RequestId=400000e5-0006-f900-b63f-84710c7967bb; RequestPath=/api/digestsummary; ActionId=5f40d937-f954-4d23-93dd-509801b22ea7; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.DigestSummaryController.Get (NHI-AI-MedReportViewerWebApi)
+  ======================================================================
+
+2026-05-25 11:11:40.5027 [INFO] [NHI_AI_MedReportViewerWebApi.Services.OutputGenerationService] [TraceID: 00-c94820116f7e70deaf4d3383b62f860b-bf26b3560670f913-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/DigestSummary/key-images 
+  Message: 開始取得病患關鍵影像: IdAes=EBD71A864A0F7E6A355827754B89259E, Birthday=19410712
+  Properties: IdAes=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712; RequestId=4000007f-0001-fd00-b63f-84710c7967bb; RequestPath=/api/DigestSummary/key-images; ActionId=1bfc099e-1397-486c-8652-951ee8021122; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.DigestSummaryController.GetPatientKeyImages (NHI-AI-MedReportViewerWebApi)
+  ======================================================================
+
+2026-05-25 11:11:40.5918 [INFO] [Polly] [TraceID: 00-c94820116f7e70deaf4d3383b62f860b-bf26b3560670f913-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/DigestSummary/key-images 
+  Message: Execution attempt. Source: 'OracleResiliencePipeline/(null)/Retry', Operation Key: '', Result: 'System.Collections.Generic.List`1[NHI_AI_MedReportViewerWebApi.Models.KeyImageInfo]', Handled: 'False', Attempt: '0', Execution Time: '76.7661'
+  Properties: PipelineName=OracleResiliencePipeline; PipelineInstance=(null); StrategyName=Retry; Result=NHI_AI_MedReportViewerWebApi.Models.KeyImageInfo, NHI_AI_MedReportViewerWebApi.Models.KeyImageInfo, NHI_AI_MedReportViewerWebApi.Models.KeyImageInfo, NHI_AI_MedReportViewerWebApi.Models.KeyImageInfo; Handled=false; Attempt=0; ExecutionTimeMs=76.7661; EventId=3; EventName=ExecutionAttempt; RequestId=4000007f-0001-fd00-b63f-84710c7967bb; RequestPath=/api/DigestSummary/key-images; ActionId=1bfc099e-1397-486c-8652-951ee8021122; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.DigestSummaryController.GetPatientKeyImages (NHI-AI-MedReportViewerWebApi)
+  ======================================================================
+
+2026-05-25 11:11:40.5918 [INFO] [NHI_AI_MedReportViewerWebApi.Services.OutputGenerationService] [TraceID: 00-c94820116f7e70deaf4d3383b62f860b-bf26b3560670f913-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/DigestSummary/key-images 
+  Message: 完成取得病患關鍵影像，共 4 筆
+  Properties: Count=4; RequestId=4000007f-0001-fd00-b63f-84710c7967bb; RequestPath=/api/DigestSummary/key-images; ActionId=1bfc099e-1397-486c-8652-951ee8021122; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.DigestSummaryController.GetPatientKeyImages (NHI-AI-MedReportViewerWebApi)
+  ======================================================================
+
+2026-05-25 11:11:40.7622 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-b2e64dbf46a8164576ada7d24acb1d40-8ef2147d2320b887-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series-uid 
+  Message: 開始查詢 Series Instance UID: Study=1.2.840.133888132105150143162871541411731780159144, SeriesNumber=15
+  Properties: RequestId=40000081-0001-fd00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series-uid; ActionId=feb3c0ad-c934-4f31-b3ca-809ba7f34e57; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetSeriesInstanceUid (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.133888132105150143162871541411731780159144; SeriesNumber=15
+  ======================================================================
+
+2026-05-25 11:11:40.9019 [INFO] [AIRS.Core.Helpers.ZfpOracleDbHelper] [TraceID: 00-6d2fda6ea01672ed19e706ae31ab52aa-85b09dc117248d08-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.3417124205586658229153205402522644/jpg 
+  Message: GetImageKey(studyInstanceUid: 1.2.840.6610321904118510815420318233761831142014, seriesInstanceUid: 1.2.840.185393732156165237212158241127106677643111, sopInstanceUid: 1.2.840.3417124205586658229153205402522644)
+  Properties: StudyUid=1.2.840.6610321904118510815420318233761831142014; SeriesUid=1.2.840.185393732156165237212158241127106677643111; SopUid=1.2.840.3417124205586658229153205402522644; RequestId=40000008-0001-fc00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.3417124205586658229153205402522644/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.6610321904118510815420318233761831142014; SeriesInstanceUid=1.2.840.185393732156165237212158241127106677643111; SopInstanceUid=1.2.840.3417124205586658229153205402522644
+  ======================================================================
+
+2026-05-25 11:11:40.9079 [INFO] [AIRS.Core.Helpers.ZfpOracleDbHelper] [TraceID: 00-25428c86a8c80b6db076636a532ccf83-b830973e286e7008-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.3219370233171571652261152261706625011114738/jpg 
+  Message: GetImageKey(studyInstanceUid: 1.2.840.1405011311801131732011012121012200126134, seriesInstanceUid: 1.2.840.51111141244381216847820799116149155151129, sopInstanceUid: 1.2.840.3219370233171571652261152261706625011114738)
+  Properties: StudyUid=1.2.840.1405011311801131732011012121012200126134; SeriesUid=1.2.840.51111141244381216847820799116149155151129; SopUid=1.2.840.3219370233171571652261152261706625011114738; RequestId=400004a7-0005-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.3219370233171571652261152261706625011114738/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.1405011311801131732011012121012200126134; SeriesInstanceUid=1.2.840.51111141244381216847820799116149155151129; SopInstanceUid=1.2.840.3219370233171571652261152261706625011114738
+  ======================================================================
+
+2026-05-25 11:11:40.9079 [INFO] [AIRS.Core.Helpers.ZfpOracleDbHelper] [TraceID: 00-88722c42a2f3d8a28dcce9a56f69255c-249b972aed91366d-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.232761451702923525417733227971231052812514/jpg 
+  Message: GetImageKey(studyInstanceUid: 1.2.840.1405011311801131732011012121012200126134, seriesInstanceUid: 1.2.840.51111141244381216847820799116149155151129, sopInstanceUid: 1.2.840.232761451702923525417733227971231052812514)
+  Properties: StudyUid=1.2.840.1405011311801131732011012121012200126134; SeriesUid=1.2.840.51111141244381216847820799116149155151129; SopUid=1.2.840.232761451702923525417733227971231052812514; RequestId=400002fe-0003-fe00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.232761451702923525417733227971231052812514/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.1405011311801131732011012121012200126134; SeriesInstanceUid=1.2.840.51111141244381216847820799116149155151129; SopInstanceUid=1.2.840.232761451702923525417733227971231052812514
+  ======================================================================
+
+2026-05-25 11:11:40.9079 [INFO] [AIRS.Core.Helpers.ZfpOracleDbHelper] [TraceID: 00-b955c205cca17773543b9ad2f7e303d2-a09849ac2314e8e3-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.1051457738253118922381479013141215320088/jpg 
+  Message: GetImageKey(studyInstanceUid: 1.2.840.6610321904118510815420318233761831142014, seriesInstanceUid: 1.2.840.185393732156165237212158241127106677643111, sopInstanceUid: 1.2.840.1051457738253118922381479013141215320088)
+  Properties: StudyUid=1.2.840.6610321904118510815420318233761831142014; SeriesUid=1.2.840.185393732156165237212158241127106677643111; SopUid=1.2.840.1051457738253118922381479013141215320088; RequestId=40000290-0001-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.1051457738253118922381479013141215320088/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.6610321904118510815420318233761831142014; SeriesInstanceUid=1.2.840.185393732156165237212158241127106677643111; SopInstanceUid=1.2.840.1051457738253118922381479013141215320088
+  ======================================================================
+
+2026-05-25 11:11:40.9881 [INFO] [Polly] [TraceID: 00-b2e64dbf46a8164576ada7d24acb1d40-8ef2147d2320b887-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series-uid 
+  Message: Execution attempt. Source: 'OracleResiliencePipeline/(null)/Retry', Operation Key: '', Result: '1.2.840.19216622352892321110282110210111240391850', Handled: 'False', Attempt: '0', Execution Time: '213.7776'
+  Properties: PipelineName=OracleResiliencePipeline; PipelineInstance=(null); StrategyName=Retry; Result=1.2.840.19216622352892321110282110210111240391850; Handled=false; Attempt=0; ExecutionTimeMs=213.7776; EventId=3; EventName=ExecutionAttempt; RequestId=40000081-0001-fd00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series-uid; ActionId=feb3c0ad-c934-4f31-b3ca-809ba7f34e57; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetSeriesInstanceUid (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.133888132105150143162871541411731780159144; SeriesNumber=15
+  ======================================================================
+
+2026-05-25 11:11:40.9881 [INFO] [Polly] [TraceID: 00-3246ebf14b2792c21496a3405f6691af-ade6c398a59654d7-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/DigestSummary/hospital 
+  Message: Execution attempt. Source: 'OracleResiliencePipeline/(null)/Retry', Operation Key: '', Result: '台大醫院', Handled: 'False', Attempt: '0', Execution Time: '489.6302'
+  Properties: PipelineName=OracleResiliencePipeline; PipelineInstance=(null); StrategyName=Retry; Result=台大醫院; Handled=false; Attempt=0; ExecutionTimeMs=489.6302; EventId=3; EventName=ExecutionAttempt; RequestId=4000038c-0001-fe00-b63f-84710c7967bb; RequestPath=/api/DigestSummary/hospital; ActionId=79b4a390-c2ed-431b-855a-a73555276e02; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.DigestSummaryController.GetHospitalName (NHI-AI-MedReportViewerWebApi)
+  ======================================================================
+
+2026-05-25 11:11:40.9967 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-b2e64dbf46a8164576ada7d24acb1d40-8ef2147d2320b887-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series-uid 
+  Message: 找到 Series Number 15 對應的 Series Instance UID: 1.2.840.19216622352892321110282110210111240391850
+  Properties: RequestId=40000081-0001-fd00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series-uid; ActionId=feb3c0ad-c934-4f31-b3ca-809ba7f34e57; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetSeriesInstanceUid (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.133888132105150143162871541411731780159144; SeriesNumber=15
+  ======================================================================
+
+2026-05-25 11:11:40.9967 [INFO] [Polly] [TraceID: 00-b955c205cca17773543b9ad2f7e303d2-a09849ac2314e8e3-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.1051457738253118922381479013141215320088/jpg 
+  Message: Execution attempt. Source: 'OracleResiliencePipeline/(null)/Retry', Operation Key: '', Result: 'NHI_ZFP_Viewer.ImageSources.ImageInfo', Handled: 'False', Attempt: '0', Execution Time: '77.236'
+  Properties: PipelineName=OracleResiliencePipeline; PipelineInstance=(null); StrategyName=Retry; Result=NHI_ZFP_Viewer.ImageSources.ImageInfo; Handled=false; Attempt=0; ExecutionTimeMs=77.236; EventId=3; EventName=ExecutionAttempt; RequestId=40000290-0001-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.1051457738253118922381479013141215320088/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.6610321904118510815420318233761831142014; SeriesInstanceUid=1.2.840.185393732156165237212158241127106677643111; SopInstanceUid=1.2.840.1051457738253118922381479013141215320088
+  ======================================================================
+
+2026-05-25 11:11:40.9967 [INFO] [Polly] [TraceID: 00-88722c42a2f3d8a28dcce9a56f69255c-249b972aed91366d-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.232761451702923525417733227971231052812514/jpg 
+  Message: Execution attempt. Source: 'OracleResiliencePipeline/(null)/Retry', Operation Key: '', Result: 'NHI_ZFP_Viewer.ImageSources.ImageInfo', Handled: 'False', Attempt: '0', Execution Time: '78.0443'
+  Properties: PipelineName=OracleResiliencePipeline; PipelineInstance=(null); StrategyName=Retry; Result=NHI_ZFP_Viewer.ImageSources.ImageInfo; Handled=false; Attempt=0; ExecutionTimeMs=78.0443; EventId=3; EventName=ExecutionAttempt; RequestId=400002fe-0003-fe00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.232761451702923525417733227971231052812514/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.1405011311801131732011012121012200126134; SeriesInstanceUid=1.2.840.51111141244381216847820799116149155151129; SopInstanceUid=1.2.840.232761451702923525417733227971231052812514
+  ======================================================================
+
+2026-05-25 11:11:40.9967 [INFO] [Polly] [TraceID: 00-25428c86a8c80b6db076636a532ccf83-b830973e286e7008-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.3219370233171571652261152261706625011114738/jpg 
+  Message: Execution attempt. Source: 'OracleResiliencePipeline/(null)/Retry', Operation Key: '', Result: 'NHI_ZFP_Viewer.ImageSources.ImageInfo', Handled: 'False', Attempt: '0', Execution Time: '80.8496'
+  Properties: PipelineName=OracleResiliencePipeline; PipelineInstance=(null); StrategyName=Retry; Result=NHI_ZFP_Viewer.ImageSources.ImageInfo; Handled=false; Attempt=0; ExecutionTimeMs=80.8496; EventId=3; EventName=ExecutionAttempt; RequestId=400004a7-0005-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.3219370233171571652261152261706625011114738/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.1405011311801131732011012121012200126134; SeriesInstanceUid=1.2.840.51111141244381216847820799116149155151129; SopInstanceUid=1.2.840.3219370233171571652261152261706625011114738
+  ======================================================================
+
+2026-05-25 11:11:41.0120 [INFO] [AIRS.Core.Helpers.ZfpOracleDbHelper] [TraceID: 00-b955c205cca17773543b9ad2f7e303d2-a09849ac2314e8e3-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.1051457738253118922381479013141215320088/jpg 
+  Message: GetImageKey = Archived/20230510/1.2.840.6610321904118510815420318233761831142014/1.2.840.185393732156165237212158241127106677643111/1.2.840.1051457738253118922381479013141215320088.dcm, 93 ms elapsed.
+  Properties: S3ObjectKey=Archived/20230510/1.2.840.6610321904118510815420318233761831142014/1.2.840.185393732156165237212158241127106677643111/1.2.840.1051457738253118922381479013141215320088.dcm; Elapsed=93; RequestId=40000290-0001-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.1051457738253118922381479013141215320088/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.6610321904118510815420318233761831142014; SeriesInstanceUid=1.2.840.185393732156165237212158241127106677643111; SopInstanceUid=1.2.840.1051457738253118922381479013141215320088
+  ======================================================================
+
+2026-05-25 11:11:41.0120 [INFO] [AIRS.Core.Helpers.ZfpOracleDbHelper] [TraceID: 00-88722c42a2f3d8a28dcce9a56f69255c-249b972aed91366d-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.232761451702923525417733227971231052812514/jpg 
+  Message: GetImageKey = Archived/20230210/1.2.840.1405011311801131732011012121012200126134/1.2.840.51111141244381216847820799116149155151129/1.2.840.232761451702923525417733227971231052812514.dcm, 96 ms elapsed.
+  Properties: S3ObjectKey=Archived/20230210/1.2.840.1405011311801131732011012121012200126134/1.2.840.51111141244381216847820799116149155151129/1.2.840.232761451702923525417733227971231052812514.dcm; Elapsed=96; RequestId=400002fe-0003-fe00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.232761451702923525417733227971231052812514/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.1405011311801131732011012121012200126134; SeriesInstanceUid=1.2.840.51111141244381216847820799116149155151129; SopInstanceUid=1.2.840.232761451702923525417733227971231052812514
+  ======================================================================
+
+2026-05-25 11:11:41.0120 [INFO] [AIRS.Core.Helpers.ZfpOracleDbHelper] [TraceID: 00-25428c86a8c80b6db076636a532ccf83-b830973e286e7008-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.3219370233171571652261152261706625011114738/jpg 
+  Message: GetImageKey = Archived/20230210/1.2.840.1405011311801131732011012121012200126134/1.2.840.51111141244381216847820799116149155151129/1.2.840.3219370233171571652261152261706625011114738.dcm, 101 ms elapsed.
+  Properties: S3ObjectKey=Archived/20230210/1.2.840.1405011311801131732011012121012200126134/1.2.840.51111141244381216847820799116149155151129/1.2.840.3219370233171571652261152261706625011114738.dcm; Elapsed=101; RequestId=400004a7-0005-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.3219370233171571652261152261706625011114738/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.1405011311801131732011012121012200126134; SeriesInstanceUid=1.2.840.51111141244381216847820799116149155151129; SopInstanceUid=1.2.840.3219370233171571652261152261706625011114738
+  ======================================================================
+
+2026-05-25 11:11:41.0120 [INFO] [Polly] [TraceID: 00-6d2fda6ea01672ed19e706ae31ab52aa-85b09dc117248d08-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.3417124205586658229153205402522644/jpg 
+  Message: Execution attempt. Source: 'OracleResiliencePipeline/(null)/Retry', Operation Key: '', Result: 'NHI_ZFP_Viewer.ImageSources.ImageInfo', Handled: 'False', Attempt: '0', Execution Time: '114.0564'
+  Properties: PipelineName=OracleResiliencePipeline; PipelineInstance=(null); StrategyName=Retry; Result=NHI_ZFP_Viewer.ImageSources.ImageInfo; Handled=false; Attempt=0; ExecutionTimeMs=114.0564; EventId=3; EventName=ExecutionAttempt; RequestId=40000008-0001-fc00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.3417124205586658229153205402522644/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.6610321904118510815420318233761831142014; SeriesInstanceUid=1.2.840.185393732156165237212158241127106677643111; SopInstanceUid=1.2.840.3417124205586658229153205402522644
+  ======================================================================
+
+2026-05-25 11:11:41.0299 [INFO] [AIRS.Core.Helpers.ZfpOracleDbHelper] [TraceID: 00-6d2fda6ea01672ed19e706ae31ab52aa-85b09dc117248d08-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.3417124205586658229153205402522644/jpg 
+  Message: GetImageKey = Archived/20230510/1.2.840.6610321904118510815420318233761831142014/1.2.840.185393732156165237212158241127106677643111/1.2.840.3417124205586658229153205402522644.dcm, 125 ms elapsed.
+  Properties: S3ObjectKey=Archived/20230510/1.2.840.6610321904118510815420318233761831142014/1.2.840.185393732156165237212158241127106677643111/1.2.840.3417124205586658229153205402522644.dcm; Elapsed=125; RequestId=40000008-0001-fc00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.3417124205586658229153205402522644/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.6610321904118510815420318233761831142014; SeriesInstanceUid=1.2.840.185393732156165237212158241127106677643111; SopInstanceUid=1.2.840.3417124205586658229153205402522644
+  ======================================================================
+
+2026-05-25 11:11:41.0299 [INFO] [AIRS.Core.Helpers.ZfpOracleDbHelper] [TraceID: 00-2518b261218272af2ae5ad69fd46dcdd-8f35381fcc69e8ff-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/images 
+  Message: GetSortedImagesBySeries(studyInstanceUid: 1.2.840.133888132105150143162871541411731780159144, seriesInstanceUid: 1.2.840.19216622352892321110282110210111240391850)
+  Properties: StudyUid=1.2.840.133888132105150143162871541411731780159144; SeriesUid=1.2.840.19216622352892321110282110210111240391850; RequestId=40000278-0003-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/images; ActionId=09bbc590-dd80-4464-a007-ed1565b2cf04; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImagesInSeries (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.133888132105150143162871541411731780159144; SeriesInstanceUid=1.2.840.19216622352892321110282110210111240391850
+  ======================================================================
+
+2026-05-25 11:11:41.0470 [INFO] [AIRS.Core.Common.LogForgingTools] [TraceID: 00-25428c86a8c80b6db076636a532ccf83-b830973e286e7008-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.3219370233171571652261152261706625011114738/jpg 
+  Message: 1779678701056 GetImage() 由 S3 取得 stream，耗時 33 ms.
+  Properties: RequestId=400004a7-0005-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.3219370233171571652261152261706625011114738/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.1405011311801131732011012121012200126134; SeriesInstanceUid=1.2.840.51111141244381216847820799116149155151129; SopInstanceUid=1.2.840.3219370233171571652261152261706625011114738
+  ======================================================================
+
+2026-05-25 11:11:41.0470 [INFO] [AIRS.Core.Common.LogForgingTools] [TraceID: 00-88722c42a2f3d8a28dcce9a56f69255c-249b972aed91366d-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.232761451702923525417733227971231052812514/jpg 
+  Message: 1779678701057 GetImage() 由 S3 取得 stream，耗時 36 ms.
+  Properties: RequestId=400002fe-0003-fe00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.232761451702923525417733227971231052812514/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.1405011311801131732011012121012200126134; SeriesInstanceUid=1.2.840.51111141244381216847820799116149155151129; SopInstanceUid=1.2.840.232761451702923525417733227971231052812514
+  ======================================================================
+
+2026-05-25 11:11:41.0599 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-25428c86a8c80b6db076636a532ccf83-b830973e286e7008-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.3219370233171571652261152261706625011114738/jpg 
+  Message: 成功從 S3 取得影像: 1.2.840.3219370233171571652261152261706625011114738
+  Properties: RequestId=400004a7-0005-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.3219370233171571652261152261706625011114738/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.1405011311801131732011012121012200126134; SeriesInstanceUid=1.2.840.51111141244381216847820799116149155151129; SopInstanceUid=1.2.840.3219370233171571652261152261706625011114738
+  ======================================================================
+
+2026-05-25 11:11:41.0599 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-88722c42a2f3d8a28dcce9a56f69255c-249b972aed91366d-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.232761451702923525417733227971231052812514/jpg 
+  Message: 成功從 S3 取得影像: 1.2.840.232761451702923525417733227971231052812514
+  Properties: RequestId=400002fe-0003-fe00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.232761451702923525417733227971231052812514/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.1405011311801131732011012121012200126134; SeriesInstanceUid=1.2.840.51111141244381216847820799116149155151129; SopInstanceUid=1.2.840.232761451702923525417733227971231052812514
+  ======================================================================
+
+2026-05-25 11:11:41.0599 [INFO] [AIRS.Core.Common.LogForgingTools] [TraceID: 00-b955c205cca17773543b9ad2f7e303d2-a09849ac2314e8e3-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.1051457738253118922381479013141215320088/jpg 
+  Message: 1779678701063 GetImage() 由 S3 取得 stream，耗時 45 ms.
+  Properties: RequestId=40000290-0001-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.1051457738253118922381479013141215320088/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.6610321904118510815420318233761831142014; SeriesInstanceUid=1.2.840.185393732156165237212158241127106677643111; SopInstanceUid=1.2.840.1051457738253118922381479013141215320088
+  ======================================================================
+
+2026-05-25 11:11:41.0599 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-25428c86a8c80b6db076636a532ccf83-b830973e286e7008-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.3219370233171571652261152261706625011114738/jpg 
+  Message: 開始轉換 DICOM 為 JPG: SOP Instance UID=1.2.840.3219370233171571652261152261706625011114738, ContentType=application/dicom
+  Properties: RequestId=400004a7-0005-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.3219370233171571652261152261706625011114738/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.1405011311801131732011012121012200126134; SeriesInstanceUid=1.2.840.51111141244381216847820799116149155151129; SopInstanceUid=1.2.840.3219370233171571652261152261706625011114738
+  ======================================================================
+
+2026-05-25 11:11:41.0599 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-88722c42a2f3d8a28dcce9a56f69255c-249b972aed91366d-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.232761451702923525417733227971231052812514/jpg 
+  Message: 開始轉換 DICOM 為 JPG: SOP Instance UID=1.2.840.232761451702923525417733227971231052812514, ContentType=application/dicom
+  Properties: RequestId=400002fe-0003-fe00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.232761451702923525417733227971231052812514/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.1405011311801131732011012121012200126134; SeriesInstanceUid=1.2.840.51111141244381216847820799116149155151129; SopInstanceUid=1.2.840.232761451702923525417733227971231052812514
+  ======================================================================
+
+2026-05-25 11:11:41.0599 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-b955c205cca17773543b9ad2f7e303d2-a09849ac2314e8e3-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.1051457738253118922381479013141215320088/jpg 
+  Message: 成功從 S3 取得影像: 1.2.840.1051457738253118922381479013141215320088
+  Properties: RequestId=40000290-0001-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.1051457738253118922381479013141215320088/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.6610321904118510815420318233761831142014; SeriesInstanceUid=1.2.840.185393732156165237212158241127106677643111; SopInstanceUid=1.2.840.1051457738253118922381479013141215320088
+  ======================================================================
+
+2026-05-25 11:11:41.0599 [INFO] [AIRS.Core.Common.LogForgingTools] [TraceID: 00-6d2fda6ea01672ed19e706ae31ab52aa-85b09dc117248d08-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.3417124205586658229153205402522644/jpg 
+  Message: 1779678701073 GetImage() 由 S3 取得 stream，耗時 36 ms.
+  Properties: RequestId=40000008-0001-fc00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.3417124205586658229153205402522644/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.6610321904118510815420318233761831142014; SeriesInstanceUid=1.2.840.185393732156165237212158241127106677643111; SopInstanceUid=1.2.840.3417124205586658229153205402522644
+  ======================================================================
+
+2026-05-25 11:11:41.0746 [INFO] [Polly] [TraceID: 00-2518b261218272af2ae5ad69fd46dcdd-8f35381fcc69e8ff-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/images 
+  Message: Execution attempt. Source: 'OracleResiliencePipeline/(null)/Retry', Operation Key: '', Result: 'System.Collections.Generic.List`1[System.String]', Handled: 'False', Attempt: '0', Execution Time: '34.4239'
+  Properties: PipelineName=OracleResiliencePipeline; PipelineInstance=(null); StrategyName=Retry; Result="1.2.840.15116225230158118975412622041871962468104", "1.2.840.44542256821551060245135851771617698139", "1.2.840.213115105749221414215113210170101331179222", "1.2.840.12114513921313719820317344175109200217247153", "1.2.840.114822210314114621323211912215325752610687", "1.2.840.1062223317692962204410324121839121104142134", "1.2.840.812211801453118631337614997442271881138", "1.2.840.71846220011012318319615284551117618516348", "1.2.840.244208230167245826816416411670148317770253", "1.2.840.81081038825104205912823321327167110240141", "1.2.840.114151521110920085141135160252262431321485", "1.2.840.2201096613715943177811732479419617723334194", "1.2.840.23811913117823664236164181331431282591225218", "1.2.840.165114102210181701751122402394336238104212208", "1.2.840.17994232168914984391372316786924528127", "1.2.840.1261319373241351648418211118975669810218", "1.2.840.111196402819487014692140572002133720118", "1.2.840.197179791170191450371512182912111204156", "1.2.840.262334123418516814120912213101995916031", "1.2.840.12232154274815932372442015817144238250", "1.2.840.1213583310713092931421404932391562482", "1.2.840.513124083742381402201101702128772124134211", "1.2.840.35188168144103133156135216464011146152104225", "1.2.840.210160119511242501411221071413613252229157", "1.2.840.5047186194851551622810722616815323843212178", "1.2.840.218239159136175181165231170218163114623792184", "1.2.840.9616714988235138166204108143324715919624354", "1.2.840.202125186215272161781476602232561982150", "1.2.840.12417613237371161519417719486123121749", "1.2.840.495718318184216195925222515770314759181", "1.2.840.966422140143337412410921727322352711419", "1.2.840.110142162228205183482110910719621611625484181", "1.2.840.209364124882426946732332351977261219165", "1.2.840.902085212775922122618421276182177173176177", "1.2.840.85132185219146356615518115322922120722913826", "1.2.840.76123112112071341561944312711117521193723", "1.2.840.15235446422821082243282162241321802132639", "1.2.840.6100432420122459417720020617224523742111", "1.2.840.15617855192212114224163542471242341365216729", "1.2.840.217197864924017523161149120311217220196", "1.2.840.251233231371542297185193160621291051022682", "1.2.840.188129133233801981071554813132168142208223171", "1.2.840.2320161621711813211912011522804116350118", "1.2.840.623134138216165513720222236171161183143255", "1.2.840.614722272226223713024436219919469239233", "1.2.840.1941131566417472197238131392158022814443155", "1.2.840.24214721615876837414097291421322336247196", "1.2.840.2532031681262129746319790213519713254139", "1.2.840.49113225160136133109313315221140978424069", "1.2.840.80224703524750177253313141551991484680", "1.2.840.25011014325446805525999223204145121228", "1.2.840.6938233180246163212201272112545913552162181", "1.2.840.3421481772472985951828229131412173242", "1.2.840.2162552213322540225461011071041141774240141", "1.2.840.2102311122319817915132981621052519236149", "1.2.840.6724417713112613523315310324718122157218146", "1.2.840.232193111693169261186214721425017919213796", "1.2.840.576624813402232161321659917708868214106", "1.2.840.17088179379411714417524725395144175166154", "1.2.840.78120190186768017422511710275245236207207197", "1.2.840.164019371134834322813338382342542265612", "1.2.840.977843622765512620715058153124392121", "1.2.840.482011944215123634417254113150211231582", "1.2.840.1231237114102245126137508210310092174129202"; Handled=false; Attempt=0; ExecutionTimeMs=34.4239; EventId=3; EventName=ExecutionAttempt; RequestId=40000278-0003-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/images; ActionId=09bbc590-dd80-4464-a007-ed1565b2cf04; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImagesInSeries (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.133888132105150143162871541411731780159144; SeriesInstanceUid=1.2.840.19216622352892321110282110210111240391850
+  ======================================================================
+
+2026-05-25 11:11:41.0746 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-b955c205cca17773543b9ad2f7e303d2-a09849ac2314e8e3-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.1051457738253118922381479013141215320088/jpg 
+  Message: 開始轉換 DICOM 為 JPG: SOP Instance UID=1.2.840.1051457738253118922381479013141215320088, ContentType=application/dicom
+  Properties: RequestId=40000290-0001-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.1051457738253118922381479013141215320088/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.6610321904118510815420318233761831142014; SeriesInstanceUid=1.2.840.185393732156165237212158241127106677643111; SopInstanceUid=1.2.840.1051457738253118922381479013141215320088
+  ======================================================================
+
+2026-05-25 11:11:41.0746 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-6d2fda6ea01672ed19e706ae31ab52aa-85b09dc117248d08-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.3417124205586658229153205402522644/jpg 
+  Message: 成功從 S3 取得影像: 1.2.840.3417124205586658229153205402522644
+  Properties: RequestId=40000008-0001-fc00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.3417124205586658229153205402522644/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.6610321904118510815420318233761831142014; SeriesInstanceUid=1.2.840.185393732156165237212158241127106677643111; SopInstanceUid=1.2.840.3417124205586658229153205402522644
+  ======================================================================
+
+2026-05-25 11:11:41.0746 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-2518b261218272af2ae5ad69fd46dcdd-8f35381fcc69e8ff-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/images 
+  Message: Series 1.2.840.19216622352892321110282110210111240391850 包含 64 個影像（已快取）
+  Properties: SeriesInstanceUid=1.2.840.19216622352892321110282110210111240391850; Count=64; RequestId=40000278-0003-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/images; ActionId=09bbc590-dd80-4464-a007-ed1565b2cf04; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImagesInSeries (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.133888132105150143162871541411731780159144; SeriesInstanceUid=1.2.840.19216622352892321110282110210111240391850
+  ======================================================================
+
+2026-05-25 11:11:41.0746 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-6d2fda6ea01672ed19e706ae31ab52aa-85b09dc117248d08-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.3417124205586658229153205402522644/jpg 
+  Message: 開始轉換 DICOM 為 JPG: SOP Instance UID=1.2.840.3417124205586658229153205402522644, ContentType=application/dicom
+  Properties: RequestId=40000008-0001-fc00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.3417124205586658229153205402522644/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.6610321904118510815420318233761831142014; SeriesInstanceUid=1.2.840.185393732156165237212158241127106677643111; SopInstanceUid=1.2.840.3417124205586658229153205402522644
+  ======================================================================
+
+2026-05-25 11:11:41.0901 [INFO] [AIRS.Core.Helpers.ZfpOracleDbHelper] [TraceID: 00-194ef60b08db2b35cb2f2683c99c783b-dbfe0c3b1914e430-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/instances/1.2.840.15116225230158118975412622041871962468104 
+  Message: GetImageKey(studyInstanceUid: 1.2.840.133888132105150143162871541411731780159144, seriesInstanceUid: 1.2.840.19216622352892321110282110210111240391850, sopInstanceUid: 1.2.840.15116225230158118975412622041871962468104)
+  Properties: StudyUid=1.2.840.133888132105150143162871541411731780159144; SeriesUid=1.2.840.19216622352892321110282110210111240391850; SopUid=1.2.840.15116225230158118975412622041871962468104; RequestId=4000027a-0003-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/instances/1.2.840.15116225230158118975412622041871962468104; ActionId=0ca191c2-f359-4344-8783-93986fb75414; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImage (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.133888132105150143162871541411731780159144; SeriesInstanceUid=1.2.840.19216622352892321110282110210111240391850; SopInstanceUid=1.2.840.15116225230158118975412622041871962468104
+  ======================================================================
+
+2026-05-25 11:11:41.1068 [INFO] [Polly] [TraceID: 00-194ef60b08db2b35cb2f2683c99c783b-dbfe0c3b1914e430-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/instances/1.2.840.15116225230158118975412622041871962468104 
+  Message: Execution attempt. Source: 'OracleResiliencePipeline/(null)/Retry', Operation Key: '', Result: 'NHI_ZFP_Viewer.ImageSources.ImageInfo', Handled: 'False', Attempt: '0', Execution Time: '12.5939'
+  Properties: PipelineName=OracleResiliencePipeline; PipelineInstance=(null); StrategyName=Retry; Result=NHI_ZFP_Viewer.ImageSources.ImageInfo; Handled=false; Attempt=0; ExecutionTimeMs=12.5939; EventId=3; EventName=ExecutionAttempt; RequestId=4000027a-0003-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/instances/1.2.840.15116225230158118975412622041871962468104; ActionId=0ca191c2-f359-4344-8783-93986fb75414; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImage (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.133888132105150143162871541411731780159144; SeriesInstanceUid=1.2.840.19216622352892321110282110210111240391850; SopInstanceUid=1.2.840.15116225230158118975412622041871962468104
+  ======================================================================
+
+2026-05-25 11:11:41.1253 [INFO] [AIRS.Core.Helpers.ZfpOracleDbHelper] [TraceID: 00-194ef60b08db2b35cb2f2683c99c783b-dbfe0c3b1914e430-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/instances/1.2.840.15116225230158118975412622041871962468104 
+  Message: GetImageKey = Archived/20250812/1.2.840.133888132105150143162871541411731780159144/1.2.840.19216622352892321110282110210111240391850/1.2.840.15116225230158118975412622041871962468104.dcm, 24 ms elapsed.
+  Properties: S3ObjectKey=Archived/20250812/1.2.840.133888132105150143162871541411731780159144/1.2.840.19216622352892321110282110210111240391850/1.2.840.15116225230158118975412622041871962468104.dcm; Elapsed=24; RequestId=4000027a-0003-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/instances/1.2.840.15116225230158118975412622041871962468104; ActionId=0ca191c2-f359-4344-8783-93986fb75414; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImage (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.133888132105150143162871541411731780159144; SeriesInstanceUid=1.2.840.19216622352892321110282110210111240391850; SopInstanceUid=1.2.840.15116225230158118975412622041871962468104
+  ======================================================================
+
+2026-05-25 11:11:41.1839 [INFO] [AIRS.Core.Common.LogForgingTools] [TraceID: 00-194ef60b08db2b35cb2f2683c99c783b-dbfe0c3b1914e430-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/instances/1.2.840.15116225230158118975412622041871962468104 
+  Message: 1779678701183 GetImage() 由 S3 取得 stream，耗時 50 ms.
+  Properties: RequestId=4000027a-0003-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/instances/1.2.840.15116225230158118975412622041871962468104; ActionId=0ca191c2-f359-4344-8783-93986fb75414; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImage (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.133888132105150143162871541411731780159144; SeriesInstanceUid=1.2.840.19216622352892321110282110210111240391850; SopInstanceUid=1.2.840.15116225230158118975412622041871962468104
+  ======================================================================
+
+2026-05-25 11:11:41.1839 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-194ef60b08db2b35cb2f2683c99c783b-dbfe0c3b1914e430-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/instances/1.2.840.15116225230158118975412622041871962468104 
+  Message: 成功從 S3 取得影像: 1.2.840.15116225230158118975412622041871962468104
+  Properties: RequestId=4000027a-0003-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.133888132105150143162871541411731780159144/series/1.2.840.19216622352892321110282110210111240391850/instances/1.2.840.15116225230158118975412622041871962468104; ActionId=0ca191c2-f359-4344-8783-93986fb75414; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImage (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.133888132105150143162871541411731780159144; SeriesInstanceUid=1.2.840.19216622352892321110282110210111240391850; SopInstanceUid=1.2.840.15116225230158118975412622041871962468104
+  ======================================================================
+
+2026-05-25 11:11:41.9120 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-88722c42a2f3d8a28dcce9a56f69255c-249b972aed91366d-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.232761451702923525417733227971231052812514/jpg 
+  Message: 成功轉換 DICOM 為 JPG: SOP Instance UID=1.2.840.232761451702923525417733227971231052812514
+  Properties: RequestId=400002fe-0003-fe00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.232761451702923525417733227971231052812514/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.1405011311801131732011012121012200126134; SeriesInstanceUid=1.2.840.51111141244381216847820799116149155151129; SopInstanceUid=1.2.840.232761451702923525417733227971231052812514
+  ======================================================================
+
+2026-05-25 11:11:41.9120 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-25428c86a8c80b6db076636a532ccf83-b830973e286e7008-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.3219370233171571652261152261706625011114738/jpg 
+  Message: 成功轉換 DICOM 為 JPG: SOP Instance UID=1.2.840.3219370233171571652261152261706625011114738
+  Properties: RequestId=400004a7-0005-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.1405011311801131732011012121012200126134/series/1.2.840.51111141244381216847820799116149155151129/instances/1.2.840.3219370233171571652261152261706625011114738/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.1405011311801131732011012121012200126134; SeriesInstanceUid=1.2.840.51111141244381216847820799116149155151129; SopInstanceUid=1.2.840.3219370233171571652261152261706625011114738
+  ======================================================================
+
+2026-05-25 11:11:41.9120 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-6d2fda6ea01672ed19e706ae31ab52aa-85b09dc117248d08-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.3417124205586658229153205402522644/jpg 
+  Message: 成功轉換 DICOM 為 JPG: SOP Instance UID=1.2.840.3417124205586658229153205402522644
+  Properties: RequestId=40000008-0001-fc00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.3417124205586658229153205402522644/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.6610321904118510815420318233761831142014; SeriesInstanceUid=1.2.840.185393732156165237212158241127106677643111; SopInstanceUid=1.2.840.3417124205586658229153205402522644
+  ======================================================================
+
+2026-05-25 11:11:41.9120 [INFO] [NHI_AI_MedReportViewerWebApi.Services.NhiPatientImageService] [TraceID: 00-b955c205cca17773543b9ad2f7e303d2-a09849ac2314e8e3-00]
+  Event: 0
+  Request: GET https://lcr-tp.nhi.gov.tw/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.1051457738253118922381479013141215320088/jpg 
+  Message: 成功轉換 DICOM 為 JPG: SOP Instance UID=1.2.840.1051457738253118922381479013141215320088
+  Properties: RequestId=40000290-0001-ff00-b63f-84710c7967bb; RequestPath=/api/NhiPatientImage/studies/1.2.840.6610321904118510815420318233761831142014/series/1.2.840.185393732156165237212158241127106677643111/instances/1.2.840.1051457738253118922381479013141215320088/jpg; ActionId=588ad473-5f35-429f-9506-c7bb3c9c1883; ActionName=NHI_AI_MedReportViewerWebApi.Controllers.NhiPatientImageController.GetImageScreenshotAsync (NHI-AI-MedReportViewerWebApi); StudyInstanceUid=1.2.840.6610321904118510815420318233761831142014; SeriesInstanceUid=1.2.840.185393732156165237212158241127106677643111; SopInstanceUid=1.2.840.1051457738253118922381479013141215320088
+  ======================================================================
+

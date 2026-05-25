@@ -1,0 +1,18 @@
+# ----------------------------------------------------------------------------
+# log-parse — git attribute rules
+# ----------------------------------------------------------------------------
+# Default: text files use LF line endings on checkout, regardless of platform.
+* text=auto eol=lf
+
+# Shell scripts MUST be LF — bash on Windows still tolerates LF but breaks on CRLF.
+*.sh    text eol=lf
+Makefile text eol=lf
+
+# Sample log fixtures are byte-exact and MUST NOT be line-ending-normalised,
+# otherwise test baselines drift after a Windows checkout.
+examples/sample-logs/** -text
+examples/sample-outputs/** -text
+
+# Documentation
+*.md       text eol=lf
+*.zh-TW.md text eol=lf

@@ -1,0 +1,12 @@
+2026-05-21 02:00:01.7056|eventId: 0|level: INFO|logger: Microsoft.Hosting.Lifetime|message: Application is shutting down...|
+2026-05-21 02:01:42.0292|eventId: 0|level: INFO|logger: Microsoft.Hosting.Lifetime|message: Application started. Press Ctrl+C to shut down.|
+2026-05-21 02:01:42.0292|eventId: 0|level: INFO|logger: Microsoft.Hosting.Lifetime|message: Hosting environment: Production|
+2026-05-21 02:01:42.0292|eventId: 0|level: INFO|logger: Microsoft.Hosting.Lifetime|message: Content root path: D:\apps\NHI-AI-MedReportViewerWebApi|
+2026-05-21 15:14:20.9942|eventId: 0|level: INFO|logger: Microsoft.Hosting.Lifetime|message: Application is shutting down...|
+2026-05-21 15:15:25.8740|eventId: 0|level: INFO|logger: Microsoft.Hosting.Lifetime|message: Application started. Press Ctrl+C to shut down.|
+2026-05-21 15:15:25.8740|eventId: 0|level: INFO|logger: Microsoft.Hosting.Lifetime|message: Hosting environment: Production|
+2026-05-21 15:15:25.8740|eventId: 0|level: INFO|logger: Microsoft.Hosting.Lifetime|message: Content root path: D:\apps\NHI-AI-MedReportViewerWebApi|
+2026-05-21 15:19:30.6255|eventId: 0|level: INFO|logger: Microsoft.Hosting.Lifetime|message: Application is shutting down...|
+2026-05-21 15:22:29.2711|eventId: 0|level: INFO|logger: Microsoft.Hosting.Lifetime|message: Application started. Press Ctrl+C to shut down.|
+2026-05-21 15:22:29.2711|eventId: 0|level: INFO|logger: Microsoft.Hosting.Lifetime|message: Hosting environment: Production|
+2026-05-21 15:22:29.2711|eventId: 0|level: INFO|logger: Microsoft.Hosting.Lifetime|message: Content root path: D:\apps\NHI-AI-MedReportViewerWebApi|

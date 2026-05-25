@@ -1,0 +1,410 @@
+2026-05-21 00:33:32.0466 | pid:1872 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 18968.1316ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18968.1316; EventId=103; EventName=HealthCheckEnd; RequestId=40000515-0001-fd00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-21 02:16:08.4818 | pid:1872 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 18972.0591ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18972.0591; EventId=103; EventName=HealthCheckEnd; RequestId=40000306-0000-fd00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-21 02:38:41.2877 | pid:1872 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 18960.3721ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18960.3721; EventId=103; EventName=HealthCheckEnd; RequestId=4000027d-0001-fc00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-21 03:04:39.7279 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Program] 
+  Event: 0
+  Message: CORS 已允許的來源：https://haima.intra.nhi.gov.tw:5000
+  Properties: 
+  ======================================================================
+
+2026-05-21 03:04:41.5350 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Program] 
+  Event: 0
+  Message: Exceptionless 設定完成
+  Properties: 
+  ======================================================================
+
+2026-05-21 03:04:41.5350 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Program] 
+  Event: 0
+  Message: ServerUrl: https://h30lhclogsvr.intra.nhi.gov.tw:8443
+  Properties: ServerUrl=https://h30lhclogsvr.intra.nhi.gov.tw:8443
+  ======================================================================
+
+2026-05-21 03:04:42.8924 | pid:2664 | [WARN] [Microsoft.AspNetCore.DataProtection.Repositories.EphemeralXmlRepository] 
+  Event: 50 (UsingInMemoryRepository)
+  Message: Using an in-memory repository. Keys will not be persisted to storage.
+  Properties: EventId=50; EventName=UsingInMemoryRepository
+  ======================================================================
+
+2026-05-21 03:04:42.8940 | pid:2664 | [WARN] [Microsoft.AspNetCore.DataProtection.KeyManagement.XmlKeyManager] 
+  Event: 59 (UsingEphemeralKeyRepository)
+  Message: Neither user profile nor HKLM registry available. Using an ephemeral key repository. Protected data will be unavailable when application exits.
+  Properties: EventId=59; EventName=UsingEphemeralKeyRepository
+  ======================================================================
+
+2026-05-21 03:04:42.9272 | pid:2664 | [WARN] [Microsoft.AspNetCore.DataProtection.KeyManagement.XmlKeyManager] 
+  Event: 35 (NoXMLEncryptorConfiguredKeyMayBePersistedToStorageInUnencryptedForm)
+  Message: No XML encryptor configured. Key {cee565f6-8d79-4caf-87cc-1a83b514509d} may be persisted to storage in unencrypted form.
+  Properties: KeyId=cee565f6-8d79-4caf-87cc-1a83b514509d; EventId=35; EventName=NoXMLEncryptorConfiguredKeyMayBePersistedToStorageInUnencryptedForm
+  ======================================================================
+
+2026-05-21 03:04:44.4793 | pid:2664 | [ERROR] [NHI_AI_LungCancerReportWebApi.Middleware.GlobalExceptionMiddleware] 
+  Event: 0
+  Message: 系統在處理請求時發生未預期例外：A task was canceled.
+  Properties: Message=A task was canceled.; RequestId=40000310-0003-f900-b63f-84710c7967bb; RequestPath=/health
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService.CheckHealthAsync(Func`2 predicate, CancellationToken cancellationToken)
+   at Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckMiddleware.InvokeAsync(HttpContext httpContext)
+   at Microsoft.AspNetCore.Authorization.AuthorizationMiddleware.Invoke(HttpContext context)
+   at Microsoft.AspNetCore.Authentication.AuthenticationMiddleware.Invoke(HttpContext context)
+   at NHI_AI_LungCancerReportWebApi.Middleware.RemoteIpRestrictMiddleware.InvokeAsync(HttpContext context) in C:\Users\Public\Documents\AI_AP\NHI-AI-LungCancerReportWebApi\NHI-AI-LungCancerReportWebApi\Middleware\RemoteIpRestrictMiddleware.cs:line 36
+   at NHI_AI_LungCancerReportWebApi.Middleware.GlobalExceptionMiddleware.Invoke(HttpContext context) in C:\Users\Public\Documents\AI_AP\NHI-AI-LungCancerReportWebApi\NHI-AI-LungCancerReportWebApi\Middleware\GlobalExceptionMiddleware.cs:line 20
+======================================================================
+
+2026-05-21 04:28:17.0340 | pid:2664 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 19170.9831ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=19170.9831; EventId=103; EventName=HealthCheckEnd; RequestId=40000431-0002-fc00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-21 06:28:34.9012 | pid:2664 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 18980.7929ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18980.7929; EventId=103; EventName=HealthCheckEnd; RequestId=4000043f-0002-fc00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-21 06:45:06.4556 | pid:2664 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 18974.9596ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18974.9596; EventId=103; EventName=HealthCheckEnd; RequestId=40000443-0002-fc00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-21 08:45:17.5053 | pid:2664 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 19000.9993ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=19000.9993; EventId=103; EventName=HealthCheckEnd; RequestId=400002b0-0001-fc00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-21 09:01:44.6120 | pid:2664 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 18971.1605ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18971.1605; EventId=103; EventName=HealthCheckEnd; RequestId=400002f2-0000-fb00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-21 11:29:56.2356 | pid:2664 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 18999.6948ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18999.6948; EventId=103; EventName=HealthCheckEnd; RequestId=400002ca-0001-fc00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-21 11:44:35.3308 | pid:2664 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 18972.5643ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18972.5643; EventId=103; EventName=HealthCheckEnd; RequestId=40000308-0000-fb00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-21 13:58:16.3839 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Services.UrlTokenIssuer] 
+  Event: 0
+  Message: 正在載入 PEM (初始化)。Issuer=https://auth.cohesion.internal/url-issuer, Audience=viewer-app, PemPath=Config/url-issuer-private.pem, Kid=UX-2025-02, TTL=60s
+  Properties: Phase=初始化; Issuer=https://auth.cohesion.internal/url-issuer; Audience=viewer-app; PemPath=Config/url-issuer-private.pem; Kid=UX-2025-02; TTL=60; RequestId=4000031c-0000-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi)
+  ======================================================================
+
+2026-05-21 13:58:16.5571 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Services.UrlTokenIssuer] 
+  Event: 0
+  Message: PEM 載入完成，簽章憑證 初始化成功。Kid=UX-2025-02, 存活秒數=60
+  Properties: Phase=初始化成功; Kid=UX-2025-02; TTL=60; RequestId=4000031c-0000-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi)
+  ======================================================================
+
+2026-05-21 13:58:16.5956 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Controllers.PatientController] 
+  Event: 0
+  Message: 開始處理報告 URL 產生請求
+  Properties: RequestId=4000031c-0000-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=B67EDA342C22CD73F88571E0E54CFE81; Birthday=19700404
+  ======================================================================
+
+2026-05-21 13:58:17.0186 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Services.UrlTokenIssuer] 
+  Event: 0
+  Message: 正在簽發 URL Token。存活秒數=60, 到期時間(UTC)=05/21/2026 05:59:17, kid=UX-2025-02
+  Properties: TTL=60; Exp=05/21/2026 05:59:17; Kid=UX-2025-02; RequestId=4000031c-0000-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=B67EDA342C22CD73F88571E0E54CFE81; Birthday=19700404
+  ======================================================================
+
+2026-05-21 13:58:17.0307 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Controllers.PatientController] 
+  Event: 0
+  Message: 成功產生報告 URL，有效期限 05/21/2026 05:59:17
+  Properties: ExpUtc=05/21/2026 05:59:17; RequestId=4000031c-0000-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=B67EDA342C22CD73F88571E0E54CFE81; Birthday=19700404
+  ======================================================================
+
+2026-05-21 14:03:25.0809 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Controllers.PatientController] 
+  Event: 0
+  Message: 開始處理報告 URL 產生請求
+  Properties: RequestId=4000031e-0000-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=B67EDA342C22CD73F88571E0E54CFE81; Birthday=19700404
+  ======================================================================
+
+2026-05-21 14:03:25.1077 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Services.UrlTokenIssuer] 
+  Event: 0
+  Message: 正在簽發 URL Token。存活秒數=60, 到期時間(UTC)=05/21/2026 06:04:25, kid=UX-2025-02
+  Properties: TTL=60; Exp=05/21/2026 06:04:25; Kid=UX-2025-02; RequestId=4000031e-0000-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=B67EDA342C22CD73F88571E0E54CFE81; Birthday=19700404
+  ======================================================================
+
+2026-05-21 14:03:25.1102 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Controllers.PatientController] 
+  Event: 0
+  Message: 成功產生報告 URL，有效期限 05/21/2026 06:04:25
+  Properties: ExpUtc=05/21/2026 06:04:25; RequestId=4000031e-0000-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=B67EDA342C22CD73F88571E0E54CFE81; Birthday=19700404
+  ======================================================================
+
+2026-05-21 14:04:30.5972 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Controllers.PatientController] 
+  Event: 0
+  Message: 開始處理報告 URL 產生請求
+  Properties: RequestId=4000031f-0000-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=B67EDA342C22CD73F88571E0E54CFE81; Birthday=19700404
+  ======================================================================
+
+2026-05-21 14:04:30.6175 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Services.UrlTokenIssuer] 
+  Event: 0
+  Message: 正在簽發 URL Token。存活秒數=60, 到期時間(UTC)=05/21/2026 06:05:30, kid=UX-2025-02
+  Properties: TTL=60; Exp=05/21/2026 06:05:30; Kid=UX-2025-02; RequestId=4000031f-0000-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=B67EDA342C22CD73F88571E0E54CFE81; Birthday=19700404
+  ======================================================================
+
+2026-05-21 14:04:30.6175 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Controllers.PatientController] 
+  Event: 0
+  Message: 成功產生報告 URL，有效期限 05/21/2026 06:05:30
+  Properties: ExpUtc=05/21/2026 06:05:30; RequestId=4000031f-0000-fb00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=B67EDA342C22CD73F88571E0E54CFE81; Birthday=19700404
+  ======================================================================
+
+2026-05-21 14:08:09.1029 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Controllers.PatientController] 
+  Event: 0
+  Message: 開始處理報告 URL 產生請求
+  Properties: RequestId=40000473-0002-fc00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712
+  ======================================================================
+
+2026-05-21 14:08:09.1302 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Services.UrlTokenIssuer] 
+  Event: 0
+  Message: 正在簽發 URL Token。存活秒數=60, 到期時間(UTC)=05/21/2026 06:09:09, kid=UX-2025-02
+  Properties: TTL=60; Exp=05/21/2026 06:09:09; Kid=UX-2025-02; RequestId=40000473-0002-fc00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712
+  ======================================================================
+
+2026-05-21 14:08:09.1316 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Controllers.PatientController] 
+  Event: 0
+  Message: 成功產生報告 URL，有效期限 05/21/2026 06:09:09
+  Properties: ExpUtc=05/21/2026 06:09:09; RequestId=40000473-0002-fc00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712
+  ======================================================================
+
+2026-05-21 14:56:37.2024 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Controllers.PatientController] 
+  Event: 0
+  Message: 開始處理報告 URL 產生請求
+  Properties: RequestId=40000316-0000-fd00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712
+  ======================================================================
+
+2026-05-21 14:56:37.2290 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Services.UrlTokenIssuer] 
+  Event: 0
+  Message: 正在簽發 URL Token。存活秒數=60, 到期時間(UTC)=05/21/2026 06:57:37, kid=UX-2025-02
+  Properties: TTL=60; Exp=05/21/2026 06:57:37; Kid=UX-2025-02; RequestId=40000316-0000-fd00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712
+  ======================================================================
+
+2026-05-21 14:56:37.2290 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Controllers.PatientController] 
+  Event: 0
+  Message: 成功產生報告 URL，有效期限 05/21/2026 06:57:37
+  Properties: ExpUtc=05/21/2026 06:57:37; RequestId=40000316-0000-fd00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712
+  ======================================================================
+
+2026-05-21 15:08:23.9481 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Controllers.PatientController] 
+  Event: 0
+  Message: 開始處理報告 URL 產生請求
+  Properties: RequestId=400002f2-0001-fc00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712
+  ======================================================================
+
+2026-05-21 15:08:23.9693 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Services.UrlTokenIssuer] 
+  Event: 0
+  Message: 正在簽發 URL Token。存活秒數=60, 到期時間(UTC)=05/21/2026 07:09:23, kid=UX-2025-02
+  Properties: TTL=60; Exp=05/21/2026 07:09:23; Kid=UX-2025-02; RequestId=400002f2-0001-fc00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712
+  ======================================================================
+
+2026-05-21 15:08:23.9693 | pid:2664 | [INFO] [NHI_AI_LungCancerReportWebApi.Controllers.PatientController] 
+  Event: 0
+  Message: 成功產生報告 URL，有效期限 05/21/2026 07:09:23
+  Properties: ExpUtc=05/21/2026 07:09:23; RequestId=400002f2-0001-fc00-b63f-84710c7967bb; RequestPath=/api/GetLungCancerReportURL; ActionId=69b6ce73-9f46-4eca-9825-8e1f9a9d1f79; ActionName=NHI_AI_LungCancerReportWebApi.Controllers.PatientController.GetLungCancerReportURL (NHI-AI-LungCancerReportWebApi); PatientId=EBD71A864A0F7E6A355827754B89259E; Birthday=19410712
+  ======================================================================
+
+2026-05-21 17:56:03.0562 | pid:2664 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 18974.1907ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18974.1907; EventId=103; EventName=HealthCheckEnd; RequestId=4000054b-0001-fd00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-21 18:13:07.5913 | pid:2664 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 18965.6548ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18965.6548; EventId=103; EventName=HealthCheckEnd; RequestId=4000054f-0001-fd00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-21 20:09:18.4429 | pid:2664 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 18981.0124ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18981.0124; EventId=103; EventName=HealthCheckEnd; RequestId=40000561-0001-fd00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-21 22:12:24.6521 | pid:2664 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 18961.0982ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18961.0982; EventId=103; EventName=HealthCheckEnd; RequestId=40000308-0001-fc00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+
+2026-05-21 22:26:12.6880 | pid:2664 | [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] 
+  Event: 103 (HealthCheckEnd)
+  Message: Health check OracleDB with status Unhealthy completed after 18986.2412ms with message '(null)'
+  Properties: HealthCheckName=OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=18986.2412; EventId=103; EventName=HealthCheckEnd; RequestId=40000310-0003-fa00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=OracleDB
+  --- Exception ---
+System.OperationCanceledException: ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+ ---> Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-01013: User requested cancel of current operation.
+https://docs.oracle.com/error-help/db/ora-01013/
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteScalarAsyncHelper(CancellationToken cancellationToken)
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+

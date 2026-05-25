@@ -1,0 +1,17 @@
+2026-05-24 02:03:09.5837 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-83d419d2526726ea2f79227c241e9116-dcfb8aa87ddc4450-00]
+  Event: 0
+  Request: GET https://10.21.3.35/health 
+  Message: Health check S3_儲存服務 with status Unhealthy completed after 422.9365ms with message '所有 S3 伺服器無法連線'
+  Properties: HealthCheckName=S3_儲存服務; HealthStatus=Unhealthy; ElapsedMilliseconds=422.9365; HealthCheckDescription=所有 S3 伺服器無法連線; EventId=103; EventName=HealthCheckEnd; RequestId=4000003c-0005-fd00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=S3_儲存服務
+  ======================================================================
+
+2026-05-24 02:03:09.6716 [ERROR] [Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService] [TraceID: 00-83d419d2526726ea2f79227c241e9116-dcfb8aa87ddc4450-00]
+  Event: 0
+  Request: GET https://10.21.3.35/health 
+  Message: Health check 正式_OracleDB with status Unhealthy completed after 513.9184ms with message '(null)'
+  Properties: HealthCheckName=正式_OracleDB; HealthStatus=Unhealthy; ElapsedMilliseconds=513.9184; EventId=103; EventName=HealthCheckEnd; RequestId=4000003c-0005-fd00-b63f-84710c7967bb; RequestPath=/health; HealthCheckName=正式_OracleDB
+  --- Exception ---
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at HealthChecks.Oracle.OracleHealthCheck.CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken) in /_/src/HealthChecks.Oracle/OracleHealthCheck.cs:line 34
+======================================================================
+

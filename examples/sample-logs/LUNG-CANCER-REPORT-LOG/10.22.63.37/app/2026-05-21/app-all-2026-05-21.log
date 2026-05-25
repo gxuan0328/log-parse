@@ -1,0 +1,4 @@
+2026-05-21 10:48:18.5962|pid:3088|eventId: 0|level: INFO|logger: NHI_AI_LungCancerReportWebApi.Services.UrlTokenIssuer|message: PEM 載入完成，簽章憑證 初始化成功。Kid=UX-2025-02, 存活秒數=60
+2026-05-21 10:48:18.6210|pid:3088|eventId: 0|level: INFO|logger: NHI_AI_LungCancerReportWebApi.Controllers.PatientController|message: 開始處理報告 URL 產生請求
+2026-05-21 10:48:18.7932|pid:3088|eventId: 0|level: INFO|logger: NHI_AI_LungCancerReportWebApi.Services.UrlTokenIssuer|message: 正在簽發 URL Token。存活秒數=60, 到期時間(UTC)=05/21/2026 02:49:18, kid=UX-2025-02
+2026-05-21 10:48:18.8270|pid:3088|eventId: 0|level: INFO|logger: NHI_AI_LungCancerReportWebApi.Controllers.PatientController|message: 成功產生報告 URL，有效期限 05/21/2026 02:49:18

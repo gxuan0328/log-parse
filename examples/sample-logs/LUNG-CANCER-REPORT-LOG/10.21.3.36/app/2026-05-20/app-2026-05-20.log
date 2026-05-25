@@ -1,0 +1,42 @@
+2026-05-20 02:04:40.2230 [INFO] [NHI_AI_MedReportViewerWebApi.Program] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: Allowed origin: http://localhost:5173
+  Properties: 
+  ======================================================================
+
+2026-05-20 02:04:40.3897 [INFO] [NHI_AI_MedReportViewerWebApi.Program] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: Authentication enabled with JWT Bearer tokens
+  Properties: 
+  ======================================================================
+
+2026-05-20 02:04:40.6751 [INFO] [NHI_AI_MedReportViewerWebApi.Program] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: Exceptionless 設定完成，ServerUrl: "https://h30lhclogsvr.intra.nhi.gov.tw:8443"
+  Properties: ServerUrl=https://h30lhclogsvr.intra.nhi.gov.tw:8443
+  ======================================================================
+
+2026-05-20 02:04:41.4550 [WARN] [Microsoft.AspNetCore.DataProtection.Repositories.EphemeralXmlRepository] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: Using an in-memory repository. Keys will not be persisted to storage.
+  Properties: EventId=50; EventName=UsingInMemoryRepository
+  ======================================================================
+
+2026-05-20 02:04:41.4646 [WARN] [Microsoft.AspNetCore.DataProtection.KeyManagement.XmlKeyManager] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: Neither user profile nor HKLM registry available. Using an ephemeral key repository. Protected data will be unavailable when application exits.
+  Properties: EventId=59; EventName=UsingEphemeralKeyRepository
+  ======================================================================
+
+2026-05-20 02:04:41.4887 [WARN] [Microsoft.AspNetCore.DataProtection.KeyManagement.XmlKeyManager] [TraceID: N/A]
+  Event: 0
+  Request: N/A N/A 
+  Message: No XML encryptor configured. Key {b1742851-df5c-4427-b174-02f65426e01f} may be persisted to storage in unencrypted form.
+  Properties: KeyId=b1742851-df5c-4427-b174-02f65426e01f; EventId=35; EventName=NoXMLEncryptorConfiguredKeyMayBePersistedToStorageInUnencryptedForm
+  ======================================================================
+
