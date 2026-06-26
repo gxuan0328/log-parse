@@ -9,9 +9,9 @@ Loaded when editing `tests/run_tests.sh` or any new test file.
 
 ## Single source of truth
 
-`tests/run_tests.sh` is the only regression suite. Currently 143 tests
-across six sections (A access · B iis · C errors · D log_report ·
-E validation · F user scenarios).
+`tests/run_tests.sh` is the only regression suite. Currently 146 tests
+across seven sections (A access · B iis · C errors · D log_report ·
+E validation · F user scenarios · G CJK alignment).
 
 Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
 
@@ -28,12 +28,13 @@ Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
 
 `<SectionLetter><2-digit-id>`, sequential within a section:
 
-- A01–A34  `analyze_access`
+- A01–A36  `analyze_access`
 - B01–B31  `analyze_iis`
-- C01–C21  `analyze_errors`
+- C01–C22  `analyze_errors`
 - D01–D26  `log_report`
 - E01–E18  validation paths
 - F01–F13  user scenarios
+- G        CJK display-width alignment (A35, A36, C22)
 
 When inserting tests, keep numbering monotonic — append new tests at the
 end of the relevant section, do not renumber existing ones.

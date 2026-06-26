@@ -359,7 +359,7 @@ analyze_server_errors() {
             echo ""
             printf "    %-28s  %-28s  %s\n" "Shutdown Time" "Started Time" "Downtime"
             printf "    %s\n" "------------------------------------------------------------------------"
-            gawk -F'\t' '
+            LC_ALL=C gawk -F'\t' "$FMT_AWK_WIDTH"'
                 $1 == "RESTART" {
                     delta = $4
                     if (delta ~ /^[0-9]+$/) {
@@ -369,10 +369,10 @@ analyze_server_errors() {
                     } else {
                         dur = "?"
                     }
-                    printf "    %-28s  %-28s  %s\n", $2, $3, dur
+                    printf "    %s  %s  %s\n", rpad($2, 28), rpad($3, 28), dur
                 }
                 $1 == "UNMATCHED" {
-                    printf "    %-28s  %-28s  %s\n", $2, "(無對應啟動記錄)", "?"
+                    printf "    %s  %s  %s\n", rpad($2, 28), rpad("(無對應啟動記錄)", 28), "?"
                 }
             ' "$restart_tsv"
         fi

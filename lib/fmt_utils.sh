@@ -18,6 +18,71 @@ FMT_SEP2='----------------------------------------------------------------------
 FMT_SEP3='  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -'
 
 # ---------------------------------------------------------------------------
+# Display-width engine (wcwidth convention) — SINGLE SOURCE OF TRUTH
+# ---------------------------------------------------------------------------
+# Reused by the bash KV helpers (via fmt_dwidth) and by inline awk programs
+# that print CJK labels. EVERY gawk invocation using these functions MUST run
+# under LC_ALL=C so length()/substr() operate on BYTES (UTF-8 is decoded
+# manually below). Wide (2-col) code points per Unicode East-Asian-Width;
+# everything else, INCLUDING U+2192 (arrow), U+25A0, U+25B6, is width 1.
+FMT_AWK_WIDTH='
+function _byte(c) {
+    if (_ORD_INIT != 1) { for (_k = 0; _k < 256; _k++) _ORD[sprintf("%c", _k)] = _k; _ORD_INIT = 1 }
+    return _ORD[c]
+}
+function _wide(cp) {
+    return ( (cp >= 4352   && cp <= 4447)   ||
+             (cp >= 11904  && cp <= 12350)  ||
+             (cp >= 12353  && cp <= 13311)  ||
+             (cp >= 13312  && cp <= 19903)  ||
+             (cp >= 19968  && cp <= 40959)  ||
+             (cp >= 40960  && cp <= 42191)  ||
+             (cp >= 44032  && cp <= 55203)  ||
+             (cp >= 63744  && cp <= 64255)  ||
+             (cp >= 65072  && cp <= 65103)  ||
+             (cp >= 65280  && cp <= 65376)  ||
+             (cp >= 65504  && cp <= 65510)  ||
+             (cp >= 131072 && cp <= 262141) )
+}
+function dwidth(s,    n, i, b, w, cp) {
+    n = length(s); w = 0
+    for (i = 1; i <= n; ) {
+        b = _byte(substr(s, i, 1))
+        if (b < 128) { w += 1; i += 1 }
+        else if (b >= 192 && b <= 223) {
+            cp = (b - 192) * 64 + (_byte(substr(s, i+1, 1)) - 128)
+            w += (_wide(cp) ? 2 : 1); i += 2
+        }
+        else if (b >= 224 && b <= 239) {
+            cp = (b - 224) * 4096 + (_byte(substr(s, i+1, 1)) - 128) * 64 + (_byte(substr(s, i+2, 1)) - 128)
+            w += (_wide(cp) ? 2 : 1); i += 3
+        }
+        else if (b >= 240 && b <= 247) {
+            cp = (b - 240) * 262144 + (_byte(substr(s, i+1, 1)) - 128) * 4096 + (_byte(substr(s, i+2, 1)) - 128) * 64 + (_byte(substr(s, i+3, 1)) - 128)
+            w += (_wide(cp) ? 2 : 1); i += 4
+        }
+        else { w += 1; i += 1 }
+    }
+    return w
+}
+function rpad(s, w,    pad) {
+    pad = w - dwidth(s); if (pad < 1) pad = 1
+    return s sprintf("%*s", pad, "")
+}
+'
+
+# fmt_dwidth STRING
+#   Purpose : Terminal display width (columns) of STRING under wcwidth rules.
+#   Args    : STRING — arbitrary UTF-8 text (may contain leading spaces).
+#   Output  : integer column count on stdout.
+#   Returns / Side effects : none.
+#   Notes   : Runs gawk under LC_ALL=C so dwidth() decodes UTF-8 from bytes.
+#             BEGIN-only program reads no input (no stdin wait).
+fmt_dwidth() {
+    LC_ALL=C gawk -v s="$1" "${FMT_AWK_WIDTH}"'BEGIN { print dwidth(s) }'
+}
+
+# ---------------------------------------------------------------------------
 # Section headers
 # ---------------------------------------------------------------------------
 
@@ -50,20 +115,37 @@ fmt_sep3() { echo "$FMT_SEP3"; }
 # ---------------------------------------------------------------------------
 
 # fmt_kv KEY VALUE [INDENT]
-#   Purpose : Emit "  <KEY padded to 40><VALUE>".
-#   Args    : KEY — label; VALUE — string (or number); INDENT — leading
-#             spaces (default 2).
+#   Purpose : Emit "  <KEY padded to 40 display columns><VALUE>".
+#   Args    : KEY — label (may contain CJK; display width measured via
+#             FMT_AWK_WIDTH engine); VALUE — string (or number); INDENT —
+#             leading spaces (default 2).
+#   Output  : one line on stdout.
+#   Returns / Side effects : forks one gawk per call (acceptable for the
+#             ~10-20 KV rows per interactive report).
+#   Notes   : For pure-ASCII keys shorter than 40 chars the output is
+#             byte-identical to the old "%-40s" form.
 fmt_kv() {
     local key="$1" val="$2" indent="${3:-2}"
-    printf "%${indent}s%-40s%s\n" "" "$key" "$val"
+    local pad=$(( 40 - $(fmt_dwidth "$key") ))
+    if (( pad < 1 )); then pad=1; fi
+    printf "%${indent}s%s%*s%s\n" "" "$key" "$pad" "" "$val"
 }
 
 # fmt_kv_color KEY VALUE COLOR [INDENT]
 #   Purpose : Same as fmt_kv but the value is wrapped in COLOR…RESET so the
 #             eye can land on critical numbers (e.g. red 5xx counts).
+#   Args    : KEY — label (CJK-safe; display width via FMT_AWK_WIDTH);
+#             VALUE — string; COLOR — ANSI escape (e.g. $C_RED); INDENT —
+#             leading spaces (default 2).
+#   Output  : one line on stdout.
+#   Returns / Side effects : forks one gawk per call.
+#   Notes   : For pure-ASCII keys shorter than 40 chars the output is
+#             byte-identical to the old "%-40s" form.
 fmt_kv_color() {
     local key="$1" val="$2" color="$3" indent="${4:-2}"
-    printf "%${indent}s%-40s%b%s%b\n" "" "$key" "$color" "$val" "$C_RESET"
+    local pad=$(( 40 - $(fmt_dwidth "$key") ))
+    if (( pad < 1 )); then pad=1; fi
+    printf "%${indent}s%s%*s%b%s%b\n" "" "$key" "$pad" "" "$color" "$val" "$C_RESET"
 }
 
 # ---------------------------------------------------------------------------

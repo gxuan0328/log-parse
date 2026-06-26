@@ -380,7 +380,7 @@ render_text_block() {
 
         # Delta statistics sub-block (separate pass; DELTA=$4, VERIFY=$5)
         echo ""
-        gawk -F'\t' '
+        LC_ALL=C gawk -F'\t' "$FMT_AWK_WIDTH"'
             $1 == "NORMAL" && $4 != "N/A" && $4 != "-" {
                 d = $4 + 0
                 if (d >= 0) {
@@ -391,10 +391,10 @@ render_text_block() {
             }
             END {
                 if (count > 0) {
-                    printf "    %-40s%d\n",   "驗證筆數 (有效時間差)", count
-                    printf "    %-40s%.1fs\n", "平均 API→APP 時間差",  sum/count
-                    printf "    %-40s%.1fs\n", "最短時間差",            min
-                    printf "    %-40s%.1fs\n", "最長時間差",            max
+                    printf "    %s%d\n",    rpad("驗證筆數 (有效時間差)", 40), count
+                    printf "    %s%.1fs\n", rpad("平均 API→APP 時間差",   40), sum/count
+                    printf "    %s%.1fs\n", rpad("最短時間差",             40), min
+                    printf "    %s%.1fs\n", rpad("最長時間差",             40), max
                 }
             }
         ' "$result_sorted"
@@ -421,13 +421,13 @@ render_text_block() {
         ' "$result_sorted"
 
         # Verify summary sub-block (separate pass; VERIFY=$5)
-        gawk -F'\t' '
+        LC_ALL=C gawk -F'\t' "$FMT_AWK_WIDTH"'
             $1 == "ORPHAN" {
                 if ($5 == "OK") ok++
                 else            fail++
             }
             END {
-                printf "\n    %-40s%d (成功) / %d (失敗)\n", "ORPHAN 驗證結果", ok+0, fail+0
+                printf "\n    %s%d (成功) / %d (失敗)\n", rpad("ORPHAN 驗證結果", 40), ok+0, fail+0
                 if (ok > 0)   printf "    >> [WARN] 存在可能來自其他區域或重播的有效 Token\n"
                 if (fail > 0) printf "    >> [NOTE] 存在無效/過期 Token 的存取嘗試\n"
             }

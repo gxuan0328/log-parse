@@ -754,6 +754,72 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Section G — CJK display-width alignment (wcwidth)
+# Verifies that KV blocks and stat blocks pad CJK labels by display width,
+# not byte count, so value columns align vertically in the terminal.
+#
+# Uses the PRODUCTION FMT_AWK_WIDTH engine sourced from lib/fmt_utils.sh
+# (single source of truth — do NOT re-implement wcwidth here).
+#
+# Date constraint for C22: --date 2026-05-25 --region taipei has
+# Restart count=0; only UNMATCHED rows exist.  Their Downtime col is the
+# single-token "?".  RESTART rows' "Xm Ys" Downtime is multi-token and
+# would break the strip-last-token logic in _aligncols.
+# ─────────────────────────────────────────────────────────────────────────────
+
+section "G  CJK display-width alignment (wcwidth)"
+
+# shellcheck source=/dev/null
+source "${PROJECT_DIR}/lib/common.sh"
+# shellcheck source=/dev/null
+source "${PROJECT_DIR}/lib/fmt_utils.sh"
+
+# _aligncols — pipe line(s) through this to count DISTINCT value-start columns.
+# Strips the trailing value token (final run of non-space) from each line,
+# KEEPING the pad spaces, then measures dwidth of the remaining prefix under
+# LC_ALL=C.  An aligned block produces exactly one distinct width => prints "1".
+_aligncols() {
+    LC_ALL=C gawk "$FMT_AWK_WIDTH"'
+        { line = $0; sub(/[^ \t]+[ \t]*$/, "", line); seen[dwidth(line)] = 1 }
+        END { print length(seen) }
+    '
+}
+
+# A35: access 摘要 KV 區塊數值欄對齊
+# Baseline: taipei 2026-05-21 Total=6 NORMAL=1 ORPHAN=5 UNVERIFIED=0 -> 4 KV rows.
+# The grep pattern also matches the h3 header lines "■ 正常流程 (NORMAL)…" and
+# "■ 非正常流程 (ORPHAN)…"; exclude them with | grep -v '■' (critique fix HIGH).
+out=$(NO_COLOR=1 bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei)
+block=$(printf '%s\n' "$out" | grep -E 'correlation records|正常流程|無對應API|API未被使用' \
+    | grep -v '■')
+_eq A35 "access 摘要 KV 區塊數值欄對齊 (display-col 一致)" \
+    "$(printf '%s' "$block" | _aligncols)" "1"
+
+# A36: access delta-stats 區塊數值欄對齊
+# Baseline: taipei 2026-05-21 has 1 NORMAL record -> delta-stats block renders (4 rows).
+# Values are single-token integers or floats — safe for _aligncols.
+block=$(printf '%s\n' "$out" | grep -E '驗證筆數|平均 API|最短時間差|最長時間差')
+_eq A36 "access delta-stats 區塊數值欄對齊 (display-col 一致)" \
+    "$(printf '%s' "$block" | _aligncols)" "1"
+
+# C22: errors 重啟表 (含 UNMATCHED CJK 列) 第三欄對齊
+# Use --date 2026-05-25 --region taipei: Restart count=0 => only UNMATCHED rows exist.
+# Extract header + UNMATCHED-only rows (col3 = single-token "?") to avoid the
+# multi-token "Xm Ys" Downtime values on RESTART rows that break _aligncols.
+out=$(NO_COLOR=1 bash "$ERRORS" --log-dir "$LOG_DIR" --date 2026-05-25 --region taipei)
+block=$(printf '%s\n' "$out" | awk '
+    /Shutdown Time .* Downtime/ { grab=1; print; next }
+    grab && /無對應啟動記錄/    { print }
+    grab && /^[[:space:]]*$/    { grab=0 }
+')
+if ! printf '%s\n' "$block" | grep -qF "無對應啟動記錄" 2>/dev/null; then
+    _fail "C22  errors 重啟表 UNMATCHED CJK 列存在 (non-vacuous guard failed: 輸出無 CJK 行)"
+else
+    _eq C22 "errors 重啟表 (含 UNMATCHED CJK 列) 第三欄對齊" \
+        "$(printf '%s' "$block" | _aligncols)" "1"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────────────────────────────────────
 

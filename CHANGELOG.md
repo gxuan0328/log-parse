@@ -78,6 +78,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   csv).
 
 ### Fixed
+- CJK display-width alignment for KV/stat/restart rendering: `fmt_kv` /
+  `fmt_kv_color` now compute pad via `FMT_AWK_WIDTH` (wcwidth engine in
+  `lib/fmt_utils.sh`) instead of byte-count `%-40s`; delta-stats and ORPHAN
+  verify-summary inline awk in `analyze_access.sh` and restart/UNMATCHED table
+  in `analyze_errors.sh` likewise use `rpad(…,N)` under `LC_ALL=C`. CJK and
+  ASCII labels now align in the terminal. Tests: 143 -> 146 (A35, A36, C22).
 - `analyze_errors` `--top 0`: previously evaluated `limit = (n<top_n)?n:top_n`
   which resolved to `0` when `top_n=0`, emitting no patterns. `ERROR_AWK` now
   uses `limit = (top_n==0)?n:(n<top_n?n:top_n)` so `--top 0` correctly emits

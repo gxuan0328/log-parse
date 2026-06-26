@@ -587,6 +587,10 @@ combined logs, per-region join inputs, restart event TSVs) live there.
   require independent `WORK_TMPDIR`s per child and is currently not
   warranted at the observed scale.
 
+### 4.6 CJK-aware rendering
+
+KV rows and stat blocks are padded by **display width** (wcwidth: CJK ideographs = 2 columns) via the `FMT_AWK_WIDTH` engine in `lib/fmt_utils.sh`, so CJK and ASCII labels align correctly in the terminal.
+
 ---
 
 ## 5. Extensibility
