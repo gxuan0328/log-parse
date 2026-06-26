@@ -166,10 +166,10 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
     200        480
     204        3
 
-    Count  Endpoint
-    -------------------------------------------------------------------
-    472    /health
-    11     /api/GetLungCancerReportURL
+    Count  Avg(s)   Endpoint
+    ----------------------------------------------------------------------------
+    472    0.06     /health
+    11     0.10     /api/GetLungCancerReportURL
 
     Count  Client IP          % of total
     ------------------------------------------
@@ -177,6 +177,11 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
     6      192.168.139.110      1.2%
     5      10.22.63.37          1.0%
 ```
+
+端點表之 **`Avg(s)`** 欄位標示各（DICOM 分組後）端點之平均回應時間
+（秒，四捨五入至小數兩位；IIS 之 `time-taken` 以毫秒記錄）。慢速的
+邏輯端點（如 DICOM 影像取得）會明顯凸顯於次秒級的靜態資源與
+`/health` 之上。
 
 末段 **Client IP 清單** 列舉每個至少發出一筆請求之客戶端 IP，依請求
 數降冪排序並標示其占 total 之百分比。可用於檢視健康檢查器是否主導

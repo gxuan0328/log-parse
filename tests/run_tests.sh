@@ -276,6 +276,19 @@ _gte B18 "Client IP 計數列數 >= 9 (三台伺服器各列出多 IP)"  "$ip_li
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung 2>/dev/null); rc=$?
 _has B19 "taichung Client IP 清單存在"  "$out" "Count  Client IP"
 
+# B10: Endpoint 平均回應時間欄位（新功能）
+# Baselines (taipei 2026-05-21):
+#   10.22.63.37 /health  : count=472  avg=0.06s   (次秒級邊界)
+#   10.21.3.35  series   : count=146  avg=1.03s   (慢速 DICOM 影像端點)
+out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/null)
+_has B20 "Endpoint 表含 Avg(s) 平均回應時間欄位表頭"  "$out" "Avg(s)"
+# 慢速 DICOM series 端點：第 2 欄為平均秒數，四捨五入至小數兩位
+series_avg=$(printf '%s\n' "$out" | gawk '$1=="146" && /series\/\{uid\}\/\.\.\./ {print $2; exit}')
+_eq  B21 "DICOM series 端點平均回應時間=1.03s"  "$series_avg"  "1.03"
+# 次秒級端點 /health 仍以兩位小數呈現（邊界：avg < 1s 不退化為整數/空白）
+health_avg=$(printf '%s\n' "$out" | gawk '$3=="/health" {print $2; exit}')
+_eq  B22 "/health 端點平均回應時間=0.06s (兩位小數)"  "$health_avg"  "0.06"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Section C — analyze_errors.sh  應用程式錯誤與重啟事件
 # Baselines (2026-05-21):

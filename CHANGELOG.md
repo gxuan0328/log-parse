@@ -52,6 +52,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `tests/run_tests.sh`: five new baselines (B15–B19) covering header,
   percentage column, primary-client presence, row-count expectation, and
   per-region rendering. Total test count: 103 → 108.
+- `analyze_iis`: the top-endpoint table gains an **`Avg(s)`** column —
+  each (DICOM-grouped) endpoint's mean response time in seconds, rounded
+  to two decimals (`time-taken` is logged in ms). Surfaces slow logical
+  endpoints (e.g. DICOM image retrieval at ~1.0s) against sub-second
+  static assets and `/health`.
+- `IIS_AWK` accumulates `ep_time_ms[]` per endpoint and emits the mean as
+  a 4th field on each `ENDPOINT` record (`ENDPOINT\t<uri>\t<count>\t<avg_sec>`).
+- `tests/run_tests.sh`: three new baselines (B20–B22) covering the column
+  header, a slow DICOM-endpoint mean (1.03s), and a sub-second boundary
+  (`/health` = 0.06s). Total test count: 108 → 111.
 
 ### Changed
 - `client_ips[]` in `IIS_AWK` is now a counter (`++`) rather than a set
@@ -62,6 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rationale, and its empty-input semantics.
 - `examples/sample-outputs/iis_*.txt` and dependent `log_report_*.txt`
   regenerated from the bundled dataset.
+- `docs/design.md`, `docs/design.zh-TW.md`, `docs/usage.md`,
+  `docs/usage.zh-TW.md`, and `examples/sample-outputs/README*.md` updated
+  to document the endpoint `Avg(s)` column; `iis_taipei_2026-05-21.txt`,
+  `iis_taichung_2026-05-21.txt`, `iis_all_slow3000_2026-05-21.txt`, and
+  `log_report_full_2026-05-21.txt` regenerated with `NO_COLOR=1`.
 
 ## [1.0.0] — 2026-05-25
 

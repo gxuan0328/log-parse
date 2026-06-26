@@ -169,10 +169,10 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
     200        480
     204        3
 
-    Count  Endpoint
-    -------------------------------------------------------------------
-    472    /health
-    11     /api/GetLungCancerReportURL
+    Count  Avg(s)   Endpoint
+    ----------------------------------------------------------------------------
+    472    0.06     /health
+    11     0.10     /api/GetLungCancerReportURL
 
     Count  Client IP          % of total
     ------------------------------------------
@@ -180,6 +180,11 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
     6      192.168.139.110      1.2%
     5      10.22.63.37          1.0%
 ```
+
+The endpoint table's **`Avg(s)`** column reports each (DICOM-grouped)
+endpoint's mean response time in seconds (rounded to 2 decimals; IIS logs
+`time-taken` in milliseconds). Slow logical endpoints — e.g. DICOM image
+retrieval — stand out against sub-second static assets and `/health`.
 
 The trailing **client-IP roster** lists every distinct client IP that
 issued at least one request, ranked by request count, with the share of

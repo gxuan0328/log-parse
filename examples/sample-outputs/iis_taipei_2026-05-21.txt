@@ -22,10 +22,10 @@
     200        480
     204        3
 
-    Count  Endpoint                                               
-    -------------------------------------------------------------------
-    472    /health
-    11     /api/GetLungCancerReportURL
+    Count  Avg(s)   Endpoint                                               
+    ----------------------------------------------------------------------------
+    472    0.06     /health
+    11     0.10     /api/GetLungCancerReportURL
 
     Count  Client IP          % of total
     ------------------------------------------
@@ -49,23 +49,23 @@
     304        13
     302        3
 
-    Count  Endpoint                                               
-    -------------------------------------------------------------------
-    470    /health
-    146    /api/NhiPatientImage/studies/{uid}/series/{uid}/...
-    67     /api/DigestSummary/hospital
-    15     /api/NhiPatientImage/studies/{uid}/series-uid
-    6      /api/DigestSummary/key-images
-    4      /api/registration/get-target-instance
-    4      /api/digestsummary
-    3      /reports/view
-    3      /assets/react-vendor-CWOlZk79.js
-    3      /assets/index-Cj5Ra9vo.css
-    3      /assets/index-BhWnmaLL.js
-    3      /assets/cornerstone-t3NNYA1R.js
-    2      /expired
-    2      /assets/decodeImageFrameWorker-Be17YydA.js
-    2      /assets/ComparePanel-C-LOqQpI.js
+    Count  Avg(s)   Endpoint                                               
+    ----------------------------------------------------------------------------
+    470    0.10     /health
+    146    1.03     /api/NhiPatientImage/studies/{uid}/series/{uid}/...
+    67     0.08     /api/DigestSummary/hospital
+    15     0.16     /api/NhiPatientImage/studies/{uid}/series-uid
+    6      0.06     /api/DigestSummary/key-images
+    4      0.15     /api/registration/get-target-instance
+    4      0.90     /api/digestsummary
+    3      1.59     /reports/view
+    3      0.01     /assets/react-vendor-CWOlZk79.js
+    3      0.01     /assets/index-Cj5Ra9vo.css
+    3      0.02     /assets/index-BhWnmaLL.js
+    3      0.03     /assets/cornerstone-t3NNYA1R.js
+    2      0.01     /expired
+    2      0.01     /assets/decodeImageFrameWorker-Be17YydA.js
+    2      0.01     /assets/ComparePanel-C-LOqQpI.js
 
     Count  Client IP          % of total
     ------------------------------------------
@@ -89,23 +89,23 @@
     304        13
     302        3
 
-    Count  Endpoint                                               
-    -------------------------------------------------------------------
-    472    /health
-    142    /api/NhiPatientImage/studies/{uid}/series/{uid}/...
-    61     /api/DigestSummary/hospital
-    15     /api/NhiPatientImage/studies/{uid}/series-uid
-    5      /api/DigestSummary/key-images
-    4      /api/registration/get-target-instance
-    3      /reports/view
-    3      /assets/react-vendor-CWOlZk79.js
-    3      /assets/openjpegwasm_decode-C4nnCcr6.wasm
-    3      /assets/index-Cj5Ra9vo.css
-    3      /assets/index-BhWnmaLL.js
-    3      /assets/decodeImageFrameWorker-Be17YydA.js
-    3      /assets/cornerstone-t3NNYA1R.js
-    3      /api/digestsummary
-    3      /
+    Count  Avg(s)   Endpoint                                               
+    ----------------------------------------------------------------------------
+    472    0.11     /health
+    142    1.37     /api/NhiPatientImage/studies/{uid}/series/{uid}/...
+    61     0.12     /api/DigestSummary/hospital
+    15     0.10     /api/NhiPatientImage/studies/{uid}/series-uid
+    5      0.07     /api/DigestSummary/key-images
+    4      0.11     /api/registration/get-target-instance
+    3      0.21     /reports/view
+    3      0.02     /assets/react-vendor-CWOlZk79.js
+    3      0.41     /assets/openjpegwasm_decode-C4nnCcr6.wasm
+    3      0.02     /assets/index-Cj5Ra9vo.css
+    3      0.03     /assets/index-BhWnmaLL.js
+    3      0.01     /assets/decodeImageFrameWorker-Be17YydA.js
+    3      0.04     /assets/cornerstone-t3NNYA1R.js
+    3      0.76     /api/digestsummary
+    3      0.02     /
 
     Count  Client IP          % of total
     ------------------------------------------
@@ -114,6 +114,6 @@
     49     192.168.139.110      6.7%
 
 ========================================================================
-  Generated: 2026-05-25 18:19:00
+  Generated: 2026-06-26 15:39:18
 ========================================================================
 

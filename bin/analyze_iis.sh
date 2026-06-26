@@ -109,7 +109,9 @@ IIS_AWK='
 #            REDIRECT\t<n>
 #            UNIQUE_IPS\t<n>
 #            STATUS\t<status>\t<count>     (one row per observed status)
-#            ENDPOINT\t<uri>\t<count>      (top 15, count desc)
+#            ENDPOINT\t<uri>\t<count>\t<avg_sec>  (top 15, count desc;
+#                                            avg_sec = mean time-taken in
+#                                            seconds, 2 dp)
 #            CLIENT_IP\t<ip>\t<count>      (one row per unique client IP,
 #                                            count desc; "-" excluded)
 # ----------------------------------------------------------------------------
@@ -152,6 +154,7 @@ NF < 17 { next }
         ep = "/api/NhiPatientImage/studies/{uid}/instances/{uid}"
     }
     ep_count[ep]++
+    ep_time_ms[ep] += ttms   # accumulate time-taken for the per-endpoint mean
 
     # Severity / health counters. Note: health-check 503s are deliberately
     # split out from the generic 5xx bucket because they signal a dependency
@@ -174,10 +177,15 @@ END {
     for (s in status_count)
         printf "STATUS\t%d\t%d\n", s, status_count[s]
 
-    # Top-15 endpoints by request count (descending).
+    # Top-15 endpoints by request count (descending). The 4th field is the
+    # mean response time in SECONDS (time-taken is logged in ms), rounded to
+    # two decimals by printf — surfaces slow logical endpoints at a glance.
     n = asorti(ep_count, ep_sorted, "@val_num_desc")
-    for (i = 1; i <= (n < 15 ? n : 15); i++)
-        printf "ENDPOINT\t%s\t%d\n", ep_sorted[i], ep_count[ep_sorted[i]]
+    for (i = 1; i <= (n < 15 ? n : 15); i++) {
+        e = ep_sorted[i]
+        avg_sec = (ep_count[e] > 0) ? (ep_time_ms[e] / ep_count[e] / 1000.0) : 0
+        printf "ENDPOINT\t%s\t%d\t%.2f\n", e, ep_count[e], avg_sec
+    }
 
     # All unique client IPs with request counts, sorted descending.
     # No top-N cap: under normal medical operations the cardinality stays
@@ -230,9 +238,9 @@ analyze_server_iis() {
     echo "$stats" | sort -t$'\t' -k3 -rn | gawk -F'\t' '$1=="STATUS" {printf "    %-10s %s\n", $2, $3}'
 
     echo ""
-    printf "    %-6s %-55s\n" "Count" "Endpoint"
-    printf "    %s\n" "-------------------------------------------------------------------"
-    echo "$stats" | gawk -F'\t' '$1=="ENDPOINT" {printf "    %-6d %s\n", $3, $2}'
+    printf "    %-6s %-8s %-55s\n" "Count" "Avg(s)" "Endpoint"
+    printf "    %s\n" "----------------------------------------------------------------------------"
+    echo "$stats" | gawk -F'\t' '$1=="ENDPOINT" {printf "    %-6d %-8.2f %s\n", $3, $4, $2}'
 
     # Unique client IP roster — every IP that issued at least one request,
     # ranked by request count. The "% of total" column helps spot whether

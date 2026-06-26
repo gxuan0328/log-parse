@@ -9,7 +9,7 @@ Loaded when editing `tests/run_tests.sh` or any new test file.
 
 ## Single source of truth
 
-`tests/run_tests.sh` is the only regression suite. Currently 108 tests
+`tests/run_tests.sh` is the only regression suite. Currently 111 tests
 across six sections (A access · B iis · C errors · D log_report ·
 E validation · F user scenarios).
 
@@ -29,7 +29,7 @@ Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
 `<SectionLetter><2-digit-id>`, sequential within a section:
 
 - A01–A27  `analyze_access`
-- B01–B19  `analyze_iis`
+- B01–B22  `analyze_iis`
 - C01–C17  `analyze_errors`
 - D01–D21  `log_report`
 - E01–E12  validation paths

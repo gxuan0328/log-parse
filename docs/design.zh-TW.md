@@ -218,7 +218,7 @@ DELTA_SEC, VERIFY_STATUS`。
 | `slow`            | `time-taken >= --slow-ms` 且 `uri != /health` 之列數                                |
 | `redirect`        | `status == 302` 之列數                                                              |
 | `client_ips`      | `c-ip → 請求數` 之 hash；`length()` 得唯一 IP 數，迭代後產出 IP 清單。`-` 排除。   |
-| `top endpoints`   | 端點計數 Top 15（DICOM 分組後）                                                     |
+| `top endpoints`   | 端點計數 Top 15（DICOM 分組後），各端點附其**平均回應時間**（`time-taken` 以毫秒記錄，換算為秒並四捨五入至 2 位小數） |
 | `client_ip_roster`| 每個唯一 `c-ip` 及其請求數與占 `total` 之百分比                                     |
 
 健康檢查 503 之所以**獨立計數**而非合併進 5xx，是因為它代表相依服務
@@ -233,7 +233,8 @@ Client IP 清單**刻意不設上限**：醫療營運下單台伺服器的客戶
 每個所選區域之每台伺服器：
 1. 頂部計數列（`Total`、`Unique IPs`、`5xx`、`Health 503`、`Slow`）。
 2. 狀態碼表（按計數降冪）。
-3. Top-15 端點表（按計數降冪）。
+3. Top-15 端點表（按計數降冪），含 `Avg(s)` 欄位，標示各端點之
+   平均回應時間（秒，四捨五入至小數兩位）。
 4. Client IP 清單 — 列舉每個唯一 client IP 之請求數與占 `total` 之
    百分比（按請求數降冪）；當所有列之 `c-ip = -`（無可解析客戶端）時
    為空。
