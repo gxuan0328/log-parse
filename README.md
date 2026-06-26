@@ -61,9 +61,9 @@ bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-L
 bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
     --from 2026-05-18 --to 2026-05-25 --output-dir ./reports
 
-# Performance audit — slow IIS requests (>3s)
+# Performance audit — slow IIS requests (API >3s, APP >3s)
 bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --slow-ms 3000
+    --slow-api-ms 3000 --slow-app-ms 3000
 ```
 
 ---

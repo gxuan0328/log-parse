@@ -29,6 +29,16 @@ bash "${PROJECT_DIR}/bin/analyze_access.sh" \
 | awk -F'\t' 'NR == 1 || $2 == "ORPHAN"' \
 > "${REPORT_DIR}/orphans_${REGION}_${STAMP}.tsv"
 
+# Host-agnostic merged ORPHAN scan: correlate tokens across ALL regions in a
+# single pass (--merge requires --region all).  Tokens seen in both taipei and
+# taichung are classified NORMAL here; true cross-region replays surface as
+# ORPHAN/UNVERIFIED and are written to a dedicated TSV for SIEM ingestion.
+bash "${PROJECT_DIR}/bin/analyze_access.sh" \
+    --log-dir "$LOG_DIR" --region all --days 7 --format tsv --merge \
+| awk -F'\t' 'NR == 1 || $1 == "ORPHAN"' \
+> "${REPORT_DIR}/orphans_merged_${STAMP}.tsv"
+
 echo "[OK] Security scan written to ${REPORT_DIR}"
 echo "      Text : access_${REGION}_${STAMP}.txt"
 echo "      TSV  : orphans_${REGION}_${STAMP}.tsv"
+echo "      TSV  : orphans_merged_${STAMP}.tsv  (merged, all regions)"

@@ -144,3 +144,27 @@ join_arr() {
     local IFS="$delim"
     echo "$*"
 }
+
+# ---------------------------------------------------------------------------
+# Fail-fast validators
+# ---------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# Purpose : Fail-fast guard that VALUE is a non-negative integer (0 allowed).
+# Args    : $1 NAME (flag label for the message), $2 VALUE (candidate).
+# Output  : nothing on success.
+# Returns : never returns on failure — exits via die().
+# Notes   : Use for --top / --days / --slow-*-ms.
+# ----------------------------------------------------------------------------
+assert_uint() { case "$2" in ''|*[!0-9]*) die "$1 must be a non-negative integer: '$2'";; esac; }
+
+# ----------------------------------------------------------------------------
+# Purpose : Fail-fast guard that VALUE is in the ALLOWED set.
+# Args    : $1 NAME, $2 VALUE, $3.. ALLOWED tokens.
+# Output  : nothing on success.
+# Returns : never returns on failure — exits via die().
+# Notes   : Use for --format text|tsv|csv.
+# ----------------------------------------------------------------------------
+assert_enum() { local name="$1" val="$2"; shift 2; local a
+                for a in "$@"; do if [[ "$val" == "$a" ]]; then return 0; fi; done
+                die "$name must be one of: $* (got '$val')"; }

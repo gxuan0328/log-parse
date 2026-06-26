@@ -34,7 +34,8 @@ OPT_DAYS=7
 OPT_FROM="" OPT_TO="" OPT_DATE=""
 OPT_REGION="all"
 OPT_OUTPUT=""
-OPT_TOP_ERRORS=10
+OPT_FORMAT="text"
+OPT_TOP=10
 
 usage() {
     cat <<EOF
@@ -44,39 +45,67 @@ Analyze application error logs and lifecycle events.
 Reports OracleDB health failures, top error patterns, and restart events.
 
 Options:
-  --log-dir PATH      Root log directory [required]
-  --days N            Analyze last N days from today (default: $OPT_DAYS)
-  --from YYYY-MM-DD   Start date (inclusive)
-  --to   YYYY-MM-DD   End date   (inclusive)
-  --date YYYY-MM-DD   Single date analysis
-  --region REGION     Filter: taipei | taichung | all (default: all)
-  --top N             Show top N error patterns (default: $OPT_TOP_ERRORS)
-  --output FILE       Write report to file (default: stdout)
-  --conf FILE         Regions config file
+  --log-dir PATH      [required] Root log directory
+  --days N            integer >= 1              (default: $OPT_DAYS)   [ignored if --date/--from set]
+  --from YYYY-MM-DD   YYYY-MM-DD inclusive range start (use with --to)
+  --to   YYYY-MM-DD   YYYY-MM-DD inclusive range end   (use with --from)
+  --date YYYY-MM-DD   Single date analysis (overrides --days/--from/--to)
+  --region REGION     taipei | taichung | all  (default: all)
+  --top N             integer >= 0, 0 = ALL    (default: $OPT_TOP)   [caps error pattern count]
+  --format FMT        text | tsv | csv         (default: text)  [non-text is a no-op for errors]
+  --output FILE       Write report to file     (default: stdout)
+  --conf FILE         Regions config file      (default: conf/regions.conf)
   -v, --verbose       Enable debug logging
   -h, --help          Show this help
+
+Common scenarios:
+  # Default: all regions, last 7 days
+  bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG
+
+  # Single date, single region
+  bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \\
+       --date 2026-05-21 --region taichung
+
+  # Show top 20 error patterns
+  bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \\
+       --date 2026-05-21 --top 20
+
+  # Show ALL error patterns (no cap)
+  bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \\
+       --date 2026-05-21 --top 0
+
+  # Weekly range
+  bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \\
+       --from 2026-05-18 --to 2026-05-25
 EOF
 }
 
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --log-dir)   OPT_LOG_DIR="$2";   shift 2 ;;
-            --days)      OPT_DAYS="$2";       shift 2 ;;
-            --from)      OPT_FROM="$2";       shift 2 ;;
-            --to)        OPT_TO="$2";         shift 2 ;;
-            --date)      OPT_DATE="$2";       shift 2 ;;
-            --region)    OPT_REGION="$2";     shift 2 ;;
-            --top)       OPT_TOP_ERRORS="$2"; shift 2 ;;
-            --output)    OPT_OUTPUT="$2";     shift 2 ;;
-            --conf)      REGIONS_CONF="$2";   shift 2 ;;
-            -v|--verbose) LOG_LEVEL=DEBUG;    shift ;;
+            --log-dir)   OPT_LOG_DIR="$2";  shift 2 ;;
+            --days)      OPT_DAYS="$2";      shift 2 ;;
+            --from)      OPT_FROM="$2";      shift 2 ;;
+            --to)        OPT_TO="$2";        shift 2 ;;
+            --date)      OPT_DATE="$2";      shift 2 ;;
+            --region)    OPT_REGION="$2";    shift 2 ;;
+            --top)       OPT_TOP="$2";       shift 2 ;;
+            --format)    OPT_FORMAT="$2";    shift 2 ;;
+            --output)    OPT_OUTPUT="$2";    shift 2 ;;
+            --conf)      REGIONS_CONF="$2";  shift 2 ;;
+            -v|--verbose) LOG_LEVEL=DEBUG;   shift ;;
             -h|--help)   usage; exit 0 ;;
             *) die "Unknown option: $1" ;;
         esac
     done
     [[ -z "$OPT_LOG_DIR" ]] && die "--log-dir is required"
     [[ -d "$OPT_LOG_DIR" ]] || die "Log directory not found: $OPT_LOG_DIR"
+    [[ -f "$REGIONS_CONF" ]] || die "conf file not found: $REGIONS_CONF"
+    assert_enum "--format" "$OPT_FORMAT" text tsv csv
+    if [[ "$OPT_FORMAT" != "text" ]]; then
+        log_warn "format '$OPT_FORMAT' not supported by errors; emitting text"
+    fi
+    assert_uint "--top" "$OPT_TOP"
 }
 
 declare -a REGION_IDS=()
@@ -101,8 +130,8 @@ ERROR_AWK='
 # Error pattern extraction.
 #
 # Input  : pipe-delimited structured-logger rows. Only level=ERROR participates.
-# Vars   : top_errors — number of patterns to surface (defaults documented
-#                       by the caller; bound by --top flag).
+# Vars   : top_errors — number of patterns to surface (bound by --top flag).
+#                       0 = emit ALL patterns (no cap).
 # Output : TAB-delimited rows with these prefixes:
 #            TOTAL_ERRORS\t<n>
 #            DB_FAILURES\t<n>
@@ -161,7 +190,7 @@ END {
 
     # Top-N patterns by count, descending.
     n = asorti(error_count, sorted, "@val_num_desc")
-    limit = (n < top_n) ? n : top_n
+    limit = (top_n == 0) ? n : (n < top_n ? n : top_n)
     for (i = 1; i <= limit; i++) {
         key = sorted[i]
         printf "TOP_ERROR\t%d\t%s\n", error_count[key], error_sample[key]
@@ -287,7 +316,7 @@ analyze_server_errors() {
     # Error analysis
     if [[ -s "$all_log" ]]; then
         local stats
-        stats=$(gawk -v top_errors="$OPT_TOP_ERRORS" "$ERROR_AWK" "$all_log")
+        stats=$(gawk -v top_errors="$OPT_TOP" "$ERROR_AWK" "$all_log")
 
         local total_err db_fail
         total_err=$(echo "$stats" | gawk -F'\t' '$1=="TOTAL_ERRORS" {print $2}')

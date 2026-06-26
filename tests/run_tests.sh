@@ -65,6 +65,18 @@ _lacks() {
     fi
 }
 
+# _hasre ID DESC OUTPUT EREGEX  — assert an extended-regex match is present.
+# Use when fixed-string _has cannot lock column ORDER (e.g. a reordered header
+# whose tokens also appear, in a different order, in the old layout).
+_hasre() {
+    local id="$1" desc="$2"
+    if printf '%s\n' "$3" | grep -qE "$4" 2>/dev/null; then
+        _pass "${id}  ${desc}"
+    else
+        _fail "${id}  ${desc}  [regex not found: '${4}']"
+    fi
+}
+
 # _ok ID DESC EXIT_CODE
 _ok() {
     local id="$1" desc="$2" rc="$3"
@@ -139,9 +151,9 @@ _eq  A03 "taipei 2026-05-21  ORPHAN=5"      "$(_pick "$out" "ORPHAN  (")"       
 _eq  A04 "taipei 2026-05-21  UNVERIFIED=0"  "$(_pick "$out" "UNVERIFIED (")"    "0"
 _eq  A05 "taipei 2026-05-21  Total=6"       "$(_pick "$out" "Total correlation")" "6"
 
-# A2: NORMAL 記錄包含 API→APP 時間差與醫院欄位
-_has A06 "NORMAL 記錄包含時間差欄位"   "$out" "HOSP:1234567890"
-_has A07 "NORMAL 記錄包含 CLIENT IP"   "$out" "CLIENT:192.168.139.110"
+# A2: NORMAL 欄位標頭包含 HOSP_ID / CLIENT_IP 獨立欄位 (新格式；舊 HOSP:/CLIENT: 前綴已移除)
+_has A06 "NORMAL 欄位標頭含 HOSP_ID"   "$out" "HOSP_ID"
+_has A07 "NORMAL 欄位標頭含 CLIENT_IP"  "$out" "CLIENT_IP"
 
 # A3: taichung 2026-05-21 基準值 (全部 NORMAL，無 HOSP/CLIENT)
 out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung 2>/dev/null); rc=$?
@@ -194,14 +206,63 @@ _ok  A26 "--output FILE 執行成功"  "$rc"
 rm -f "$TMPF"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Section A (continued) — A28–A34  新增行為回歸
+# Baselines (fixed dates):
+#   taipei week NORMAL[0].API_TIME = 2026-05-21 10:48:18.802 (t1)
+#   taipei week NORMAL[1].API_TIME = 2026-05-25 10:02:35.254 (t2; t1 <= t2 → sorted ASC)
+#   PATIENT_ID_AES sample = EBD71A864A0F7E6A355827754B89259E (full, no truncation)
+#   week tsv/csv header: REQUEST_ID (merged); no API_REQUEST_ID / APP_REQUEST_ID
+#   --merge week: merged NORMAL=8, sum per-region NORMAL=2+6=8 → _gte 8
+# ─────────────────────────────────────────────────────────────────────────────
+
+# A10: 遞增排序 (ASC sort by API_TIME)
+out=$(bash "$ACCESS" --log-dir "$LOG_DIR" \
+    --from 2026-05-18 --to 2026-05-25 --region taipei 2>/dev/null)
+# Extract first two NORMAL API_TIME tokens; lexical ASC on fixed-width timestamp == chronological
+t1=$(printf '%s\n' "$out" | gawk '/■ 正常流程/{p=1;next} p && /^    [0-9]{4}/ {print $1" "$2; exit}')
+t2=$(printf '%s\n' "$out" | gawk '/■ 正常流程/{p=1;next} p && /^    [0-9]{4}/ {n++;if(n==2){print $1" "$2;exit}}')
+sorted_first=$(printf '%s\n' "$t1" "$t2" | sort | head -1)
+_eq A28 "NORMAL 記錄以 API_TIME 遞增排序 (t1≤t2)" "$t1" "$sorted_first"
+
+# A11: 完整 PATIENT_ID_AES，無截斷
+_has A29 "NORMAL 記錄含完整 PATIENT_ID_AES (32 hex，無截斷)" "$out" "EBD71A864A0F7E6A355827754B89259E"
+
+# A12: per-category 欄位標頭含 PRSN_ID
+out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/null)
+_has A30 "per-category 欄位標頭含 PRSN_ID (NORMAL/ORPHAN 均出現)" "$out" "PRSN_ID"
+
+# A13: tsv 標頭含 REQUEST_ID (合併欄位)；不含舊 API_REQUEST_ID
+out=$(bash "$ACCESS" --log-dir "$LOG_DIR" \
+    --from 2026-05-18 --to 2026-05-25 --format tsv 2>/dev/null)
+_lacks A31 "tsv 標頭已移除舊欄位 API_REQUEST_ID (合併為 REQUEST_ID)" "$out" "API_REQUEST_ID"
+
+# A14: --format csv 標頭以逗號分隔
+out=$(bash "$ACCESS" --log-dir "$LOG_DIR" \
+    --from 2026-05-18 --to 2026-05-25 --format csv 2>/dev/null)
+_has A32 "--format csv 標頭含 'REGION,STATUS,API_TIME'" "$out" "REGION,STATUS,API_TIME"
+
+# A15: --merge 合區塊 (merged NORMAL >= Σ per-region NORMAL)
+# Baselines: per-region taipei-week=2, taichung-week=6, sum=8; merged-week NORMAL=8
+out=$(bash "$ACCESS" --log-dir "$LOG_DIR" \
+    --from 2026-05-18 --to 2026-05-25 --merge 2>/dev/null)
+merged_normal=$(printf '%s\n' "$out" | grep "NORMAL  (" | awk '{print $NF}' | head -1)
+_gte A33 "--merge NORMAL 數量 >= Σ per-region (taipei=2 taichung=6 sum=8)" "${merged_normal:-0}" "8"
+
+# A16: --merge 無資料日期 — 乾淨結束
+bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-20 --merge >/dev/null 2>&1; rc=$?
+_ok A34 "--merge 無資料日期 (2026-05-20) 乾淨結束" "$rc"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Section B — analyze_iis.sh  IIS W3C 存取日誌分析
 # Baselines (2026-05-21):
-#   taipei  10.22.63.37 : Total=483  5xx=0  503=0
-#   taipei  10.21.3.35  : Total=741  5xx=0  503=0  302=3
-#   taipei  10.21.3.36  : Total=730  5xx=0  503=0  302=3
-#   taichung 10.1.73.37 : Total=478  5xx=17  503=17
-#   taichung 10.1.72.35 : Total=533  5xx=17  503=17  slow=1
-#   taichung 10.1.72.36 : Total=769  5xx=16  503=16  slow=1
+#   taipei  10.22.63.37 (API): Total=483  5xx=0  503=0  slow(>2000ms)=0
+#   taipei  10.21.3.35  (APP): Total=741  5xx=0  503=0  302=3  slow(>5000ms)=0
+#   taipei  10.21.3.36  (APP): Total=730  5xx=0  503=0  302=3  slow(>5000ms)=0
+#   taichung 10.1.73.37 (API): Total=478  5xx=17  503=17  slow(>2000ms)=0
+#   taichung 10.1.72.35 (APP): Total=533  5xx=17  503=17  slow(>5000ms)=1
+#   taichung 10.1.72.36 (APP): Total=769  5xx=16  503=16  slow(>5000ms)=1
+#   taipei --top 0 (2026-05-21): 42 total endpoint rows (10.22.63.37=2, .35=22, .36=18)
+#   taipei --top 10 (default):   22 total endpoint rows (2+10+10)
 # ─────────────────────────────────────────────────────────────────────────────
 
 section "B  analyze_iis.sh — IIS W3C 日誌分析"
@@ -243,17 +304,16 @@ line_200=$(printf '%s\n' "$out_tc" | grep -n "^    200 " | head -1 | cut -d: -f1
 line_503=$(printf '%s\n' "$out_tc" | grep -n "^    503 " | head -1 | cut -d: -f1)
 if [[ -n "$line_200" && -n "$line_503" && "$line_200" -lt "$line_503" ]]; then
     _pass "B10  STATUS 表格 200 (高 count) 排在 503 之前"
-    PASS=$(( PASS + 1 ))
 else
     _fail "B10  STATUS 表格排序錯誤 (200 應在 503 前: line_200=${line_200} line_503=${line_503})"
 fi
 
-# B6: --slow-ms 自訂門檻 (1ms 應偵測到大量慢請求)
+# B6: --slow-api-ms 自訂 API 門檻 (1ms 應偵測到大量慢請求)
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
-    --slow-ms 1 2>/dev/null); rc=$?
-_ok  B11 "--slow-ms 1 執行成功"  "$rc"
+    --slow-api-ms 1 2>/dev/null); rc=$?
+_ok  B11 "--slow-api-ms 1 執行成功"  "$rc"
 any_slow=$(_sum "$out" "Slow (>1ms)")
-_gte B12 "--slow-ms 1 偵測到慢請求 >= 1"  "$any_slow"  "1"
+_gte B12 "--slow-api-ms 1 偵測到慢請求 >= 1"  "$any_slow"  "1"
 
 # B7: 日期範圍 累計請求量 >= 單日
 out_range=$(bash "$IIS" --log-dir "$LOG_DIR" \
@@ -262,32 +322,96 @@ _ok  B13 "taipei --from --to 日期範圍執行成功"  "$rc"
 range_sum=$(_sum "$out_range" "Total requests")
 _gte B14 "兩日累計 Total requests >= 單日 1954"  "$range_sum"  "1954"
 
-# B8: Client IP 清單區段（新功能）
+# B8: Client IP 清單區段（新格式：IP 優先，舊 'Count  Client IP' 已改為 'Client IP  Count  % of total'）
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/null); rc=$?
-_has B15 "輸出含 Client IP 清單表頭"  "$out" "Count  Client IP"
+# IP-first 表頭順序鎖定 (regex)：'Client IP' 必須排在 'Count' 之前，
+# 否則舊版 'Count  Client IP' 也含子字串 'Client IP' 會誤判通過。
+_hasre B15 "Client IP 表頭為 IP-first (Client IP→Count→% of total)" "$out" "Client IP +Count +% of total"
 _has B16 "Client IP 清單含 % of total 欄位"  "$out" "% of total"
 # 台北 10.22.63.37 主要客戶端 192.168.139.28 應占多數請求（> 95%）
 _has B17 "Client IP 清單列出主要客戶端"  "$out" "192.168.139.28"
-# 計數列至少 3 行（taipei 3 台伺服器各列出多個 IP）
-ip_lines=$(printf '%s\n' "$out" | gawk '/% of total/{flag=1;next} flag && /^    [0-9]+ +[0-9]/{c++} END{print c+0}')
+# 計數列至少 9 行（taipei 3 台伺服器各列出多個 IP）。IP-first 列以點分四段
+# IP 開頭，與 Status 列（純數字）/Endpoint 列（/ 開頭）區隔，避免誤計。
+ip_lines=$(printf '%s\n' "$out" | gawk '/^    [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+  +[0-9]/{c++} END{print c+0}')
 _gte B18 "Client IP 計數列數 >= 9 (三台伺服器各列出多 IP)"  "$ip_lines"  "9"
 
-# B9: Client IP 區段在台中 OracleDB 中斷日仍正確呈現
+# B9: Client IP 區段在台中 OracleDB 中斷日仍正確呈現 (IP-first 新格式)
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung 2>/dev/null); rc=$?
-_has B19 "taichung Client IP 清單存在"  "$out" "Count  Client IP"
+_hasre B19 "taichung Client IP 表頭為 IP-first"  "$out" "Client IP +Count +% of total"
 
-# B10: Endpoint 平均回應時間欄位（新功能）
+# B10: Endpoint 平均回應時間欄位（新格式：Endpoint-first，欄位順序 Endpoint Avg(s) Count % of total）
 # Baselines (taipei 2026-05-21):
 #   10.22.63.37 /health  : count=472  avg=0.06s   (次秒級邊界)
 #   10.21.3.35  series   : count=146  avg=1.03s   (慢速 DICOM 影像端點)
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/null)
 _has B20 "Endpoint 表含 Avg(s) 平均回應時間欄位表頭"  "$out" "Avg(s)"
-# 慢速 DICOM series 端點：第 2 欄為平均秒數，四捨五入至小數兩位
-series_avg=$(printf '%s\n' "$out" | gawk '$1=="146" && /series\/\{uid\}\/\.\.\./ {print $2; exit}')
+# 慢速 DICOM series 端點：新格式 $1=endpoint $2=avg $3=count $4=%
+series_avg=$(printf '%s\n' "$out" | gawk '/series\/\{uid\}\/\.\.\./ {print $2; exit}')
 _eq  B21 "DICOM series 端點平均回應時間=1.03s"  "$series_avg"  "1.03"
 # 次秒級端點 /health 仍以兩位小數呈現（邊界：avg < 1s 不退化為整數/空白）
-health_avg=$(printf '%s\n' "$out" | gawk '$3=="/health" {print $2; exit}')
+health_avg=$(printf '%s\n' "$out" | gawk '$1=="/health" {print $2; exit}')
 _eq  B22 "/health 端點平均回應時間=0.06s (兩位小數)"  "$health_avg"  "0.06"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section B (continued) — B23–B31  新增行為回歸
+# ─────────────────────────────────────────────────────────────────────────────
+
+# B11: Endpoint 表格 Endpoint-first 欄位順序
+out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/null)
+_hasre B23 "Endpoint 表頭順序 Endpoint→Avg(s)→Count→% of total" "$out" "Endpoint +Avg\(s\) +Count +% of total"
+
+# B12: Status 表格含 % of total
+_has B24 "Status 表格含 '% of total' 欄位" "$out" "% of total"
+
+# B13: Client IP 表格新欄位順序 (IP-first，鎖定順序)
+_hasre B25 "Client IP 表頭順序 Client IP→Count→% of total" "$out" "Client IP +Count +% of total"
+
+# B14: --top 3 端點上限 (每伺服器最多 3 行)
+# Baseline: all regions 2026-05-21 --top 3 → max endpoint rows per block = 3
+out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all --top 3 2>/dev/null)
+max_ep3=$(printf '%s\n' "$out" | gawk '
+/^▶ IIS —/{if(srv!="" && ep_cnt>m) m=ep_cnt; srv=$3; ep_cnt=0; in_ep=0; next}
+/Endpoint.*Avg/{in_ep=1; next}
+/Client IP/{in_ep=0}
+in_ep && /^    \// {ep_cnt++}
+END{if(ep_cnt>m) m=ep_cnt; print m+0}
+')
+_eq B26 "--top 3 每伺服器端點列數上限=3" "$max_ep3" "3"
+
+# B15: --top 0 顯示全部端點
+# Baseline: taipei 2026-05-21 --top 0 → 42 endpoint rows (2+22+18)
+#           taipei 2026-05-21 default  → 22 endpoint rows (2+10+10)
+out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei --top 0 2>/dev/null)
+ep0=$(printf '%s\n' "$out" | grep -c "^    /" || true)
+_eq B27 "--top 0 顯示所有端點 (taipei 2026-05-21 = 42 rows)" "$ep0" "42"
+
+# B16: --slow-api-ms 自訂 API 門檻標籤
+out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
+    --slow-api-ms 1234 2>/dev/null)
+_has B28 "--slow-api-ms 1234 API 塊顯示 'Slow (>1234ms)'" "$out" "Slow (>1234ms)"
+
+# B17: --slow-app-ms 自訂 APP 門檻標籤
+out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
+    --slow-app-ms 5678 2>/dev/null)
+_has B29 "--slow-app-ms 5678 APP 塊顯示 'Slow (>5678ms)'" "$out" "Slow (>5678ms)"
+
+# B18: 預設門檻 API=2000ms APP=5000ms 均顯示 (both must be present)
+out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/null)
+if printf '%s\n' "$out" | grep -qF "Slow (>2000ms)" 2>/dev/null && \
+   printf '%s\n' "$out" | grep -qF "Slow (>5000ms)" 2>/dev/null; then
+    _pass "B30  預設門檻 API(>2000ms) AND APP(>5000ms) 均出現"
+else
+    _fail "B30  預設門檻 API(>2000ms) AND APP(>5000ms) 均出現"
+fi
+
+# B19: --merge 輸出兩個合併服務塊 (API_SERVERS + APP_SERVERS)
+out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --merge 2>/dev/null)
+if printf '%s\n' "$out" | grep -qF "API_SERVERS (merged" 2>/dev/null && \
+   printf '%s\n' "$out" | grep -qF "APP_SERVERS (merged" 2>/dev/null; then
+    _pass "B31  --merge 輸出 API_SERVERS(merged) AND APP_SERVERS(merged)"
+else
+    _fail "B31  --merge 輸出 API_SERVERS(merged) AND APP_SERVERS(merged)"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section C — analyze_errors.sh  應用程式錯誤與重啟事件
@@ -355,6 +479,41 @@ out=$(bash "$ERRORS" --log-dir "$LOG_DIR" \
 _has C17 "多日範圍偵測到未配對 SHUTDOWN 記錄"  "$out" "未配對 SHUTDOWN"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Section C (continued) — C18–C21  新增行為回歸
+# Baselines:
+#   taichung 2026-05-21 : distinct error patterns per run = 5 (all < default 10)
+#                         --top 0 pattern rows = 5 (ERROR_AWK 0=ALL fix; pre-fix: 0)
+#   taipei week (05-18~25): 10.21.3.35=4 patterns, 10.21.3.36=3 patterns
+#                         --top 2 → max per-server = 2 (cap); --top 0 → max = 4
+# ─────────────────────────────────────────────────────────────────────────────
+
+# C7: --format tsv 為 no-op，仍輸出文字報告
+out=$(bash "$ERRORS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung \
+    --format tsv 2>/dev/null); rc=$?
+_ok C18 "--format tsv 執行成功 (非文字格式 no-op，仍輸出文字)" "$rc"
+
+# C8: --top 5 OPT_TOP 重命名後仍正確運作
+out=$(bash "$ERRORS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung \
+    --top 5 2>/dev/null)
+_has C19 "--top 5 輸出含 Top Error Patterns 區段" "$out" "Top Error Patterns"
+
+# C9: --top 0 顯示所有錯誤模式 (Decision-B 0=ALL 修復，taichung 2026-05-21 = 5 patterns)
+out=$(bash "$ERRORS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung \
+    --top 0 2>/dev/null)
+pat0=$(printf '%s\n' "$out" | grep -c "^    [0-9]\+  " || true)
+_eq C20 "--top 0 顯示所有錯誤模式 (taichung 2026-05-21 = 5 patterns)" "$pat0" "5"
+
+# C10: --top N capping 伴隨測試 (證明 --top 為真正上限，而非與 0=ALL 等價)。
+# taipei week 某台伺服器有 4 種模式，--top 2 須將每台上限壓到 2。
+out=$(bash "$ERRORS" --log-dir "$LOG_DIR" \
+    --from 2026-05-18 --to 2026-05-25 --region taipei --top 2 2>/dev/null)
+max_pat2=$(printf '%s\n' "$out" | gawk '
+    /Server:/{ if(c>m)m=c; c=0; next }
+    /^    [0-9]+  /{ c++ }
+    END{ if(c>m)m=c; print m+0 }')
+_eq C21 "errors --top 2 每台伺服器模式數上限=2 (capping)" "$max_pat2" "2"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Section D — log_report.sh  整合報告腳本
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -416,6 +575,43 @@ _has   D20 "--region taichung 輸出含台中"   "$out" "台中"
 _lacks D21 "--region taichung 不含台北"     "$out" "台北"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Section D (continued) — D22–D26  新增轉發行為回歸
+# ─────────────────────────────────────────────────────────────────────────────
+
+# D7: --top 3 轉發至 iis (端點上限) 與 errors
+# Baseline: all 2026-05-21 --top 3 → max endpoint rows per IIS block = 3
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --region all \
+    --top 3 2>/dev/null)
+maxep=$(printf '%s\n' "$out" | gawk '
+/^▶ IIS —/{if(srv!="" && ep_cnt>m) m=ep_cnt; srv=$3; ep_cnt=0; in_ep=0; next}
+/Endpoint.*Avg/{in_ep=1; next}
+/Client IP/{in_ep=0}
+in_ep && /^    \// {ep_cnt++}
+END{if(ep_cnt>m) m=ep_cnt; print m+0}
+')
+_eq D22 "--top 3 轉發 iis：每塊端點列數最多 3" "$maxep" "3"
+
+# D8: --slow-api-ms 轉發至 iis
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
+    --slow-api-ms 1500 2>/dev/null)
+_has D23 "--slow-api-ms 1500 轉發至 iis：顯示 'Slow (>1500ms)'" "$out" "Slow (>1500ms)"
+
+# D9: --format csv 轉發至 access (iis/errors 仍輸出文字)
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
+    --format csv 2>/dev/null)
+_has D24 "--format csv 轉發 access：輸出含 csv 標頭 REGION,STATUS,API_TIME" "$out" "REGION,STATUS,API_TIME"
+
+# D10: --merge 轉發至 access 和 iis (merged 塊均出現)
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 \
+    --merge 2>/dev/null)
+_has D25 "--merge 轉發：access 含 'Region: all (merged)'" "$out" "Region: all (merged)"
+
+# D11: --format tsv 轉發 iis/errors → no-op，仍正常執行
+bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
+    --format tsv >/dev/null 2>&1; rc=$?
+_ok D26 "--format tsv 轉發至 iis/errors (no-op) 整合報告仍正常執行" "$rc"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Section E — 輸入驗證與錯誤處理
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -458,6 +654,40 @@ bash "$ERRORS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung \
 _ok E12 "analyze_errors.sh --verbose 不崩潰"  "$rc"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Section E (continued) — E13–E18  新增驗證路徑
+# ─────────────────────────────────────────────────────────────────────────────
+
+# E6: access --merge --region taipei -> die (--merge requires --region all)
+bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 \
+    --merge --region taipei >/dev/null 2>&1; rc=$?
+_err E13 "access --merge --region taipei 應返回非零 exit (--merge requires --region all)" "$rc"
+
+# E7: access --format 無效值 -> die
+bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 \
+    --format zzz >/dev/null 2>&1; rc=$?
+_err E14 "access --format zzz 應返回非零 exit" "$rc"
+
+# E8: iis --top 負數 -> die
+bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 \
+    --top -1 >/dev/null 2>&1; rc=$?
+_err E15 "iis --top -1 應返回非零 exit" "$rc"
+
+# E9: iis --slow-api-ms 非整數 -> die
+bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 \
+    --slow-api-ms abc >/dev/null 2>&1; rc=$?
+_err E16 "iis --slow-api-ms abc 應返回非零 exit" "$rc"
+
+# E10: iis --slow-ms (已移除旗標) -> Unknown option -> die
+bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 \
+    --slow-ms 1 >/dev/null 2>&1; rc=$?
+_err E17 "iis --slow-ms 1 (已移除) 應返回非零 exit" "$rc"
+
+# E11: log_report --format 無效值 -> die
+bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 \
+    --format bogus >/dev/null 2>&1; rc=$?
+_err E18 "log_report --format bogus 應返回非零 exit" "$rc"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Section F — 使用情境模擬 (User Scenario Smoke Tests)
 # 模擬真實使用者日常操作，只驗證執行成功且輸出非空白
 # ─────────────────────────────────────────────────────────────────────────────
@@ -491,10 +721,10 @@ file_count=$(ls "$TMPD" 2>/dev/null | wc -l | tr -d ' ')
 _eq  F08 "[情境-週報] 產生 3 個週報檔案 (access/iis/errors)"  "$file_count"  "3"
 rm -rf "$TMPD"
 
-# F5: 情境 — IIS 效能稽核，自訂慢請求門檻 (效能工程師)
+# F5: 情境 — IIS 效能稽核，自訂慢請求門檻 (效能工程師，--slow-ms 已分為 --slow-api-ms/--slow-app-ms)
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 \
-    --region all --slow-ms 3000 2>/dev/null); rc=$?
-_ok  F09 "[情境-效能稽核] IIS all regions --slow-ms 3000 成功"  "$rc"
+    --region all --slow-api-ms 3000 --slow-app-ms 3000 2>/dev/null); rc=$?
+_ok  F09 "[情境-效能稽核] IIS all regions --slow-api-ms/--slow-app-ms 3000 成功"  "$rc"
 _has F10 "[情境-效能稽核] 輸出包含 Slow 門檻資訊"  "$out" "Slow (>3000ms)"
 
 # F6: 情境 — 單一模組單一日期輸出至標準輸出後管線處理
@@ -503,6 +733,25 @@ out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 \
 oracle_count=$(_sum "$out" "OracleDB health failures")
 _gte F11 "[情境-管線處理] 可從 log_report 輸出擷取 OracleDB count >= 44"  \
     "$oracle_count"  "44"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section F (continued) — F12–F13  新增使用情境
+# ─────────────────────────────────────────────────────────────────────────────
+
+# F7: 情境 — 合併週報 (運維人員跨區域整合視角)
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" \
+    --from 2026-05-18 --to 2026-05-25 \
+    --merge --top 5 --format text 2>/dev/null); rc=$?
+_ok F12 "[情境-合併週報] log_report --merge --top 5 --format text 執行成功" "$rc"
+
+# F8: 情境 — IIS 按角色區分慢請求門檻 (效能工程師確認 API/APP 門檻已分離)
+out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all 2>/dev/null)
+if printf '%s\n' "$out" | grep -qF "Slow (>2000ms)" 2>/dev/null && \
+   printf '%s\n' "$out" | grep -qF "Slow (>5000ms)" 2>/dev/null; then
+    _pass "F13  [情境-效能稽核] iis 預設門檻 API(>2000ms) AND APP(>5000ms) 均存在"
+else
+    _fail "F13  [情境-效能稽核] iis 預設門檻 API(>2000ms) AND APP(>5000ms) 均存在"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Summary

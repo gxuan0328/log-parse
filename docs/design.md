@@ -139,41 +139,141 @@ For each region, the analyser:
      the API hash. Match → `NORMAL`; miss → `ORPHAN`. Marks the API record
      as "used" so the END block can emit anything left as `UNVERIFIED`.
 
+Under `--merge`, `correlate_merged` concatenates every configured region's
+API-server extracts into one `api_tsv` and every region's APP-server extracts
+into one `app_tsv`, then runs CORRELATE_AWK once over the combined corpus —
+see §3.1.9.
+
 #### 3.1.4 Output categories
 
-| Status     | Meaning                                                           | Severity         |
-|------------|-------------------------------------------------------------------|------------------|
-| NORMAL     | APP saw a token previously issued by the **same region's** API    | green (expected) |
-| ORPHAN     | APP received a token with no matching API issuance                | yellow (warn)    |
-| UNVERIFIED | API issued a token that APP never received                        | grey (info)      |
+| Status     | Meaning                                                                                                            | Severity         |
+|------------|--------------------------------------------------------------------------------------------------------------------|------------------|
+| NORMAL     | APP saw a token issued by an API server in the corpus (same region by default; any region under `--merge`)         | green (expected) |
+| ORPHAN     | APP received a token with no matching API issuance in the corpus                                                   | yellow (warn)    |
+| UNVERIFIED | API issued a token that APP never received                                                                         | grey (info)      |
 
-Causes for ORPHAN include cross-region token replay, manual URL crafting,
-and CSV ingestion lag. Causes for UNVERIFIED include users abandoning the
-session before opening the viewer.
+Causes for ORPHAN include cross-region token replay (when not using `--merge`),
+manual URL crafting, and CSV ingestion lag. Causes for UNVERIFIED include
+users abandoning the session before opening the viewer.
 
-#### 3.1.5 Output fields (text mode)
+#### 3.1.5 Internal schema — CORRELATE_AWK output
 
-For NORMAL flows:
-- `API_TIME`, `APP_TIME` — the issuance and verification timestamps
-- `DELTA` — `APP_TIME − API_TIME` in seconds (clamped ≥ 0)
-- `VERIFY` — `OK` or `FAIL` from APP side
-- `HOSP`, `CLIENT` — hospital code and client IP
+The two-file gawk join produces 12 tab-delimited fields per record. Column
+order follows "when → outcome → identity → server → patient", placing time
+sort keys first and the variable-width `PATIENT_ID_AES` last.
 
-Aggregate statistics emitted at the end of the NORMAL section: count,
-mean, min, max time delta.
+| # | Field | NORMAL | ORPHAN | UNVERIFIED |
+|---|-------|--------|--------|------------|
+| $1 | `STATUS` | `NORMAL` | `ORPHAN` | `UNVERIFIED` |
+| $2 | `API_TIME` | `api_ts` | `-` | `api_time[tok]` |
+| $3 | `APP_TIME` | `app_ts` | `app_ts` | `-` |
+| $4 | `DELTA_SEC` | `delta` / `N/A` | `-` | `-` |
+| $5 | `VERIFY_STATUS` | `verify` | `verify` | `-` |
+| $6 | `REQUEST_ID` | `coalesce(api_req_id, app_req)` | `app_req` | `api_req_id` |
+| $7 | `API_SERVER` | `api_server` | `-` | `api_server` |
+| $8 | `APP_SERVER` | `app_srv` | `app_srv` | `-` |
+| $9 | `HOSP_ID` | coalesced | coalesced | `api_hosp` |
+| $10 | `PRSN_ID` | coalesced | coalesced | `api_prsn` |
+| $11 | `CLIENT_IP` | coalesced | coalesced | `api_client_ip` |
+| $12 | `PATIENT_ID_AES` | coalesced (full) | coalesced (full) | `api_patient` (full) |
 
-For ORPHAN: `APP_TIME`, `APP_SRV`, `VERIFY`, `HOSP`, truncated `PATIENT_ID`.
-A warning is appended when at least one ORPHAN has `VERIFY=OK` (potential
-valid replay).
+`REQUEST_ID` consolidates the former `API_REQUEST_ID` and `APP_REQUEST_ID`
+fields; the coalesce rule is "prefer API id, fall back to APP id". All three
+categories include `PRSN_ID` and `CLIENT_IP`. `PATIENT_ID_AES` is emitted in
+full — the prior `substr(…, 1, 16)"..."` truncation is removed. `-` denotes a
+field absent for that category.
 
-For UNVERIFIED: `API_TIME`, `API_SRV`, `HOSP`, truncated `PATIENT_ID`.
+#### 3.1.6 Deterministic sort pre-pass
 
-#### 3.1.6 Output format `tsv`
+After CORRELATE_AWK, a single shared gawk pass (`sort_records`) sorts all
+12-field records into `result_sorted` before any renderer runs. This produces a
+byte-stable order shared by text, tsv, and csv modes.
 
-When `--format tsv` is supplied the report becomes machine-readable TSV with
-columns: `REGION, STATUS, API_REQUEST_ID, APP_REQUEST_ID, PATIENT_ID_AES,
-HOSP_ID, PRSN_ID, CLIENT_IP, API_SERVER, APP_SERVER, API_TIME, APP_TIME,
-DELTA_SEC, VERIFY_STATUS`. Suitable for downstream ETL.
+**Composite sort key (four levels):**
+
+1. `STATUS` ($1) — groups NORMAL, ORPHAN, UNVERIFIED together.
+2. Category-appropriate time — `API_TIME` ($2) for NORMAL and UNVERIFIED;
+   `APP_TIME` ($3) for ORPHAN (the leading time column in each category's
+   text display).
+3. `REQUEST_ID` ($6) — distinguishes records with identical timestamps.
+4. Full line — stable tie-break neutralising gawk hash-iteration order for
+   the UNVERIFIED `for (tok in api_time)` loop.
+
+`asorti(buf, idx, "@ind_str_asc")` is safe because all timestamps are
+fixed-width zero-padded (`YYYY-MM-DD HH:MM:SS.mmm`), so lexical ascending
+order is identical to chronological ascending order.
+
+All three renderers consume `result_sorted`; none re-sort.
+
+#### 3.1.7 Text output — per-category columns
+
+Each category shows only its present columns; columns absent for that category
+are dropped. All categories include `PRSN_ID`, `CLIENT_IP`, and a full
+untruncated `PATIENT_ID_AES` as the trailing variable-width column. A header
+row (in grey) is printed once per category. Records appear in deterministic
+ASC order from §3.1.6.
+
+Shared column widths: `TIME=23 · SERVER=15 · DELTA=8 · VERIFY=7 ·
+REQID=13 · HOSP=12 · PRSN=12 · CLIENT=16`.
+
+**NORMAL** — leads with both time columns, includes delta and verify:
+`API_TIME, APP_TIME, DELTA, VERIFY, REQUEST_ID, API_SRV, APP_SRV, HOSP_ID,
+PRSN_ID, CLIENT_IP, PATIENT_ID_AES`.
+Delta formatted as `%.1fs` (clamped ≥ 0), or `N/A` when absent. Followed by
+aggregate statistics: count with valid delta, mean, min, max.
+
+**ORPHAN** — leads with `APP_TIME` (no `API_TIME`, `API_SERVER`, or `DELTA`):
+`APP_TIME, VERIFY, REQUEST_ID, APP_SRV, HOSP_ID, PRSN_ID, CLIENT_IP,
+PATIENT_ID_AES`.
+Followed by a verify-result summary; a warning is appended when any ORPHAN
+has `VERIFY=OK`.
+
+**UNVERIFIED** — leads with `API_TIME` (no `APP_TIME`, `APP_SERVER`, `DELTA`,
+or `VERIFY`):
+`API_TIME, REQUEST_ID, API_SRV, HOSP_ID, PRSN_ID, CLIENT_IP, PATIENT_ID_AES`.
+
+The `PATIENT_ID_AES` column is always last and may wrap on narrow terminals.
+No truncation is applied.
+
+#### 3.1.8 Machine-readable output — `tsv` and `csv`
+
+Both formats are flat outputs over `result_sorted` (same deterministic order
+as text, §3.1.6). Each row is prefixed with a `REGION` column (region name,
+or `merged` under `--merge`). The 13-column schema:
+
+```
+REGION  STATUS  API_TIME  APP_TIME  DELTA_SEC  VERIFY_STATUS  REQUEST_ID
+API_SERVER  APP_SERVER  HOSP_ID  PRSN_ID  CLIENT_IP  PATIENT_ID_AES
+```
+
+- **`--format tsv`** — TAB delimiter, no quoting.
+- **`--format csv`** — comma delimiter, RFC-4180 conditional quoting: a field
+  is quoted only when it contains `"`, `,`, or a newline; embedded `"`
+  characters are doubled. LF line endings. Fields with none of these characters
+  appear unquoted.
+
+A header row is emitted once at the top of each output (TAB-joined for tsv,
+comma-joined for csv). Both formats share the byte-stable ordering from §3.1.6.
+
+#### 3.1.9 `--merge` semantics
+
+`--merge` requires `--region all` (explicit or default). Supplying a
+single-region `--region` with `--merge` aborts with an error.
+
+`correlate_merged` builds one `api_tsv` from all configured regions'
+API-server logs and one `app_tsv` from all regions' APP-server logs, then runs
+CORRELATE_AWK once over the combined corpus. A token issued by region X's API
+server and presented to region Y's APP server classifies as **NORMAL** — not
+ORPHAN — because the merged corpus is host-agnostic. Merged NORMAL counts are
+≥ the sum of per-region NORMAL counts; the difference equals the number of
+cross-region token exchanges in the dataset.
+
+Per-region analysis (the default) preserves regional identity. `--merge` is a
+deliberately host-agnostic view for auditing the end-to-end token flow across
+all regions.
+
+Text output: a single `Region: all (merged)` block with three ASC-sorted
+category lists. tsv / csv output: `REGION` column value is `merged`.
 
 ---
 
@@ -224,32 +324,76 @@ Other paths are reported verbatim.
 | `status_count[]`   | Per-status-code count (e.g. 200, 302, 404, 500, 503)                                |
 | `error5xx`         | Rows where `status >= 500`                                                          |
 | `health503`        | Rows where `status == 503` **AND** `uri == /health`                                 |
-| `slow`             | Rows where `time-taken >= --slow-ms` **AND** `uri != /health`                       |
+| `slow`             | Rows where `time-taken >= threshold` **AND** `uri != /health`; threshold is `--slow-api-ms` (default 2000 ms) for API-role servers and `--slow-app-ms` (default 5000 ms) for APP-role servers |
 | `redirect`         | Rows where `status == 302`                                                          |
-| `client_ips`       | Hash of `c-ip → request_count`; `length()` yields unique-IP count; iterated for the per-IP roster. `-` excluded. |
-| `top endpoints`    | Top 15 endpoints by request count (after DICOM grouping), each with its **mean response time** in seconds (`time-taken` is logged in ms; rounded to 2 dp) |
-| `client_ip_roster` | Every unique `c-ip` with its request count and percentage share of `total`         |
+| `client_ips`       | Hash of `c-ip → request_count`; `length()` yields unique-IP count; iterated for the per-IP table. `-` excluded. |
+| `top endpoints`    | Top-N endpoints by request count (after DICOM grouping), N controlled by `--top` (default 10, 0=all); each with **mean response time** in seconds (2 dp) |
+| `client_ip_roster` | Top-N unique `c-ip` values with request count and `% of total`, N controlled by `--top` (0=all) |
 
 Health-check 503s are surfaced as a **separate metric** (not just a 5xx
 count) because they indicate dependency-health failure, not application
 fault — the response is intentionally 503 when OracleDB is unhealthy.
 
-The client-IP roster is **uncapped** by design: under normal medical
-operations the per-server cardinality stays in the low tens, and an
-unexpectedly large list is itself a useful diagnostic signal (scanner /
-credential-leak indicator). If future deployments outgrow this assumption,
-add a `--top-ips N` flag rather than silently truncating.
+The `% of total` denominator for all three tables is the `total` requests
+count for that server or bucket (including `/health` and redirects). When
+`--top` truncates the endpoint or client-IP list, the visible rows' percentages
+will not sum to 100.
 
 #### 3.2.5 Output sections
 
-For each server in the selected region(s):
-1. Top-line counters (`Total`, `Unique IPs`, `5xx`, `Health 503`, `Slow`).
-2. Status-code table (sorted by count descending).
-3. Top-15 endpoint table (sorted by count descending), with an `Avg(s)`
-   column giving each endpoint's mean response time in seconds (2 dp).
-4. Client-IP roster — every distinct client IP with its request count and
-   `% of total`, sorted descending. Empty when no resolvable client IP
-   appears (all rows have `c-ip = -`).
+For each server in the selected region(s), or each role bucket under `--merge`:
+
+1. Top-line counters: `Total requests`, `Unique client IPs`, `302 Redirects`,
+   `5xx errors`, `Health 503`, `Slow (>Nms)` — the threshold value in the
+   label reflects the server's role.
+2. HTTP status-code table — columns `["Status", "Count", "% of total"]`,
+   sorted by count descending. Sorting happens in-gawk (no external `sort`).
+3. Endpoint table — columns `["Endpoint", "Avg(s)", "Count", "% of total"]`,
+   sorted by count descending. Capped at `--top` rows (default 10; 0=all).
+4. Client IP table — columns `["Client IP", "Count", "% of total"]`, sorted
+   by count descending. Capped at `--top` rows. Empty when all rows have
+   `c-ip = -`.
+
+IIS tables are exclusively count-descending ranked lists; there is no
+per-record chronological detail list, so the deterministic ASC sort introduced
+for `analyze_access` does not apply here.
+
+#### 3.2.6 Per-role slow thresholds
+
+`--slow-api-ms` (default 2000 ms) applies to servers listed in `REGION_APIS`;
+`--slow-app-ms` (default 5000 ms) applies to servers in `REGION_APPS`. Role
+membership is resolved via `conf/regions.conf`. The defaults reflect the
+tighter SLA expected of API token-issuance endpoints versus APP DICOM-serving
+endpoints. The `Slow (>Nms)` label in the report shows the actual threshold
+used for that server's role.
+
+#### 3.2.7 `--top` flag
+
+Controls the maximum number of rows shown in both the Endpoint table and the
+Client IP table (default 10; 0=all). The same cap applies to both tables in
+the same invocation. The flag is unified across `analyze_iis` and
+`analyze_errors` (same name, same 0=all semantics, different target list).
+
+#### 3.2.8 `--merge` — two-bucket cross-region corpus
+
+Under `--merge`, `analyze_merged_iis` builds two corpora by iterating over all
+configured regions:
+
+- **API corpus**: concatenates IIS logs from every region's `REGION_APIS` servers.
+- **APP corpus**: concatenates IIS logs from every region's `REGION_APPS` servers.
+
+The shared `render_iis_stats LABEL COMBINED THRESHOLD` helper runs IIS_AWK
+once on the combined log file, emits the KV summary block, and emits the three
+reordered tables (§3.2.5). Both `analyze_server_iis` (non-merged, per-server)
+and `analyze_merged_iis` (merged, two-bucket) delegate to this helper; the
+caller owns the `fmt_h2` section label.
+
+`render_iis_stats` is invoked once per corpus, producing two output blocks:
+1. `IIS — API_SERVERS (merged, all regions)` — uses `--slow-api-ms` threshold.
+2. `IIS — APP_SERVERS (merged, all regions)` — uses `--slow-app-ms` threshold.
+
+Each block contains the identical KV summary and three ranked tables as the
+per-server non-merged path, with the role-resolved `Slow (>Nms)` label.
 
 ---
 
@@ -285,7 +429,8 @@ messages.
    sample for that group.
 6. End-of-input: emit `TOTAL_ERRORS`, `DB_FAILURES`, up to 5 `DB_TIME`
    stamps, and the top-N normalised patterns sorted by count (default 10,
-   override via `--top N`).
+   override via `--top N`; when `--top 0` is supplied, **all** patterns are
+   emitted).
 
 #### 3.3.4 OracleDB failure detection
 
@@ -347,11 +492,51 @@ supplied, `--output-dir` wins (the per-module branch fires first).
 
 #### 3.4.4 Argument propagation
 
-`build_module_args()` builds a shared `_SHARED_ARGS` array that is forwarded
-verbatim to each child invocation. Conditional appends use the `if ... then
-... fi` form (rather than `[[ ]] && cmd`) so that a false predicate at the
-end of the function does not cause the function to return 1 — which under
-`set -e` would otherwise abort the orchestrator before any module runs.
+`build_module_args()` builds a per-module `_MOD_ARGS` array forwarded verbatim
+to each child invocation. Conditional appends use the `if ... then ... fi`
+form (rather than `[[ ]] && cmd`) so that a false predicate at the end of the
+function does not cause the function to return 1 — which under `set -e` would
+otherwise abort the orchestrator before any module runs.
+
+The function is **module-aware**: common flags (`--log-dir`, `--region`,
+`--days`/`--date`/`--from`/`--to`, `--conf`, `--verbose`, `--format`) are
+appended for every module; flags that apply only to specific modules are
+appended inside a `case "$module"` block:
+
+- `analyze_access` receives `--merge` (when set).
+- `analyze_iis` receives `--top`, `--slow-api-ms`, `--slow-app-ms`, and
+  `--merge` (when set).
+- `analyze_errors` receives `--top`.
+
+`--conf` is appended only when explicitly supplied by the caller (`REGIONS_CONF`
+non-empty). When `--conf` is omitted, each child module resolves its own
+default (`conf/regions.conf`). log_report validates `--conf` only when the
+flag is explicitly supplied; it does not validate the children's default.
+
+`--format` is forwarded to every child. Modules that do not render tsv/csv
+(`analyze_iis`, `analyze_errors`) accept the flag, emit a one-line warning,
+and continue in text mode — so `--format csv` from log_report reaches
+`analyze_access` (which renders csv) while iis and errors stay text without
+aborting.
+
+#### 3.4.5 Option forwarding matrix
+
+| Flag | log_report | access | iis | errors | Notes |
+|---|---|---|---|---|---|
+| `--log-dir` | own | F | F | F | required |
+| `--region` | own | F | F | F | gates `--merge` |
+| `--days` / `--date` / `--from` / `--to` | own | F | F | F | |
+| `--conf` | own (validates only when supplied) | F | F | F | |
+| `--output` / `--output-dir` / `--modules` | own | — | — | — | orchestrator-only |
+| `--verbose` | own | F | F | F | |
+| `--format` | F→all | renders tsv/csv | no-op+warn | no-op+warn | |
+| `--top` | F→{iis,errors} | — | Endpoint+Client-IP | pattern count | 0=ALL |
+| `--slow-api-ms` | F→iis | — | API-role servers | — | default 2000 ms |
+| `--slow-app-ms` | F→iis | — | APP-role servers | — | default 5000 ms |
+| `--merge` | F→{access,iis} | cross-region | two-bucket | — | requires `--region all` |
+
+Legend: `own` = log_report acts on this flag itself · `F` = forwarded to child ·
+`—` = not accepted by that module (unknown option → `die`).
 
 ---
 

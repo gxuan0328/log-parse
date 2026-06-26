@@ -7,7 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `--format csv` output mode for `analyze_access` (extends existing `text|tsv`
+  enum); `--format` promoted to shared global vocabulary accepted (as a no-op
+  with a `log_warn` notice) by `analyze_iis` and `analyze_errors`, and
+  forwarded by `log_report` to all child modules.
+- `--merge` flag for `analyze_access` and `analyze_iis`: concatenates all
+  per-server corpora into a single cross-region analysis pass. Requires
+  `--region all` (explicit or default); any other `--region` value causes an
+  immediate `die`.
+- `--top N` flag for `analyze_iis` (replaces hard-coded caps): controls the
+  maximum rows shown in both the Endpoint table and the Client-IP table;
+  `0` means emit all rows. Default: `10`.
+- `--top 0` (emit-all) support for `analyze_errors`: previously a value of `0`
+  caused the pattern table to emit zero rows; `ERROR_AWK` now honors
+  `top_n == 0` as "no limit" (Decision B parity with `analyze_iis`).
+- `--slow-api-ms N` flag for `analyze_iis`: slow-request threshold in
+  milliseconds applied to API-role servers (`REGION_APIS`). Default: `2000`.
+- `--slow-app-ms N` flag for `analyze_iis`: slow-request threshold in
+  milliseconds applied to APP-role servers (`REGION_APPS`). Default: `5000`.
+- `% of total` column in the iis **Status** table (`["Status","Count","% of
+  total"]`); denominator is `TOTAL` requests for that server. Status table now
+  sorted in-gawk (composite key: count desc, status-code desc as tie-break) —
+  no external `sort` pipe.
+- `% of total` column in the iis **Endpoint** table (`["Endpoint","Avg(s)",
+  "Count","% of total"]`); denominator is `TOTAL` requests.
+- Per-category section headers and full `PATIENT_ID_AES` value in
+  `analyze_access` text output.
+- `assert_uint` and `assert_enum` validators in `lib/common.sh`; used in the
+  `parse_args` post-loop of every CLI for fail-fast input validation.
+- Full forwarding of `--format`, `--top`, `--slow-api-ms`, `--slow-app-ms`,
+  and `--merge` from `log_report` to the child modules that accept them
+  (per the flag-forwarding matrix in `§0`).
+- `tests/run_tests.sh`: 33 new baselines (A28-A34, B23-B31, C18-C21,
+  D22-D26, E13-E18, F12-F13) plus migration of 10 obsolete baselines to the
+  refactored output; column-order assertions hardened against tautology via
+  a new `_hasre` regex helper. Total: 110 -> 143 distinct tests.
+
 ### Changed
+- `analyze_access` detail columns: `API_REQUEST_ID` and `APP_REQUEST_ID`
+  merged into a single `REQUEST_ID` field; columns reordered; `PATIENT_ID_AES`
+  now emits the full value (previously truncated). Text, tsv, and csv outputs
+  share a single deterministic ascending sort pre-pass so all three formats
+  are byte-stable.
+- `analyze_iis` **Client-IP** table column order changed from
+  `Count | IP | %` to `IP | Count | %` (IP-first). The `% of total` column
+  itself was already present (added in commits 52f0a97 / b5b8828); this entry
+  records the reorder only.
+- `analyze_iis` Endpoint table default row cap changed from `15` (hard-coded)
+  to `10` (via `--top`). Client-IP table changed from uncapped to `--top`
+  (default `10`).
+- `analyze_iis` slow-request log line now labels the threshold per server role
+  (API vs APP) rather than a single shared label.
+- `log_report` argument-forwarding logic refactored: shared flags are collected
+  into a `_MOD_ARGS` array (module-aware) and forwarded only to modules that
+  accept each flag, per the forwarding matrix.
+- `docs/usage.md`, `docs/usage.zh-TW.md`, `docs/design.md`,
+  `docs/design.zh-TW.md` updated to document all new and changed flags,
+  table columns, and forwarding semantics.
+- `examples/sample-outputs/` regenerated with `NO_COLOR=1` from the fixed
+  dataset (`2026-05-18..2026-05-25`); `examples/*.sh` helper scripts updated
+  to use the new flag names.
+
+### Removed
+- `--slow-ms` flag from `analyze_iis`: replaced by `--slow-api-ms` and
+  `--slow-app-ms` with role-aware defaults. No backward-compat alias provided
+  (clean-break Decision A).
+- `API_REQUEST_ID` and `APP_REQUEST_ID` columns from `analyze_access` output:
+  merged into the single `REQUEST_ID` field in all output formats (text, tsv,
+  csv).
+
+### Fixed
+- `analyze_errors` `--top 0`: previously evaluated `limit = (n<top_n)?n:top_n`
+  which resolved to `0` when `top_n=0`, emitting no patterns. `ERROR_AWK` now
+  uses `limit = (top_n==0)?n:(n<top_n?n:top_n)` so `--top 0` correctly emits
+  all patterns.
+- `tests/run_tests.sh`: removed a stray `PASS=$(( PASS + 1 ))` after the `B10`
+  `_pass` call (double-count) that had inflated the reported total by one;
+  the reported count now equals the distinct test-ID count.
+
+### Changed (meta / project conventions)
 - **Prompt structure refactor for LLM attention efficiency**:
   - `.claude/CLAUDE.md` slimmed from 367 → 113 lines (≤ 200-line target
     per official Claude Code memory guidance).
@@ -34,49 +113,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cross-document references (`README.md`, `README.zh-TW.md`,
   `docs/design.md`, `docs/design.zh-TW.md`, `.claude/skills/feature-workflow/SKILL.md`)
   now point to `.claude/CLAUDE.md`.
-
-### Added
 - **Project-scoped workflow skill** at
   `.claude/skills/feature-workflow/SKILL.md` defining the standardised
   feature-development & modification process (7 phases: pre-dev impact
   analysis → implementation → validation gate → docs sync → cross-validation
-  → commit/release → terminal summary). Auto-triggered by `CLAUDE.md §13`
+  → commit/release → terminal summary). Auto-triggered by `.claude/CLAUDE.md §7`
   for every code-touching request in this repository.
-- `CLAUDE.md §13` declares the auto-trigger contract, lists qualifying
-  request kinds, and enumerates the seven enforced phases.
 - `analyze_iis`: per-server **client-IP roster** section listing every
   distinct `c-ip` with its request count and percentage share of total
-  traffic, sorted by request count descending. Aids security triage
-  (health-checker dominance, scanner bursts, unexpected client identities).
-- `IIS_AWK` emits a new `CLIENT_IP\t<ip>\t<count>` record type.
-- `tests/run_tests.sh`: five new baselines (B15–B19) covering header,
-  percentage column, primary-client presence, row-count expectation, and
-  per-region rendering. Total test count: 103 → 108.
+  traffic, sorted by request count descending.
+- `IIS_AWK` emits a `CLIENT_IP\t<ip>\t<count>` record type; `client_ips[]`
+  is now a counter (`++`) rather than a set marker (`= 1`); `UNIQUE_IPS`
+  continues to derive from `length()`.
 - `analyze_iis`: the top-endpoint table gains an **`Avg(s)`** column —
-  each (DICOM-grouped) endpoint's mean response time in seconds, rounded
-  to two decimals (`time-taken` is logged in ms). Surfaces slow logical
-  endpoints (e.g. DICOM image retrieval at ~1.0s) against sub-second
-  static assets and `/health`.
-- `IIS_AWK` accumulates `ep_time_ms[]` per endpoint and emits the mean as
-  a 4th field on each `ENDPOINT` record (`ENDPOINT\t<uri>\t<count>\t<avg_sec>`).
-- `tests/run_tests.sh`: three new baselines (B20–B22) covering the column
-  header, a slow DICOM-endpoint mean (1.03s), and a sub-second boundary
-  (`/health` = 0.06s). Total test count: 108 → 111.
-
-### Changed
-- `client_ips[]` in `IIS_AWK` is now a counter (`++`) rather than a set
-  marker (`= 1`); `UNIQUE_IPS` continues to derive from `length()`, so
-  the documented top-line counter is unchanged.
-- `docs/design.md`, `docs/design.zh-TW.md`, `docs/usage.md`,
-  `docs/usage.zh-TW.md` updated to document the new section, its
-  rationale, and its empty-input semantics.
-- `examples/sample-outputs/iis_*.txt` and dependent `log_report_*.txt`
-  regenerated from the bundled dataset.
-- `docs/design.md`, `docs/design.zh-TW.md`, `docs/usage.md`,
-  `docs/usage.zh-TW.md`, and `examples/sample-outputs/README*.md` updated
-  to document the endpoint `Avg(s)` column; `iis_taipei_2026-05-21.txt`,
-  `iis_taichung_2026-05-21.txt`, `iis_all_slow3000_2026-05-21.txt`, and
-  `log_report_full_2026-05-21.txt` regenerated with `NO_COLOR=1`.
+  each (DICOM-grouped) endpoint's mean response time in seconds, rounded to
+  two decimals (`time-taken` is logged in ms).
+- `IIS_AWK` accumulates `ep_time_ms[]` per endpoint and emits the mean as a
+  4th field on each `ENDPOINT` record (`ENDPOINT\t<uri>\t<count>\t<avg_sec>`).
 
 ## [1.0.0] — 2026-05-25
 

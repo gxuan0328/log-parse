@@ -61,9 +61,9 @@ bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-L
 bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
     --from 2026-05-18 --to 2026-05-25 --output-dir ./reports
 
-# 效能稽核 — IIS 慢請求門檻 3 秒
+# 效能稽核 — IIS 慢請求門檻 3 秒 (API 與 APP 角色分別設定)
 bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --slow-ms 3000
+    --slow-api-ms 3000 --slow-app-ms 3000
 ```
 
 ---
