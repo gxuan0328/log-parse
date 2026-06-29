@@ -105,13 +105,18 @@ summary and the `Scope` line in the detail banner show the active mode explicitl
 
 ## 0. `bin/analyze_overview.sh`
 
-Management overview combining IIS business-traffic metrics and cross-correlation
-results into a single report with three cuts:
+Management overview combining access cross-correlation results and IIS core-function
+performance into a single report with three panels:
 
-- **總體概況 (Overall)** — system grand totals, headline rates, qualitative verdict.
-- **分區別 (By Region)** — per-region request share and NORMAL%.
-- **服務別 (By Service Role)** — API vs APP server breakdown with
-  role-specific problem signals.
+- **總體概況 (Overall)** — access NORMAL/ORPHAN/UNVERIFIED counts with value + % of 存取關聯總數; average API→APP latency; qualitative verdict.
+- **分區別 (By Region)** — per-region 正常/異常 counts + %, CJK display-width aligned so columns never shift regardless of percentage width.
+- **核心功能效能 (Core Function Performance)** — three IIS-sourced, UTC+8-corrected categories: 雲端查詢 (前端轉跳速度, `/api/GetLungCancerReportURL`), 報告摘要 (摘要載入速度, `/api/DigestSummary` prefix), 影像下載 (影像載入速度, `/api/NhiPatientImage/studies/…` prefix); each row shows count, share% of the 3-category sum, and average response time in seconds. The three categories are a subset of total business requests. 服務別 (By Service Role) was retired.
+
+**IIS date semantics (UTC+8):** `--date D` means the UTC+8 business day D. IIS W3C
+logs are timestamped UTC+0; a local day D = UTC `[D-1 16:00, D 16:00)`. The module
+reads `u_ex(D-1)` rows ≥ 16:00 UTC and `u_ex(D)` rows < 16:00 UTC to cover the
+full local day. If `u_ex(D-1)` is absent the early-morning window is silently
+incomplete (fail-soft). Access and .NET app logs are natively UTC+8 and unchanged.
 
 Overview is **summary-only** (no `--view`) and **text-only** (no
 `--format`). It sources metrics from `analyze_iis` and `analyze_access`
@@ -129,8 +134,8 @@ the output directory (no detail file).
 | `--date YYYY-MM-DD` | date | — | no | Single-day analysis. |
 | `--from YYYY-MM-DD` / `--to YYYY-MM-DD` | date pair | — | no | Inclusive date range. Both must be supplied. |
 | `--days N` | uint ≥ 1 | `7` | no | Last N days ending today. Implicit fallback only. |
-| `--slow-api-ms N` | uint ms | `2000` | no | Slow-request threshold for API-role servers. Forwarded to the iis spawn only (not to access). |
-| `--slow-app-ms N` | uint ms | `5000` | no | Slow-request threshold for APP-role servers. Forwarded to the iis spawn only. |
+| `--slow-api-ms N` | uint ms | `2000` | no | Slow-request threshold for API-role servers. Forwarded to the iis spawn only (not to access). Drives the IIS per-server `慢速率` KPI in `analyze_iis` summaries; does **not** affect the overview (核心功能效能 has no 慢速 column). |
+| `--slow-app-ms N` | uint ms | `5000` | no | Slow-request threshold for APP-role servers. Forwarded to the iis spawn only. Drives the IIS per-server `慢速率` KPI; does **not** affect the overview. |
 | `--test-hosts exclude\|only\|all` | enum | `exclude` | no | Test-host IP filter mode. Forwarded to both `analyze_iis` and `analyze_access` children. See [Test-host filtering](#test-host-filtering). |
 | `--output-dir DIR` | path | `""` | no | Persistence directory. Resolved as: flag > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`. |
 | `--conf FILE` | path | `conf/regions.conf` | no | Override region mapping. File must exist. |
@@ -165,6 +170,10 @@ bash bin/analyze_overview.sh --log-dir "$LOG_DIR" \
 
 ### Sample output
 
+The sample below shows `--date 2026-05-21`, default `--test-hosts exclude` mode
+(all regions). `存取關聯總數` counts business-only access records (test-host IPs
+excluded). IIS core-function counts are UTC+8 day-corrected.
+
 ```
 ========================================================================
   營運總覽報告 (Management Overview)
@@ -174,41 +183,31 @@ bash bin/analyze_overview.sh --log-dir "$LOG_DIR" \
 
 ▶ 總體概況 (Overall)
 ------------------------------------------------------------------------
-  IIS 總請求數                            723
-  不重複用戶端 IP                         6
   存取關聯總數                            9
-  NORMAL 正常流程率                       66.7%
+  NORMAL 正常流程                         6 (66.7%)
+  ORPHAN 無對應簽發                       3 (33.3%)
+  UNVERIFIED 簽發未使用                   0 (0.0%)
   平均 API→APP 延遲                       19.5s
   整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
 
 ▶ 分區別 (By Region)
 ------------------------------------------------------------------------
-  [佔比；總量見總體概況]
-  台北                                    IIS 佔比 45.8%   NORMAL 0.0%   異常 3
-  台中                                    IIS 佔比 54.2%   NORMAL 100.0%   異常 0
+  台北        正常 0 (0.0%)         異常 3 (100.0%)
+  台中        正常 6 (100.0%)       異常 0 (0.0%)
 
-▶ 服務別 (By Service Role)
+▶ 核心功能效能 (Core Function Performance)
 ------------------------------------------------------------------------
-
-    ■ API 伺服器 (2 台 · 簽發 Token)
-  IIS 請求數 (佔比)                       11 (1.5%)
-  慢速率 (>2000ms)                        0.0%
-  UNVERIFIED (簽發未使用)                 0
-
-    ■ APP 伺服器 (4 台 · 驗證 Token / DICOM)
-  IIS 請求數 (佔比)                       712 (98.5%)
-  慢速率 (>5000ms)                        0.3%
-  ORPHAN (無對應簽發)                     3
+  [佔比為三大核心功能合計之占比 (三者為核心功能子集，非全體業務請求)；回應時間為平均值]
+  雲端查詢 (前端轉跳速度) 11 (1.8%)     平均 0.11s
+  報告摘要 (摘要載入速度) 186 (29.8%)   平均 0.38s
+  影像下載 (影像載入速度) 427 (68.4%)   平均 0.93s
+  核心功能存取合計                        624 (100.0%)
 ```
 
-`IIS 總請求數` is **business-only** (excludes `/health` and, with the default
-`--test-hosts exclude`, also excludes test-host IPs). The numbers above reflect
-`--date 2026-05-21`, default `exclude` mode.
-
 Content rules enforced by the implementation:
-- Grand totals (`IIS 總請求數`, `存取關聯總數`) appear only in the 總體概況 block.
-- `SLOW`, `ORPHAN`, `UNVERIFIED` literals appear only inside the 服務別 block.
-- `UNVERIFIED` appears only in the API sub-slice; `ORPHAN` only in the APP sub-slice.
+- `存取關聯總數` and the NORMAL/ORPHAN/UNVERIFIED counts appear only in the 總體概況 block.
+- 分區別 shows per-region 正常/異常 value + % only; `ORPHAN` and `UNVERIFIED` literals do not appear there.
+- 核心功能效能 shows count, share%, and average response time for each of the 3 categories; there is **no 慢速 column** in the overview (per-server `慢速率` remains in `analyze_iis` summaries).
 - The verdict line is always numeric-free.
 - An empty analysis window (no data) yields zeros and `N/A` rates; exit code 0.
 
@@ -316,6 +315,7 @@ The detail view shows per-record tables for each category (NORMAL,
 ORPHAN, UNVERIFIED). Each category shows only its relevant columns;
 `PATIENT_ID_AES` is always the trailing column and is never truncated.
 Records within each category are sorted chronologically ascending.
+The NORMAL block footer label is `驗證筆數` (the former `驗證筆數 (有效時間差)` suffix was removed).
 
 ```
 ▶ Region: 台北  (10.22.63.37 → 10.21.3.35,10.21.3.36)
@@ -356,6 +356,17 @@ slow requests, and per-endpoint breakdowns. The `/health` endpoint is excluded
 unconditionally from all aggregation (totals, endpoints, status mix, slow counts,
 unique IPs). Test-host client IPs are pre-filtered per `--test-hosts` mode.
 Dependency-health / Oracle-outage detection is handled by `analyze_errors` instead.
+
+**IIS timezone (UTC+0 → UTC+8):** IIS W3C logs are timestamped UTC+0; the reference
+timezone (access CSV + .NET app logs) is UTC+8. `--date D` means the UTC+8 business
+day D: the module reads `u_ex(D-1)` rows with UTC time ≥ 16:00 and `u_ex(D)` rows
+with UTC time < 16:00, covering local midnight through 23:59 (half-open UTC filter
+`[D-1 16:00, D 16:00)`, lexicographic string bounds, no `mktime`; single source in
+`date_utils.sh` `IIS_UTC_OFFSET_HOURS=8`). If `u_ex(D-1)` does not exist the
+early-morning window is silently incomplete (fail-soft). This is architecturally
+required even when all business rows happen to have UTC time < 16:00 (as on the
+bundled sample). `--from`/`--to` ranges are corrected the same way. Access and
+error log analyzers are natively UTC+8 and unchanged.
 
 ### Options
 

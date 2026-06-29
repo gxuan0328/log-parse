@@ -439,7 +439,7 @@ render_text_block() {
             }
             END {
                 if (count > 0) {
-                    printf "    %s%d\n",    rpad("驗證筆數 (有效時間差)", 40), count
+                    printf "    %s%d\n",    rpad("驗證筆數", 40), count
                     printf "    %s%.1fs\n", rpad("平均 API→APP 時間差",   40), sum/count
                     printf "    %s%.1fs\n", rpad("最短時間差",             40), min
                     printf "    %s%.1fs\n", rpad("最長時間差",             40), max

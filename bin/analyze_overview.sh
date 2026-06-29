@@ -3,7 +3,7 @@
 # ----------------------------------------------------------------------------
 # DRY management overview: spawns analyze_iis + analyze_access in --emit-stats
 # mode, buckets the emitted rows via OVERVIEW_AWK, and renders three management
-# cuts: 總體概況 / 分區別 / 服務別.
+# cuts: 總體概況 / 分區別 / 核心功能效能.
 #
 # Summary-only (no --view), text-only (no --format), cross-cut always
 # (no --merge). Persist: summary-only via output_utils (no detail file).
@@ -20,10 +20,10 @@
 #   ACCESS_ARGS = BASE_ARGS only  (analyze_access dies on unknown --slow-*-ms)
 #
 # Numeric placement (C5):
-#   Grand totals  → 總體概況 only.
-#   Region shares → 分區別 (distinct decomposition; no grand totals).
-#   Role signals  → 服務別 only (SLOW/ORPHAN/UNVERIFIED literals here).
-#   Verdict line  → numeric-free (words only).
+#   Access totals + % → 總體概況 only (no IIS general totals).
+#   Region shares     → 分區別 (fixed-width CJK; no grand totals).
+#   Core-function KPIs (count/avg) → 核心功能效能 only.
+#   Verdict line      → numeric-free (words only).
 #
 # See docs/design.md §3.0 for full specification.
 # ----------------------------------------------------------------------------
@@ -68,33 +68,31 @@ declare -A REGION_NAMES=() REGION_APIS=() REGION_APPS=()
 # ---------------------------------------------------------------------------
 OVERVIEW_AWK='
 # ----------------------------------------------------------------------------
-# Purpose : Bucket IIS + ACCESS emit-stats rows into grand totals, per-region
-#           counts, and per-role IIS counts for the three-cut overview render.
-#           IIS rows are already business-only (iis child filtered /health and
-#           test-hosts before emitting); no re-filter needed here.
+# Purpose : Bucket IIS CATEGORY rows + ACCESS emit-stats rows into pooled
+#           category stats and per-region access counts for the three-cut
+#           overview render. IIS rows are business-only (child filtered /health
+#           and test-hosts before emitting); no re-filter needed here.
+#           IIS general aggregates (TOTAL/SLOW/UNIQUE_IPS/REGION) are dropped;
+#           only CATEGORY rows are consumed from the IIS file.
 # Input   : iis_stats.tsv then acc_stats.tsv (per FILENAME == iis_file guard).
 # Vars    : iis_file — path to IIS stats (for two-file join per awk.md).
 # Output  : TAB-delimited structured rows for bash to parse:
-#             IIS_TOTAL      <n>
-#             IIS_UNIQUE_IPS <n>
-#             IIS_API_TOTAL  <n>
-#             IIS_APP_TOTAL  <n>
-#             IIS_API_SLOW   <n>
-#             IIS_APP_SLOW   <n>
-#             IIS_REGION     <rid>  <n>
-#             ACC_TOTAL      <n>
-#             ACC_NORMAL     <n>
-#             ACC_ORPHAN     <n>
-#             ACC_UNVER      <n>
-#             ACC_DC         <n>     (grand DELTA_COUNT)
-#             ACC_DS         <sum>   (grand DELTA_SUM)
-#             ACC_REGION     <rid>   <normal>   <orphan>   <unver>
+#             CAT        <key:glcr|ds|nhi>  <count>  <avg_sec>
+#               avg_sec = cat_ms/cat_cnt/1000 (single division, exact pooled mean)
+#             ACC_TOTAL  <n>
+#             ACC_NORMAL <n>
+#             ACC_ORPHAN <n>
+#             ACC_UNVER  <n>
+#             ACC_DC     <n>     (grand DELTA_COUNT)
+#             ACC_DS     <sum>   (grand DELTA_SUM)
+#             ACC_REGION <rid>   <normal>   <orphan>   <unver>
 # ----------------------------------------------------------------------------
 FILENAME == iis_file {
-    region=$2; role=$3; tag=$5; val=$6+0
-    if (tag == "TOTAL")      { iis_tot += val; iis_reg[region] += val; iis_role[role] += val }
-    if (tag == "SLOW")       { iis_slow_role[role] += val }
-    if (tag == "UNIQUE_IPS") { iis_uniq += val }
+    if ($5 == "CATEGORY") {
+        c = $6
+        cat_cnt[c] += $7 + 0
+        cat_ms[c]  += $8 + 0          # raw summed ms => pooled mean = cat_ms/cat_cnt/1000
+    }
     next
 }
 {
@@ -106,13 +104,15 @@ FILENAME == iis_file {
     if (tag == "DELTA_SUM")   { acc_ds    += val }
 }
 END {
-    printf "IIS_TOTAL\t%d\n",     iis_tot+0
-    printf "IIS_UNIQUE_IPS\t%d\n",iis_uniq+0
-    printf "IIS_API_TOTAL\t%d\n", iis_role["api"]+0
-    printf "IIS_APP_TOTAL\t%d\n", iis_role["app"]+0
-    printf "IIS_API_SLOW\t%d\n",  iis_slow_role["api"]+0
-    printf "IIS_APP_SLOW\t%d\n",  iis_slow_role["app"]+0
-    for (r in iis_reg) printf "IIS_REGION\t%s\t%d\n", r, iis_reg[r]
+    # Emit CAT rows (always all three for stable downstream parsing).
+    # Single division per category => exact cross-server pooled mean (no intermediate rounding).
+    split("glcr ds nhi", _co, " ")
+    for (i = 1; i <= 3; i++) {
+        c = _co[i]
+        cavg = (cat_cnt[c] > 0) ? (cat_ms[c] / cat_cnt[c] / 1000.0) : 0
+        printf "CAT\t%s\t%d\t%.2f\n", c, cat_cnt[c]+0, cavg
+    }
+    # ACCESS aggregates (unchanged).
     printf "ACC_TOTAL\t%d\n",    acc_norm+acc_orph+acc_unver
     printf "ACC_NORMAL\t%d\n",   acc_norm+0
     printf "ACC_ORPHAN\t%d\n",   acc_orph+0
@@ -215,16 +215,20 @@ load_regions() {
 
 # overview_render
 #   Purpose : Read iis_stats.tsv + acc_stats.tsv (cached under WORK_TMPDIR),
-#             run OVERVIEW_AWK to bucket aggregated stats, and render three
-#             management cuts: 總體概況 / 分區別 / 服務別.
+#             run OVERVIEW_AWK to pool CATEGORY stats and bucket ACCESS rows,
+#             and render three management cuts:
+#               總體概況 (access value+%)
+#               分區別   (CJK fixed-width access value+% per region)
+#               核心功能效能 (glcr/ds/nhi count+%+avg).
 #             Summary-only; text-only; format-independent (C10).
 #   Args    : none (uses globals: _OVW_*, OPT_*, REGION_*, WORK_TMPDIR).
 #   Output  : formatted overview report on stdout.
 #   Returns / Side effects : none.
 #   Errors / Notes : Gracefully handles empty stats (zeros/N/A, no divide-by-zero).
 #             CJK labels use fmt_kv under LC_ALL=C (never raw printf "%-Ns" on CJK).
-#             Numeric placement (C5): grand totals only in 總體; role signals
-#             (SLOW/ORPHAN/UNVERIFIED) only in 服務別; verdict numeric-free.
+#             Numeric placement (C5): access totals+% in 總體概況 only;
+#             per-region decomposition in 分區別 only (fixed-width via rpad);
+#             core-function KPIs in 核心功能效能 only; verdict numeric-free.
 overview_render() {
     local iis_stats="${WORK_TMPDIR}/iis_stats.tsv"
     local acc_stats="${WORK_TMPDIR}/acc_stats.tsv"
@@ -234,39 +238,26 @@ overview_render() {
     agg_out=$(LC_ALL=C gawk -F'\t' -v iis_file="$iis_stats" \
         "$OVERVIEW_AWK" "$iis_stats" "$acc_stats")
 
-    # ── Parse scalar aggregates ───────────────────────────────────────────────
-    local iis_total iis_unique_ips
-    local iis_api_total iis_app_total iis_api_slow iis_app_slow
+    # ── Parse ACCESS scalar aggregates ───────────────────────────────────────
     local acc_total acc_normal acc_orphan acc_unver acc_dc acc_ds
 
-    iis_total=$(     printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="IIS_TOTAL"     {print $2; exit}')
-    iis_unique_ips=$(printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="IIS_UNIQUE_IPS"{print $2; exit}')
-    iis_api_total=$( printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="IIS_API_TOTAL" {print $2; exit}')
-    iis_app_total=$( printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="IIS_APP_TOTAL" {print $2; exit}')
-    iis_api_slow=$(  printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="IIS_API_SLOW"  {print $2; exit}')
-    iis_app_slow=$(  printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="IIS_APP_SLOW"  {print $2; exit}')
-    acc_total=$(     printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ACC_TOTAL"     {print $2; exit}')
-    acc_normal=$(    printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ACC_NORMAL"    {print $2; exit}')
-    acc_orphan=$(    printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ACC_ORPHAN"    {print $2; exit}')
-    acc_unver=$(     printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ACC_UNVER"     {print $2; exit}')
-    acc_dc=$(        printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ACC_DC"        {print $2; exit}')
-    acc_ds=$(        printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ACC_DS"        {print $2; exit}')
+    acc_total=$(  printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ACC_TOTAL"  {print $2; exit}')
+    acc_normal=$( printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ACC_NORMAL" {print $2; exit}')
+    acc_orphan=$( printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ACC_ORPHAN" {print $2; exit}')
+    acc_unver=$(  printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ACC_UNVER"  {print $2; exit}')
+    acc_dc=$(     printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ACC_DC"     {print $2; exit}')
+    acc_ds=$(     printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ACC_DS"     {print $2; exit}')
 
     # Safe defaults for empty windows (empty stats → all zeros → no divide-by-zero)
-    iis_total="${iis_total:-0}";         iis_unique_ips="${iis_unique_ips:-0}"
-    iis_api_total="${iis_api_total:-0}"; iis_app_total="${iis_app_total:-0}"
-    iis_api_slow="${iis_api_slow:-0}";   iis_app_slow="${iis_app_slow:-0}"
-    acc_total="${acc_total:-0}";         acc_normal="${acc_normal:-0}"
-    acc_orphan="${acc_orphan:-0}";       acc_unver="${acc_unver:-0}"
-    acc_dc="${acc_dc:-0}";               acc_ds="${acc_ds:-0}"
+    acc_total="${acc_total:-0}";   acc_normal="${acc_normal:-0}"
+    acc_orphan="${acc_orphan:-0}"; acc_unver="${acc_unver:-0}"
+    acc_dc="${acc_dc:-0}";         acc_ds="${acc_ds:-0}"
 
-    # ── Percentages (fmt_pct handles denominator=0 gracefully → "N/A") ────────
-    local pct_normal pct_api_slow pct_app_slow pct_api_share pct_app_share
-    pct_normal=$(   fmt_pct "$acc_normal"    "$acc_total")
-    pct_api_slow=$( fmt_pct "$iis_api_slow"  "$iis_api_total")
-    pct_app_slow=$( fmt_pct "$iis_app_slow"  "$iis_app_total")
-    pct_api_share=$(fmt_pct "$iis_api_total" "$iis_total")
-    pct_app_share=$(fmt_pct "$iis_app_total" "$iis_total")
+    # ── Access percentages (fmt_pct handles denominator=0 → "N/A") ───────────
+    local pct_normal pct_orphan pct_unver
+    pct_normal=$(fmt_pct "$acc_normal" "$acc_total")
+    pct_orphan=$(fmt_pct "$acc_orphan" "$acc_total")
+    pct_unver=$( fmt_pct "$acc_unver"  "$acc_total")
 
     # ── Average API→APP delta ─────────────────────────────────────────────────
     local avg_delta="N/A"
@@ -316,70 +307,75 @@ overview_render() {
     fmt_kv "涵蓋範圍" "${n_regions} 區域 / ${n_total_srv} 伺服器 (${n_api_srv} API · ${n_app_srv} APP)"
 
     # ═════════════════════════════════════════════════════════════════════════
-    # 總體概況 (Overall) — grand totals appear ONLY here (C5)
+    # 總體概況 (Overall) — access totals + value+% appear ONLY here (C5)
+    # IIS general totals (總請求數/不重複IP) removed (req5).
     # ═════════════════════════════════════════════════════════════════════════
     fmt_h2 "總體概況 (Overall)"
-    fmt_kv "IIS 總請求數"      "$iis_total"
-    fmt_kv "不重複用戶端 IP"   "$iis_unique_ips"
-    fmt_kv "存取關聯總數"      "$acc_total"
-    fmt_kv "NORMAL 正常流程率" "$pct_normal"
-    fmt_kv "平均 API→APP 延遲" "$avg_delta"
-    fmt_kv "整體健康判定"      "$verdict"
+    fmt_kv "存取關聯總數"           "$acc_total"
+    fmt_kv "NORMAL 正常流程"        "${acc_normal} (${pct_normal})"
+    fmt_kv "ORPHAN 無對應簽發"      "${acc_orphan} (${pct_orphan})"
+    fmt_kv "UNVERIFIED 簽發未使用"  "${acc_unver} (${pct_unver})"
+    fmt_kv "平均 API→APP 延遲"      "$avg_delta"
+    fmt_kv "整體健康判定"           "$verdict"
 
     # ═════════════════════════════════════════════════════════════════════════
-    # 分區別 (By Region) — region decomposition; no grand totals (C5)
-    # Shows: per-region IIS share %, per-region NORMAL%, combined anomaly count.
+    # 分區別 (By Region) — access value+% per region; fixed-width CJK (req4)
+    # Rendered through FMT_AWK_WIDTH rpad so "異常" column aligns regardless of
+    # NORMAL% width (e.g. "0.0%" vs "100.0%"). No IIS 佔比 (req5).
     # ═════════════════════════════════════════════════════════════════════════
     fmt_h2 "分區別 (By Region)"
-    printf "  %s\n" "[佔比；總量見總體概況]"
 
+    local _region_rows=""
     for _rid in "${REGION_IDS[@]}"; do
         if [[ "$OPT_REGION" != "all" && "$OPT_REGION" != "$_rid" ]]; then continue; fi
-        local _rname="${REGION_NAMES[$_rid]}"
-
-        # Per-region IIS share
-        local _riis
-        _riis=$(printf '%s\n' "$agg_out" | gawk -F'\t' -v r="$_rid" \
-            '$1=="IIS_REGION" && $2==r {print $3; exit}')
-        _riis="${_riis:-0}"
-        local _riis_share
-        _riis_share=$(fmt_pct "$_riis" "$iis_total")
-
-        # Per-region ACCESS breakdown
-        local _r_line _r_norm _r_orph _r_unver _r_acc_total _r_anomaly _rnormal_pct
+        local _rname="${REGION_NAMES[$_rid]}" _r_line _r_norm _r_orph _r_unver
         _r_line=$(printf '%s\n' "$agg_out" | gawk -F'\t' -v r="$_rid" \
             '$1=="ACC_REGION" && $2==r {print $3, $4, $5; exit}')
         _r_norm=$( printf '%s\n' "$_r_line" | awk '{print $1+0}')
         _r_orph=$( printf '%s\n' "$_r_line" | awk '{print $2+0}')
         _r_unver=$(printf '%s\n' "$_r_line" | awk '{print $3+0}')
-        _r_norm="${_r_norm:-0}"; _r_orph="${_r_orph:-0}"; _r_unver="${_r_unver:-0}"
-        _r_acc_total=$(( _r_norm + _r_orph + _r_unver ))
-        _r_anomaly=$((   _r_orph + _r_unver ))
-        _rnormal_pct=$(fmt_pct "$_r_norm" "$_r_acc_total")
-
-        fmt_kv "$_rname" "IIS 佔比 ${_riis_share}   NORMAL ${_rnormal_pct}   異常 ${_r_anomaly}"
+        local _r_tot=$(( _r_norm + _r_orph + _r_unver ))
+        local _r_anom=$(( _r_orph + _r_unver ))
+        local _np _ap
+        _np=$(fmt_pct "$_r_norm" "$_r_tot"); _ap=$(fmt_pct "$_r_anom" "$_r_tot")
+        _region_rows+="${_rname}	${_r_norm}	${_np}	${_r_anom}	${_ap}"$'\n'
     done
 
-    # ═════════════════════════════════════════════════════════════════════════
-    # 服務別 (By Service Role) — role decomposition
-    # SLOW/ORPHAN/UNVERIFIED literals ONLY here (C5).
-    # UNVERIFIED in API sub-slice; ORPHAN in APP sub-slice.
-    # ═════════════════════════════════════════════════════════════════════════
-    fmt_h2 "服務別 (By Service Role)"
+    LC_ALL=C gawk -F'\t' "$FMT_AWK_WIDTH"'
+        NF > 0 { printf "  %s%s%s\n",
+              rpad($1, 12),
+              rpad("正常 " $2 " (" $3 ")", 22),
+              "異常 " $4 " (" $5 ")" }
+    ' <<< "$_region_rows"
 
-    # ── API sub-slice (UNVERIFIED signal) ────────────────────────────────────
-    # Numeric placement (C5): role signals (SLOW/ORPHAN/UNVERIFIED) only here.
-    fmt_h3 "API 伺服器 (${n_api_srv} 台 · 簽發 Token)"
-    fmt_kv "IIS 請求數 (佔比)"              "${iis_api_total} (${pct_api_share})"
-    fmt_kv "慢速率 (>${OPT_SLOW_API_MS}ms)" "$pct_api_slow"
-    fmt_kv "UNVERIFIED (簽發未使用)"        "$acc_unver"
+    # ═════════════════════════════════════════════════════════════════════════
+    # 核心功能效能 (Core Function Performance).
+    # Consumes CAT rows (IIS-sourced, tz-corrected, test-host-mode aware).
+    # % of the 3-category sum (D5). avg = exact pooled mean (sum_ms/count/1000).
+    # No 慢速 column: category-slow was out-of-scope and misled on role SLAs.
+    # ═════════════════════════════════════════════════════════════════════════
+    fmt_h2 "核心功能效能 (Core Function Performance)"
+    printf "  %s\n" "[佔比為三大核心功能合計之占比 (三者為核心功能子集，非全體業務請求)；回應時間為平均值]"
 
-    # ── APP sub-slice (ORPHAN signal) ────────────────────────────────────────
-    # Dependency-health / Oracle-outage detection now lives only in analyze_errors.
-    fmt_h3 "APP 伺服器 (${n_app_srv} 台 · 驗證 Token / DICOM)"
-    fmt_kv "IIS 請求數 (佔比)"              "${iis_app_total} (${pct_app_share})"
-    fmt_kv "慢速率 (>${OPT_SLOW_APP_MS}ms)" "$pct_app_slow"
-    fmt_kv "ORPHAN (無對應簽發)"            "$acc_orphan"
+    local _g_c _g_a _d_c _d_a _n_c _n_a
+    IFS=' ' read -r _g_c _g_a <<< "$(printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="CAT"&&$2=="glcr"{print $3,$4;exit}')"
+    IFS=' ' read -r _d_c _d_a <<< "$(printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="CAT"&&$2=="ds"{print $3,$4;exit}')"
+    IFS=' ' read -r _n_c _n_a <<< "$(printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="CAT"&&$2=="nhi"{print $3,$4;exit}')"
+    _g_c=${_g_c:-0}; _d_c=${_d_c:-0}; _n_c=${_n_c:-0}
+    _g_a=${_g_a:-0.00}; _d_a=${_d_a:-0.00}; _n_a=${_n_a:-0.00}
+    local _cat_sum=$(( _g_c + _d_c + _n_c ))
+    local _gp _dp _npc
+    _gp=$( fmt_pct "$_g_c" "$_cat_sum"); _dp=$(fmt_pct "$_d_c" "$_cat_sum"); _npc=$(fmt_pct "$_n_c" "$_cat_sum")
+
+    LC_ALL=C gawk -F'\t' "$FMT_AWK_WIDTH"'
+        { printf "  %s%s%s\n",
+              rpad($1, 24),
+              rpad($2 " (" $3 ")", 14),
+              "平均 " $4 "s" }
+    ' <<< "雲端查詢 (前端轉跳速度)	${_g_c}	${_gp}	${_g_a}
+報告摘要 (摘要載入速度)	${_d_c}	${_dp}	${_d_a}
+影像下載 (影像載入速度)	${_n_c}	${_npc}	${_n_a}"
+    fmt_kv "核心功能存取合計" "${_cat_sum} ($(fmt_pct "$_cat_sum" "$_cat_sum"))"
 }
 
 # ---------------------------------------------------------------------------

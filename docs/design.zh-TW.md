@@ -1,6 +1,6 @@
 # log-parse — 設計規格說明書
 
-> 版本 2.1 · 2026-06-29 · 對象：開發者、SRE、值班工程師
+> 版本 2.2 · 2026-06-30 · 對象：開發者、SRE、值班工程師
 > **語言**：[English](design.md) · **繁體中文**
 
 本文件描述系統「做了什麼」與「為什麼這樣設計」。CLI 用法請見
@@ -97,7 +97,7 @@ LUNG-CANCER-REPORT 系統為兩家醫院（台北 / 台中）提供臨床研究�
 3. **設定檔層**（`conf/`） — 純文字檔，不含可執行內容。`regions.conf`
    為管道字元分隔格式，由各 bin 內的 `load_regions()` 讀取。
    `test_hosts.conf` 每行一個 IPv4，由 `lib/common.sh` 中的
-   `load_test_hosts` 讀取（見 §3.2.13）。
+   `load_test_hosts` 讀取（見 §3.2.14）。
 
 ### 2.2 程序模型
 
@@ -129,20 +129,37 @@ LUNG-CANCER-REPORT 系統為兩家醫院（台北 / 台中）提供臨床研究�
 
 IIS 指標 awk 與 RFC-4180 CSV 引號處理器的單一事實來源：
 
-- **`AGG_IIS_AWK`** — IIS W3C 日誌分析器（逐字從 `bin/analyze_iis.sh`
-  搬移，未改動邏輯）。透過 `agg_iis_rows COMBINED SLOW_MS` 呼叫。
+- **`AGG_IIS_AWK`** — IIS W3C 日誌分析器。依序套用：UTC 時區視窗過濾器
+  （tz guard，見 §3.2.14）、`/health` 排除、測試主機模式過濾、DICOM
+  端點分組、核心功能類別分類。除標準標籤化列外，亦輸出
+  `CATEGORY <key> <count> <sum_ms>` 列（三個類別均固定輸出以確保下游
+  穩定解析；`sum_ms` 為原始整數累積值，下游可跨伺服器加總後單次除法
+  得到精確平均值，無中間捨入誤差）。透過 `agg_iis_rows` 呼叫。
 - **`AGG_CSV_FUNC`** — RFC-4180 gawk `q(s)` 函式（逐字從
   `bin/analyze_access.sh` 搬移）。以字串串接方式前置於 access
   `render_csv` 與 iis csv-detail 兩個 gawk 程式。**不建立 bash 端
   `fmt_csv_field`**——`q()` 是 gawk 函式；bash 重新實作會產生第三份
   平行副本，正是單一事實來源規則要防止的問題。
-- **`agg_iis_rows COMBINED SLOW_MS [TOP]`** — 執行 `AGG_IIS_AWK`，輸出
-  標籤化列。
+- **`agg_iis_rows COMBINED SLOW_MS [TOP] [TH_MODE] [TH_SET] [TZ_LO] [TZ_HI]`** —
+  執行 `AGG_IIS_AWK`；可選的 `TZ_LO`/`TZ_HI` 參數為由 `iis_utc_window`
+  計算的半開放 UTC 時間邊界（空值表示不做時區過濾，向舊版相容）。
 - **`agg_access_rows RESULT_SORTED`** — 單一 gawk 步驟，取代原先
   `analyze_access.sh:351-353` 的三個分開計數步驟。
 - **Schema 常數** `IIS_STAT_SCHEMA` / `ACCESS_STAT_SCHEMA` 及欄位索引
   輔助（`IIS_F_REGION`、`IIS_F_TAG` 等），讓分析器、渲染器、overview
-  共享同一契約。
+  共享同一契約。`IIS_STAT_SCHEMA` 包含 `CATEGORY` 列定義；`IIS_F_AVGSEC`
+  （位置 8）為重載欄位：對 `ENDPOINT` 列為 `avg_sec`，對 `CATEGORY` 列
+  為 `sum_ms`（整數毫秒，**非** avg_sec）——已記錄於 schema 說明中。
+
+#### `lib/date_utils.sh` — IIS 時區偏移常數與視窗輔助函式
+
+為支援 IIS UTC→UTC+8 時區修正（見 §3.2.14）新增兩項：
+
+- **`IIS_UTC_OFFSET_HOURS=8`** — +8h 偏移的單一事實來源（UTC 截止時刻
+  = 24 − 8 = 16:00:00）。在 source 時設定。
+- **`IIS_TZ_CUTOFF_UTC`** — 由上述常數衍生為 `16:00:00`。
+- **`iis_utc_window START END`** — 將 UTC+8 含頭含尾日期範圍映射為半開放
+  UTC 字串邊界 `"LO|HI"`，供 `agg_iis_rows` 使用。純 stdout；無副作用。
 
 #### `lib/common.sh` — 測試主機載入器與謂詞（單一事實來源）
 
@@ -231,17 +248,21 @@ IIS  ...                         UNIQUE_IPS <n>
 IIS  ...                         STATUS     <code>  <count>
 IIS  ...                         ENDPOINT   <uri>   <count>  <avg_sec>
 IIS  ...                         CLIENT_IP  <ip>    <count>
+IIS  ...                         CATEGORY   <key:glcr|ds|nhi>  <count>  <sum_ms:int>
+  注意：CATEGORY 位置 8 = 累積耗時毫秒（整數，非 avg_sec）。
+        avg_sec = sum_ms/count/1000（單次除法 → 跨伺服器精確平均值）。
 ```
 
 所有列均反映**業務流量**：`/health` 請求已無條件排除，且已依 `--test-hosts`
-模式（§3.2.13）套用測試主機過濾。`TOTAL` 因此僅計業務請求。`STATUS` 列為
+模式（§3.2.14）套用測試主機過濾。`TOTAL` 因此僅計業務請求。`STATUS` 列為
 描述性 Top-N 狀態碼分布（業務流量，302/404 可能出現——此為刻意設計，代表
 真實業務回應）。原先的 `5XX`、`503_HEALTH`、`REDIRECT` 聚合列已移除；
 相依服務健康偵測現在僅存在於 `analyze_errors`（見 §3.3）。
 
 `role` 為 `api` 或 `app`（由 `conf/regions.conf` 解析）。`region` 為
 `taipei` 或 `taichung`；合併模式標記 `region=all, server=API_SERVERS|APP_SERVERS`。
-逐伺服器粒度讓 overview 可以加總方式分桶為 總體 / 分區 / 服務別。
+逐伺服器粒度讓 overview 可以加總 CATEGORY 的 `sum_ms`/`count`，再單次
+除法（精確跨伺服器平均值，無中間捨入誤差）。
 
 **Access schema**（`ACCESS_STAT_SCHEMA`）：
 ```
@@ -260,53 +281,64 @@ ACCESS  ...       DELTA_MAX     <sec>
 
 報告呈現三種獨立的分解維度。**任一數值字面值不得跨視角重複出現。**
 
-- **總體概況**：系統大總計 + 關鍵比率 + 定性判定。大總計（`IIS 總請求數`、
-  `存取關聯總數`）**僅出現於此處**。判定行不含數字（僅文字）。
-- **分區別**：每區域請求*佔比 %*、每區域 NORMAL%、每區域異常加總數。
-  不含大總計；不含角色專屬訊號。
-- **服務別**：每角色請求量 + 佔比 %，加上角色專屬問題訊號：`UNVERIFIED`
-  僅出現於 API 子切片（簽發端）；`ORPHAN` 與 `SLOW` 僅出現於 APP 子切片
-  （驗證端）。`SLOW` 字串**僅**出現於此區塊。
+- **總體概況**：存取業務大總計（含值 + 百分比）、平均 API→APP 延遲、定性
+  判定。`存取關聯總數` **僅出現於此處**。判定行不含數字（僅文字）。IIS 一般
+  總計（`IIS 總請求數`、不重複 IP）**不顯示**——概覽以存取業務為焦點。
+- **分區別**：每區域 正常 N (p%) / 異常 N (p%)，透過 `FMT_AWK_WIDTH` 的
+  `rpad` 引擎以 CJK 顯示寬度固定對齊，無論 NORMAL% 字串長短均不位移。
+- **核心功能效能**（取代 服務別）：三個 IIS 來源、UTC+8 日期修正的類別，
+  各顯示：筆數、三類合計占比 %、平均回應時間（秒，精確平均值）。
+  三類別為業務請求的**子集**（附注說明）。類別定義見 §3.0.7。
 
-請求量合理地出現於三種不同分解（大總計、分區、服務別）——但每個數值
-字面值皆為獨特值。
+**服務別（By Service Role）已退役。** 其 IIS 一般請求內容因需以存取業務
+為焦點而移除（req5）；其僅剩的存取角色訊號（UNVERIFIED/ORPHAN）現已在
+總體概況以值 + % 呈現，因此保留會違反 C5 數值單一放置規則。無資訊遺失。
 
-輸出範例（每週，`--from 2026-05-18 --to 2026-05-25`，全區域，
+**整體健康判定基準**（req3）：判定基準使用已完整解析的分析視窗（`build_date_list`
+輸出，UTC+8 業務時間）。計算方式：
+`正常流程率 = trunc(NORMAL ÷ 存取關聯總數 × 100)` — **整數截斷（趨零截斷）**
+（以 `printf "%d"` 實作，非銀行家捨入；97.6% → 97 → 注意）。IIS 請求量
+**不**納入判定。
+
+| 條件（整數 P = trunc(NORMAL ÷ 存取關聯總數 × 100)） | 判定 | 文案 |
+|---|---|---|
+| 存取關聯總數 = 0 | 無資料 | 無資料 — 本期間無存取關聯記錄 |
+| P ≥ 98 | 正常 | 正常 — 系統整體運作健康 |
+| 90 ≤ P ≤ 97 | 注意 | 注意 — 存在異常存取，建議持續監控 |
+| P < 90 | 警告 | 警告 — 存取異常比例偏高，建議立即調查 |
+
+下界含頭（`>=`）。P = 97.6% → trunc → 97 → 注意（非正常）。
+
+輸出範例（單日 `--date 2026-05-21`，全區域，
 `--test-hosts exclude` 預設——僅業務流量）：
 ```
 ========================================================================
   營運總覽報告 (Management Overview)
 ========================================================================
-  分析期間                                2026-05-18  →  2026-05-25  (8 天)
+  分析期間                                2026-05-21  →  2026-05-21  (1 天)
   涵蓋範圍                                2 區域 / 6 伺服器 (2 API · 4 APP)
 
 ▶ 總體概況 (Overall)
 ------------------------------------------------------------------------
-  IIS 總請求數                            738
-  不重複用戶端 IP                         12
   存取關聯總數                            9
-  NORMAL 正常流程率                       66.7%
+  NORMAL 正常流程                         6 (66.7%)
+  ORPHAN 無對應簽發                       3 (33.3%)
+  UNVERIFIED 簽發未使用                   0 (0.0%)
   平均 API→APP 延遲                       19.5s
   整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
 
 ▶ 分區別 (By Region)
 ------------------------------------------------------------------------
-  [佔比；總量見總體概況]
-  台北                                    IIS 佔比 45.9%   NORMAL 0.0%   異常 3
-  台中                                    IIS 佔比 54.1%   NORMAL 100.0%   異常 0
+  台北        正常 0 (0.0%)         異常 3 (100.0%)
+  台中        正常 6 (100.0%)       異常 0 (0.0%)
 
-▶ 服務別 (By Service Role)
+▶ 核心功能效能 (Core Function Performance)
 ------------------------------------------------------------------------
-
-    ■ API 伺服器 (2 台 · 簽發 Token)
-  IIS 請求數 (佔比)                       11 (1.5%)
-  慢速率 (>2000ms)                        0.0%
-  UNVERIFIED (簽發未使用)                 0
-
-    ■ APP 伺服器 (4 台 · 驗證 Token / DICOM)
-  IIS 請求數 (佔比)                       727 (98.5%)
-  慢速率 (>5000ms)                        0.7%
-  ORPHAN (無對應簽發)                     3
+  [佔比為三大核心功能合計之占比 (三者為核心功能子集，非全體業務請求)；回應時間為平均值]
+  雲端查詢 (前端轉跳速度) 11 (1.8%)     平均 0.11s
+  報告摘要 (摘要載入速度) 186 (29.8%)   平均 0.38s
+  影像下載 (影像載入速度) 427 (68.4%)   平均 0.93s
+  核心功能存取合計                        624 (100.0%)
 ```
 
 #### 3.0.5 接受 / 拒絕的旗標
@@ -323,6 +355,34 @@ ACCESS  ...       DELTA_MAX     <sec>
 僅摘要：`persist_views overview summary text overview_render ''`。
 僅寫入 `overview_summary_<TS>.txt`（`DETAIL_FN=""` → 無詳細檔案）。
 空時間視窗邊界：百分比以 `N/A` / `0.0%` 呈現，正常 exit 0。
+
+#### 3.0.7 核心功能效能 — 類別定義（單一事實來源：`AGG_IIS_AWK`）
+
+三個類別以**大小寫不敏感的錨定正規表達式**對原始 `cs-uri-stem` 進行比對，
+模式定義一次於 `AGG_IIS_AWK`（`lib/aggregate_utils.sh`），同時供
+`analyze_iis` 與 `analyze_overview` 使用：
+
+| 鍵 | 標籤 | 比對模式 | 角色 |
+|----|------|---------|------|
+| `glcr` | 雲端查詢（前端轉跳速度） | `^/api/GetLungCancerReportURL$`（精確） | APP |
+| `ds` | 報告摘要（摘要載入速度） | `^/api/DigestSummary(/|$)`（前綴） | API |
+| `nhi` | 影像下載（影像載入速度） | `^/api/NhiPatientImage/studies/`（前綴） | API |
+
+類別比對與端點 Top-N 上限（`--top`）無關；所有命中列均納入計算，不受上限
+截斷。`nhi` 前綴涵蓋完整 DICOM 下載家族（series、series-uid、instances、jpg）；
+非下載類 `NhiPatientImage` 子路徑依設計不納入統計。
+
+`glcr` 流量完全由 APP 角色伺服器承接（範例資料驗證：台中 APP 6 筆 + 台北 APP
+5 筆 = 11 筆）。`ds` 與 `nhi` 為 API 角色。
+
+**精確平均值：** `AGG_IIS_AWK` 輸出原始整數 `sum_ms` 累積值。`OVERVIEW_AWK`
+跨伺服器加總 `Σsum_ms` 與 `Σcount`，再**單次除法**（`sum_ms / count / 1000.0`）
+——無中間每伺服器捨入，無末位誤差漂移。
+
+**`--slow-api-ms` / `--slow-app-ms` 與 overview：** 這兩個閾值由
+`analyze_overview` 接受並轉傳給 IIS 子程序，用於控制全局 IIS `SLOW` 統計桶。
+然而，overview 僅消費 `CATEGORY` 列（含 `count` + `sum_ms`，無慢速欄位），
+因此這兩個閾值**不影響** overview 任何顯示值。
 
 ---
 
@@ -357,7 +417,7 @@ CSV 欄位（含表頭）：
 
 比對前，`CLIENT_IP`（CSV 第 7 欄）符合測試主機集合的紀錄，會在**擷取
 階段**（`lib/csv_utils.sh` 中的 `extract_api_records` / `extract_app_records`）
-依 `--test-hosts` 模式（§3.2.13）丟棄。由於 Token 的 API 簽發列與 APP
+依 `--test-hosts` 模式（§3.2.14）丟棄。由於 Token 的 API 簽發列與 APP
 驗證列攜帶相同的 `CLIENT_IP`，兩側會同步被過濾——不會產生 orphan 或
 unverified 殘留紀錄。
 
@@ -526,9 +586,56 @@ tsv / csv 輸出：`REGION` 欄值為 `merged`。
 #### 3.2.1 目的
 揭露**業務流量**之 HTTP 層關鍵指標：請求量、狀態碼分布、慢端點、
 唯一用戶端 IP。`/health` 請求無條件排除於所有聚合之外；測試主機 IP
-依 `--test-hosts` 模式過濾（預設：`exclude`）。見 §3.2.13。
+依 `--test-hosts` 模式過濾（預設：`exclude`）。見 §3.2.14。
 
-#### 3.2.2 輸入
+#### 3.2.2 時區修正（UTC+0 → UTC+8）
+
+IIS W3C 日誌以 **UTC+0** 時間記錄。業務 / 參考時區（存取 CSV 與 .NET
+應用程式日誌）為 **UTC+8**。UTC+8 業務日 `D` 等同 UTC 區間
+`[D−1 16:00:00, D 16:00:00)`（截止時刻 = 24 − `IIS_UTC_OFFSET_HOURS` = 16）。
+
+**檔案選取：** 對於要求的本地端範圍 `[START, END]`，分析器讀取
+`u_ex(START−1) .. u_ex(END)` 的檔案（前置 D−1 檔以涵蓋對應本地時間
+00:00–07:59 的 UTC 夜間小時段）。若前一日檔案不存在（例如 START 為最早
+可用日期的 `u_ex260517`），現有的 `[[ -f ]]` 防護將靜默跳過——邊界不
+完整，但不中止執行。
+
+**列過濾：** 選取檔案後，`AGG_IIS_AWK` 套用半開放 UTC 字串邊界防護：
+
+```
+TZ_LO = (START − 1) " 16:00:00"   含頭
+TZ_HI =  END        " 16:00:00"   不含尾
+保留列  ⟺  TZ_LO ≤ ($1 " " $2) < TZ_HI
+```
+
+`$1`（`YYYY-MM-DD`）與 `$2`（`HH:MM:SS`）為固定寬度零補齊的 W3C 欄位，
+因此字典序字串比較與時間序完全一致——無需 `mktime`，不依賴主機 `TZ` 設定。
+
+**跨午夜範例**（`--date 2026-05-21`；`TZ_LO="2026-05-20 16:00:00"`，
+`TZ_HI="2026-05-21 16:00:00"`）：
+
+| UTC `$1 $2` | 本地時間（+8h） | 結果 |
+|---|---|---|
+| `2026-05-20 15:59:00` | 2026-05-20 23:59 | 丟棄（前一本地日） |
+| `2026-05-20 16:30:00` | 2026-05-21 00:30 | **保留** |
+| `2026-05-21 10:48:18` | 2026-05-21 18:48 | **保留** |
+| `2026-05-21 16:00:00` | 2026-05-22 00:00 | 丟棄（下一本地日） |
+
+**單一事實來源：** `IIS_UTC_OFFSET_HOURS=8` 與 `iis_utc_window` 定義於
+`lib/date_utils.sh`；字串邊界過濾防護定義於 `lib/aggregate_utils.sh` 的
+`AGG_IIS_AWK`。這是 +8h 語意唯一存在的兩處。`analyze_iis` 與
+`analyze_overview` 為純消費端——無重複的時區 / 類別邏輯。
+
+**`--date D` 語意：** `analyze_iis --date D` 現在代表 UTC+8 業務日 `D`。
+顯示視窗（`dates.txt`）不變；IIS 檔案選取清單（`iis_dates.txt`）以
+`date_add(START, -1)` 前置。存取與 .NET 應用程式日誌原生為 UTC+8，不受
+影響。
+
+**附帶資料集的數值不變性：** 範例資料集中所有非 `/health` 的 IIS 列
+UTC 時間均 < 16:00:00——+8h 修正在架構上必要，但對此資料集數值上無影響
+（業務計數不變）。
+
+#### 3.2.3 輸入
 
 `<log_dir>/<server>/iis/u_ex<YYMMDD>.log` — IIS W3C 擴充格式。
 
@@ -546,7 +653,7 @@ tsv / csv 輸出：`REGION` 欄值為 `merged`。
 
 `#` 開頭為 W3C 指令列、需略過。欄位數 < 17 之列為截斷紀錄，亦略過。
 
-#### 3.2.3 端點分組
+#### 3.2.4 端點分組
 
 `cs-uri-stem` 內含 DICOM study / series UID，會把端點計數的 cardinality
 炸開。分析器在計數前先將下列三類 DICOM 路徑收斂為 template：
@@ -559,13 +666,13 @@ tsv / csv 輸出：`REGION` 欄值為 `merged`。
 
 其他路徑維持原樣。
 
-#### 3.2.4 聚合訊號
+#### 3.2.5 聚合訊號
 
 所有指標均作用於**業務請求**：`/health` 請求無條件排除（精確欄位比對
 `cs-uri-stem == "/health"`，大小寫區分；query-string 為獨立欄位，因此
 `/health?x=1` 在 stem 上仍命中；`/healthz` 與 `/Health` 不被過濾——此為
 刻意設計，沿用原有語義）。在任何計數前，測試主機 IP 已依 `--test-hosts`
-模式過濾（§3.2.13）。
+模式過濾（§3.2.14）。
 
 | 指標              | 定義                                                                                                                                                   |
 |-------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -579,15 +686,15 @@ tsv / csv 輸出：`REGION` 欄值為 `merged`。
 三張表格之 `% of total` 分母均為該伺服器或語料桶之 `total` 業務請求數。
 當 `--top` 截斷端點或 Client IP 清單時，可見列之百分比加總不會達到 100%。
 
-#### 3.2.5 單一計算來源
+#### 3.2.6 單一計算來源
 
 `main()` 為每台伺服器建立 `$combined` 一次，對每個語料執行一次
 `agg_iis_rows`（以 `region role server` 前置詞將維度化列寫入
 `iis_stats.tsv`），之後不再重新解析日誌。純渲染器讀取 `iis_stats.tsv`。
 
-#### 3.2.6 視圖
+#### 3.2.7 視圖
 
-`--view detail`（standalone 預設——D2）：§3.2.7–3.2.8 所述之逐伺服器
+`--view detail`（standalone 預設——D2）：§3.2.8–3.2.9 所述之逐伺服器
 報告版面。無資訊遺失。
 
 `--view summary`（管理文字；格式獨立——永遠為文字）：每個範圍（整體
@@ -598,7 +705,7 @@ tsv / csv 輸出：`REGION` 欄值為 `merged`。
 **摘要視圖不論 `--format` 為何，永遠輸出文字**（C10）。`--format` 僅
 控制詳細檔案的副檔名與渲染路徑。
 
-#### 3.2.7 詳細文字輸出（--format text）
+#### 3.2.8 詳細文字輸出（--format text）
 
 每個所選區域之每台伺服器，或 `--merge` 下之每個角色語料桶：
 
@@ -615,7 +722,7 @@ tsv / csv 輸出：`REGION` 欄值為 `merged`。
 
 IIS 各表均為純計數降冪排名清單；不存在逐筆時間序詳細清單。
 
-#### 3.2.8 詳細機器可讀輸出（--format tsv|csv）
+#### 3.2.9 詳細機器可讀輸出（--format tsv|csv）
 
 真實長格式表格（**新功能**——此重構前為 no-op + 警告）。每個指標列一
 筆紀錄；表頭輸出一次；`--top` 上限套用於 ENDPOINT 與 CLIENT_IP 列。
@@ -636,7 +743,7 @@ taipei  api   10.22.63.37  CLIENT_IP 192.168.139.119    712    -        98.5
 CSV 使用共用 `q()` RFC-4180 引號處理器（`AGG_CSV_FUNC`）。TSV 使用
 TAB 分隔不加引號。兩種持久化檔案均不含 ANSI 色碼。
 
-#### 3.2.9 依角色分流之慢請求閾值
+#### 3.2.10 依角色分流之慢請求閾值
 
 `--slow-api-ms`（預設 2000 ms）適用於 `REGION_APIS` 中的伺服器；
 `--slow-app-ms`（預設 5000 ms）適用於 `REGION_APPS` 中的伺服器。角色
@@ -644,13 +751,13 @@ TAB 分隔不加引號。兩種持久化檔案均不含 ANSI 色碼。
 服務端點更嚴格之 SLA 要求。報告中 `Slow (>Nms)` 標籤顯示該伺服器實際採
 用之閾值。
 
-#### 3.2.10 `--top` 旗標
+#### 3.2.11 `--top` 旗標
 
 控制端點表與 Client IP 表各自最多顯示之列數（預設 10；0=全部）。同一次
 執行中兩張表套用相同上限。此旗標在 `analyze_iis` 與 `analyze_errors` 之
 間統一（名稱相同、0=all 語義相同，作用對象不同）。
 
-#### 3.2.11 `--merge` — 雙語料桶跨區域合併
+#### 3.2.12 `--merge` — 雙語料桶跨區域合併
 
 使用 `--merge` 時，對所有已設定區域執行迭代，建立兩份語料：
 
@@ -661,12 +768,12 @@ TAB 分隔不加引號。兩種持久化檔案均不含 ANSI 色碼。
 1. `IIS — API_SERVERS (merged, all regions)` — 使用 `--slow-api-ms` 閾值。
 2. `IIS — APP_SERVERS (merged, all regions)` — 使用 `--slow-app-ms` 閾值。
 
-#### 3.2.12 `--emit-stats`
+#### 3.2.13 `--emit-stats`
 
 將 `iis_stats.tsv` 逐字印至 stdout，然後在 `persist_init` 之前返回
 （無檔案、無標題橫幅）。這是 `analyze_overview.sh` 的資料來源。
 
-#### 3.2.13 測試主機過濾與 `/health` 排除
+#### 3.2.14 測試主機過濾與 `/health` 排除
 
 `agg_iis_rows`（位於 `lib/aggregate_utils.sh`）在讀取階段依**固定順序**
 套用兩道前置過濾器：
@@ -1033,7 +1140,10 @@ KV 與統計區塊以顯示寬度（wcwidth；CJK 全形字 = 2 欄）對齊，�
 
 ## 7. 已知限制
 
-- IIS 時間欄位視為 UTC，報告不做本地化轉換。
+- IIS 時間戳為 UTC+0；`analyze_iis` 與 `analyze_overview` 透過半開放
+  UTC 視窗過濾器（`lib/date_utils.sh` 中的 `iis_utc_window`）修正為
+  UTC+8 業務時間。存取與 .NET 應用程式日誌原生為 UTC+8，不做調整。
+  `analyze_errors` 直接讀取 .NET 應用程式日誌（UTC+8），不套用時區修正。
 - 錯誤模式分組為啟發式作法，會把僅以數值 / 時間差異區分之訊息群組
   化；對大多數情境正確，但對僅以字串狀態區分之錯誤族群會喪失辨識度。
 - 重啟事件配對假設事件按時間序到達；若日誌跨日輪替於事件中段，可能

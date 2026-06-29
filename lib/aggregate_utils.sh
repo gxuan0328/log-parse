@@ -31,11 +31,15 @@ AGG_IIS_AWK='
 # Purpose : Analyse IIS W3C log lines; emit TAB-delimited kind-tagged rows.
 #           Unconditionally excludes /health requests before any counting.
 #           Applies test-host mode (exclude|only|all) on c-ip (field 9).
+#           Applies optional UTC timezone window filter (tz_lo/tz_hi).
 # Input   : Raw W3C extended log lines (space-delimited; # lines = comments).
-# Vars    : slow_ms   — role-resolved slow-request threshold in milliseconds.
-#           top       — max rows for ENDPOINT and CLIENT_IP (0 = all).
-#           _th_mode  — test-host mode: exclude (default) | only | all.
-#           th_set    — space-joined test-host IP string (from load_test_hosts).
+# Vars    : slow_ms     — role-resolved slow threshold for global SLOW bucket.
+#           top         — max rows for ENDPOINT and CLIENT_IP (0 = all).
+#           _th_mode    — test-host mode: exclude (default) | only | all.
+#           th_set      — space-joined test-host IP string (from load_test_hosts).
+#           tz_lo       — half-open UTC window lower bound "YYYY-MM-DD HH:MM:SS"
+#                         (empty => no filter; back-compat).
+#           tz_hi       — half-open UTC window upper bound "YYYY-MM-DD HH:MM:SS".
 # Output  : TAB-delimited, kind-prefixed rows on stdout (business requests only):
 #             TOTAL\t<n>
 #             SLOW\t<n>
@@ -45,6 +49,9 @@ AGG_IIS_AWK='
 #                                                    --top default 10, 0=all)
 #             CLIENT_IP\t<ip>\t<count>              (Top-N by count desc,
 #                                                    --top default 10, 0=all)
+#             CATEGORY\t<key:glcr|ds|nhi>\t<count>\t<sum_ms:int>
+#               NOTE: CATEGORY pos4=sum_ms (integer ms, NOT avg_sec). No slow field.
+#               avg_sec = sum_ms/count/1000 (single division => exact pooled mean).
 # ----------------------------------------------------------------------------
 BEGIN {
     health_path    = "/health"
@@ -55,11 +62,24 @@ BEGIN {
     # no test-host traffic, or --test-hosts exclude with only /health + test-host records).
     split("", ep_count); split("", ep_time_ms)
     split("", client_ips); split("", status_count)
+    # Core service categories (case-insensitive; anchored). Single source
+    # consumed by analyze_iis AND analyze_overview.
+    cat_re["glcr"] = "^/api/getlungcancerreporturl$"        # cloud query (frontend redirect)
+    cat_re["ds"]   = "^/api/digestsummary(/|$)"             # report summary (summary load)
+    cat_re["nhi"]  = "^/api/nhipatientimage/studies/"       # image download (image load)
+    split("glcr ds nhi", cat_order, " ")                    # stable emit order
+    split("", cat_count); split("", cat_time_ms)
 }
 
 # Skip W3C directive lines and any truncated rows missing required fields.
 /^#/ { next }
 NF < 17 { next }
+
+# IIS timezone correction: $2 is UTC+0; business/reference TZ is UTC+8.
+# Keep only rows whose UTC datetime lies in the half-open window the bash layer
+# computed for the requested LOCAL date range. Empty bounds => no filter.
+# $1/$2 are fixed-width "YYYY-MM-DD"/"HH:MM:SS" => string compare is chronological.
+tz_lo != "" && ( ($1 " " $2) <  tz_lo || ($1 " " $2) >= tz_hi ) { next }
 
 {
     # Default IIS W3C field positions (1-based):
@@ -75,6 +95,18 @@ NF < 17 { next }
 
     if (uri == health_path) next     # /health removed from business universe (ALL modes)
     if (th_skip(client))    next     # test-host MODE on c-ip (field 9)
+
+    # Classify by core service category (raw uri, before DICOM normalization).
+    # Independent of Top-N cap. Accumulates count + sum_ms only (no slow field).
+    lu = tolower(uri)
+    if      (lu ~ cat_re["glcr"]) c = "glcr"
+    else if (lu ~ cat_re["ds"])   c = "ds"
+    else if (lu ~ cat_re["nhi"])  c = "nhi"
+    else                          c = ""
+    if (c != "") {
+        cat_count[c]++
+        cat_time_ms[c] += ttms
+    }
 
     total++
     status_count[status]++
@@ -126,6 +158,14 @@ END {
     lim2 = (top == 0) ? m : (m < top ? m : top)
     for (i = 1; i <= lim2; i++)
         printf "CLIENT_IP\t%s\t%d\n", ip_sorted[i], client_ips[ip_sorted[i]]
+
+    # Emit CATEGORY rows (always all three for stable downstream parsing).
+    # Fields: key, count, sum_ms (integer total ms, NOT avg). No slow field.
+    # avg_sec is derived downstream as sum_ms/count/1000 (exact pooled mean).
+    for (ci = 1; ci <= 3; ci++) {
+        c = cat_order[ci]
+        printf "CATEGORY\t%s\t%d\t%d\n", c, cat_count[c]+0, cat_time_ms[c]+0
+    }
 }
 '
 
@@ -156,6 +196,9 @@ function q(s) {
 #   STATUS     <code>  <count>
 #   ENDPOINT   <uri>   <count>  <avg_sec>
 #   CLIENT_IP  <ip>    <count>
+#   CATEGORY   <key:glcr|ds|nhi>  <count>  <sum_ms:int>
+#     NOTE: CATEGORY position 8 = summed time-taken in ms (NOT avg_sec). No slow field.
+#     avg_sec is derived downstream as sum_ms/count/1000 (exact pooled mean).
 IIS_STAT_SCHEMA='IIS\tregion\trole\tserver\tTAG[\tfields...]'
 
 # Field indices for IIS emit-stats rows (1-based, TAB-delimited).
@@ -163,10 +206,10 @@ IIS_F_MODULE=1   # "IIS"
 IIS_F_REGION=2
 IIS_F_ROLE=3     # api | app
 IIS_F_SERVER=4
-IIS_F_TAG=5      # TOTAL | SLOW | UNIQUE_IPS | STATUS | ENDPOINT | CLIENT_IP
-IIS_F_KEY=6      # code (STATUS) | uri (ENDPOINT) | ip (CLIENT_IP) | n (scalars)
-IIS_F_COUNT=7    # count for STATUS / ENDPOINT / CLIENT_IP
-IIS_F_AVGSEC=8   # avg_sec for ENDPOINT only
+IIS_F_TAG=5      # TOTAL | SLOW | UNIQUE_IPS | STATUS | ENDPOINT | CLIENT_IP | CATEGORY
+IIS_F_KEY=6      # code (STATUS) | uri (ENDPOINT) | ip (CLIENT_IP) | n (scalars) | key (CATEGORY)
+IIS_F_COUNT=7    # count for STATUS / ENDPOINT / CLIENT_IP / CATEGORY
+IIS_F_AVGSEC=8   # avg_sec for ENDPOINT; sum_ms (integer ms) for CATEGORY
 
 # ACCESS_STAT_SCHEMA — row format emitted by analyze_access --emit-stats.
 # Each row: ACCESS <TAB> region <TAB> TAG <TAB> value
@@ -186,27 +229,33 @@ ACC_F_VALUE=4    # numeric value
 # agg_iis_rows — run AGG_IIS_AWK on a combined IIS log corpus
 # ---------------------------------------------------------------------------
 
-# agg_iis_rows COMBINED SLOW_MS [TOP] [TH_MODE] [TH_SET]
+# agg_iis_rows COMBINED SLOW_MS [TOP] [TH_MODE] [TH_SET] [TZ_LO] [TZ_HI]
 #   Purpose : Execute AGG_IIS_AWK against a concatenated IIS log file and emit
 #             the raw TAB-delimited kind-tagged rows to stdout.
 #             /health is excluded unconditionally; test-host mode is applied on c-ip.
-#   Args    : COMBINED — path to concatenated IIS log file (may be empty → no output).
-#             SLOW_MS  — slow-request threshold in milliseconds (role-resolved).
-#             TOP      — [optional] max ENDPOINT/CLIENT_IP rows (0=all; default from
-#                        $OPT_TOP global when set, else 0).
-#             TH_MODE  — [optional] test-host mode: exclude (default) | only | all.
-#             TH_SET   — [optional] space-joined IP string from load_test_hosts.
+#   Args    : COMBINED     — path to concatenated IIS log file (may be empty → no output).
+#             SLOW_MS      — role-resolved slow threshold for the global SLOW bucket.
+#             TOP          — [optional] max ENDPOINT/CLIENT_IP rows (0=all; default from
+#                            $OPT_TOP global when set, else 0).
+#             TH_MODE      — [optional] test-host mode: exclude (default) | only | all.
+#             TH_SET       — [optional] space-joined IP string from load_test_hosts.
+#             TZ_LO        — [optional] UTC window lower bound "YYYY-MM-DD HH:MM:SS"
+#                            (empty => no timezone filter; back-compat).
+#             TZ_HI        — [optional] UTC window upper bound "YYYY-MM-DD HH:MM:SS".
 #   Output  : TAB-delimited rows (business-only): TOTAL, SLOW, UNIQUE_IPS,
 #             STATUS <code> <count>, ENDPOINT <uri> <count> <avg_sec>,
-#             CLIENT_IP <ip> <count>.
+#             CLIENT_IP <ip> <count>, CATEGORY <key> <count> <sum_ms>.
 #   Returns / Side effects : none (pure stdout pipeline).
 #   Errors / Notes : empty COMBINED produces no output (gawk handles gracefully).
 #             Default th_mode=exclude/empty-set drops /health only (no test-host in set).
+#             TZ_LO/TZ_HI empty => no TZ filter (back-compat with old callers).
 agg_iis_rows() {
     local combined="$1" slow_ms="$2" top_n="${3:-${OPT_TOP:-0}}"
     local th_mode="${4:-exclude}" th_set="${5:-}"
+    local tz_lo="${6:-}" tz_hi="${7:-}"          # empty => no TZ filter (back-compat)
     gawk -v slow_ms="$slow_ms" -v top="$top_n" \
          -v _th_mode="$th_mode" -v th_set="$th_set" \
+         -v tz_lo="$tz_lo" -v tz_hi="$tz_hi" \
          "$TH_FILTER_FUNC$AGG_IIS_AWK" "$combined"
 }
 

@@ -99,11 +99,17 @@ interval flags are mutually exclusive
 
 ## 0. `bin/analyze_overview.sh`
 
-管理總覽報告，透過三個切面整合 IIS 業務流量指標與存取關聯結果：
+管理總覽報告，整合存取關聯結果與 IIS 核心功能效能，以三個面板呈現：
 
-- **總體概況 (Overall)** — 系統全域總量、主要比率、質性健康判定。
-- **分區別 (By Region)** — 各區域請求佔比與 NORMAL 率。
-- **服務別 (By Service Role)** — API 與 APP 伺服器分開的問題訊號。
+- **總體概況 (Overall)** — 存取 NORMAL/ORPHAN/UNVERIFIED 筆數及其占存取關聯總數之百分比；平均 API→APP 延遲；質性健康判定。
+- **分區別 (By Region)** — 各區域正常/異常筆數 + 百分比，以 CJK 顯示寬度固定對齊，欄位不因百分比長度而移位。
+- **核心功能效能 (Core Function Performance)** — 三個 IIS 來源、UTC+8 日期修正的類別：雲端查詢（前端轉跳速度，`/api/GetLungCancerReportURL`）、報告摘要（摘要載入速度，`/api/DigestSummary` 前綴）、影像下載（影像載入速度，`/api/NhiPatientImage/studies/…` 前綴）；每列顯示筆數、三類合計占比，以及平均回應時間（秒）。三類為業務請求的子集。服務別（By Service Role）已移除。
+
+**IIS 日期語意（UTC+8）：** `--date D` 代表 UTC+8 業務日 D。IIS W3C 日誌以
+UTC+0 時間記錄；本地一天 D = UTC `[D-1 16:00, D 16:00)`。模組讀取 `u_ex(D-1)`
+UTC 時間 ≥ 16:00 的資料列與 `u_ex(D)` UTC 時間 < 16:00 的資料列，涵蓋整個本地
+日。若 `u_ex(D-1)` 不存在，清晨時段之窗口將靜默不完整（fail-soft）。存取與
+.NET 應用程式日誌原生為 UTC+8，不受影響。
 
 overview 為**僅 summary**（無 `--view`）且**僅文字**（無 `--format`）。
 它透過 `--emit-stats` 從 `analyze_iis` 與 `analyze_access` 取得指標
@@ -120,8 +126,8 @@ overview 為**僅 summary**（無 `--view`）且**僅文字**（無 `--format`�
 | `--date YYYY-MM-DD` | date | — | 否 | 單日分析。 |
 | `--from YYYY-MM-DD` / `--to YYYY-MM-DD` | 日期對 | — | 否 | 含頭含尾之日期範圍，必須成對使用。 |
 | `--days N` | uint ≥ 1 | `7` | 否 | 至今日為止之最後 N 天。僅為隱式回退。 |
-| `--slow-api-ms N` | uint ms | `2000` | 否 | API 角色伺服器之慢請求門檻。僅轉發給 iis 子行程（不轉發給 access）。 |
-| `--slow-app-ms N` | uint ms | `5000` | 否 | APP 角色伺服器之慢請求門檻。僅轉發給 iis 子行程。 |
+| `--slow-api-ms N` | uint ms | `2000` | 否 | API 角色伺服器之慢請求門檻。僅轉發給 iis 子行程（不轉發給 access）。驅動 `analyze_iis` 摘要的每台伺服器 `慢速率` KPI；**不影響** overview（核心功能效能無慢速欄）。 |
+| `--slow-app-ms N` | uint ms | `5000` | 否 | APP 角色伺服器之慢請求門檻。僅轉發給 iis 子行程。驅動 `analyze_iis` 摘要的每台伺服器 `慢速率` KPI；**不影響** overview。 |
 | `--test-hosts exclude\|only\|all` | enum | `exclude` | 否 | 測試主機 IP 過濾模式。轉發給 `analyze_iis` 與 `analyze_access` 子行程。詳見[測試主機過濾](#測試主機過濾)。 |
 | `--output-dir DIR` | path | `""` | 否 | 持久化目錄。解析順序：旗標 > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`。 |
 | `--conf FILE` | path | `conf/regions.conf` | 否 | 覆寫區域對應表，檔案必須存在。 |
@@ -156,6 +162,9 @@ bash bin/analyze_overview.sh --log-dir "$LOG_DIR" \
 
 ### 範例輸出
 
+以下範例為 `--date 2026-05-21`、預設 `--test-hosts exclude` 模式（全區域）的輸出。
+`存取關聯總數` 為業務請求數（已排除測試主機 IP）。IIS 核心功能筆數已套用 UTC+8 日期修正。
+
 ```
 ========================================================================
   營運總覽報告 (Management Overview)
@@ -165,40 +174,31 @@ bash bin/analyze_overview.sh --log-dir "$LOG_DIR" \
 
 ▶ 總體概況 (Overall)
 ------------------------------------------------------------------------
-  IIS 總請求數                            723
-  不重複用戶端 IP                         6
   存取關聯總數                            9
-  NORMAL 正常流程率                       66.7%
+  NORMAL 正常流程                         6 (66.7%)
+  ORPHAN 無對應簽發                       3 (33.3%)
+  UNVERIFIED 簽發未使用                   0 (0.0%)
   平均 API→APP 延遲                       19.5s
   整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
 
 ▶ 分區別 (By Region)
 ------------------------------------------------------------------------
-  [佔比；總量見總體概況]
-  台北                                    IIS 佔比 45.8%   NORMAL 0.0%   異常 3
-  台中                                    IIS 佔比 54.2%   NORMAL 100.0%   異常 0
+  台北        正常 0 (0.0%)         異常 3 (100.0%)
+  台中        正常 6 (100.0%)       異常 0 (0.0%)
 
-▶ 服務別 (By Service Role)
+▶ 核心功能效能 (Core Function Performance)
 ------------------------------------------------------------------------
-
-    ■ API 伺服器 (2 台 · 簽發 Token)
-  IIS 請求數 (佔比)                       11 (1.5%)
-  慢速率 (>2000ms)                        0.0%
-  UNVERIFIED (簽發未使用)                 0
-
-    ■ APP 伺服器 (4 台 · 驗證 Token / DICOM)
-  IIS 請求數 (佔比)                       712 (98.5%)
-  慢速率 (>5000ms)                        0.3%
-  ORPHAN (無對應簽發)                     3
+  [佔比為三大核心功能合計之占比 (三者為核心功能子集，非全體業務請求)；回應時間為平均值]
+  雲端查詢 (前端轉跳速度) 11 (1.8%)     平均 0.11s
+  報告摘要 (摘要載入速度) 186 (29.8%)   平均 0.38s
+  影像下載 (影像載入速度) 427 (68.4%)   平均 0.93s
+  核心功能存取合計                        624 (100.0%)
 ```
 
-`IIS 總請求數` 是**業務請求數**（排除 `/health` 及依預設 `exclude` 模式過濾的測試
-主機 IP）。上方數值反映 `--date 2026-05-21`、預設 `exclude` 模式下的結果。
-
 實作強制執行的內容規則：
-- 全域總量（`IIS 總請求數`、`存取關聯總數`）僅出現在總體概況區塊。
-- `SLOW`、`ORPHAN`、`UNVERIFIED` 關鍵字僅出現在服務別區塊。
-- `UNVERIFIED` 僅出現在 API 子切面；`ORPHAN` 僅出現在 APP 子切面。
+- `存取關聯總數` 與 NORMAL/ORPHAN/UNVERIFIED 筆數僅出現在總體概況區塊。
+- 分區別僅顯示各區域正常/異常筆數 + 百分比；`ORPHAN` 與 `UNVERIFIED` 關鍵字不會出現在此區塊。
+- 核心功能效能顯示三類別各自的筆數、占比與平均回應時間；overview 中**無慢速欄**（每台伺服器的 `慢速率` 仍保留在 `analyze_iis` 摘要中）。
 - 健康判定行永遠不含數字。
 - 空窗口（無資料）時輸出零值與 `N/A` 比率；退出碼 0。
 
@@ -303,6 +303,7 @@ bash bin/analyze_access.sh --log-dir "$LOG_DIR" \
 detail 視圖依類別（NORMAL、ORPHAN、UNVERIFIED）分別顯示逐筆紀錄表格。
 各類別僅顯示其相關欄位；`PATIENT_ID_AES` 永遠為最後一欄且從不截斷。
 各類別內紀錄依主要時間鍵升冪排序。
+NORMAL 區塊底部標籤為 `驗證筆數`（原 `驗證筆數 (有效時間差)` 的括號後綴已移除）。
 
 ```
 ▶ Region: 台北  (10.22.63.37 → 10.21.3.35,10.21.3.36)
@@ -340,6 +341,15 @@ API_SERVER  APP_SERVER  HOSP_ID  PRSN_ID  CLIENT_IP  PATIENT_ID_AES
 `/health` 端點在所有聚合中**無條件**排除（總請求數、端點列表、狀態分佈、
 慢請求計數、不重複客戶端 IP）。測試主機客戶端 IP 依 `--test-hosts` 模式在讀取
 階段預先過濾。相依性健康 / Oracle 中斷偵測改由 `analyze_errors` 負責。
+
+**IIS 時區修正（UTC+0 → UTC+8）：** IIS W3C 日誌以 UTC+0 時間記錄；參考時區
+（存取 CSV + .NET 應用程式日誌）為 UTC+8。`--date D` 代表 UTC+8 業務日 D：模組
+讀取 `u_ex(D-1)` UTC 時間 ≥ 16:00 的資料列與 `u_ex(D)` UTC 時間 < 16:00 的資料
+列，涵蓋本地時間 00:00 至 23:59（半開 UTC 篩選窗 `[D-1 16:00, D 16:00)`，
+字串字典序比較，不使用 `mktime`；單一來源為 `date_utils.sh` 的
+`IIS_UTC_OFFSET_HOURS=8`）。若 `u_ex(D-1)` 不存在，清晨時段之窗口將靜默不完整
+（fail-soft）。`--from`/`--to` 日期範圍也以同樣方式修正。存取與錯誤日誌分析器
+原生為 UTC+8，不受影響。
 
 ### 旗標
 

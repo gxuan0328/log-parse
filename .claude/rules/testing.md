@@ -9,10 +9,10 @@ Loaded when editing `tests/run_tests.sh` or any new test file.
 
 ## Single source of truth
 
-`tests/run_tests.sh` is the only regression suite. Currently 232 tests
-across ten sections (A access · B iis · C errors · D log_report ·
+`tests/run_tests.sh` is the only regression suite. Currently 248 tests
+across eleven sections (A access · B iis · C errors · D log_report ·
 E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
-J test-host/health).
+J test-host/health · K timezone+core-function).
 
 Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
 

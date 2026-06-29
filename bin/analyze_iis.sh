@@ -61,6 +61,8 @@ _IIS_DATE_START=""
 _IIS_DATE_END=""
 _IIS_N_DATES=0
 _IIS_MERGED=0
+IIS_TZ_LO=""    # UTC half-open window lower bound (computed by iis_utc_window)
+IIS_TZ_HI=""    # UTC half-open window upper bound (computed by iis_utc_window)
 declare -a  _IIS_SERVER_KEYS=()   # ordered "region|role|server" keys
 declare -A  _IIS_THRESHOLD=()     # key -> slow_ms threshold
 
@@ -197,16 +199,21 @@ append_iis_server_files() {
 #   Args    : SERVER — hostname/IP or merged label; ROLE — api|app;
 #             REGION — region id or "all" (merged); COMBINED — path to
 #             concatenated IIS log file (must be non-empty); THRESHOLD —
-#             slow-request threshold in ms (role-resolved).
+#             role-resolved slow-request threshold for the global SLOW bucket
+#             (api→OPT_SLOW_API_MS, app→OPT_SLOW_APP_MS).
 #   Output  : nothing on stdout; appends to ${WORK_TMPDIR}/iis_stats.tsv.
 #   Returns / Side effects : appends to _IIS_SERVER_KEYS; sets _IIS_THRESHOLD[key].
 #   Errors / Notes : caller must ensure COMBINED is non-empty before calling.
+#             THRESHOLD is the role-resolved slow threshold for the global SLOW bucket
+#             (api-role → OPT_SLOW_API_MS, app-role → OPT_SLOW_APP_MS). No per-category
+#             slow thresholds are forwarded — CATEGORY rows carry count + sum_ms only.
 iis_corpus_stats() {
     local server="$1" role="$2" region="$3" combined="$4" threshold="$5"
     local key="${region}|${role}|${server}"
     _IIS_SERVER_KEYS+=("$key")
     _IIS_THRESHOLD["$key"]="$threshold"
     agg_iis_rows "$combined" "$threshold" "$OPT_TOP" "$OPT_TEST_HOSTS" "$TEST_HOST_SET" \
+        "$IIS_TZ_LO" "$IIS_TZ_HI" \
         | gawk -F'\t' -v region="$region" -v role="$role" -v server="$server" \
           'BEGIN{OFS="\t"} {print "IIS", region, role, server, $0}' \
         >> "${WORK_TMPDIR}/iis_stats.tsv"
@@ -553,6 +560,16 @@ main() {
     _IIS_DATE_END=$(tail -1 "$date_list_file")
     _IIS_N_DATES=$(count_lines "$date_list_file")
 
+    # IIS-only file-selection list: prepend the prior UTC day so a local day's
+    # 00:00-07:59 (UTC 16:00-23:59 of D-1) is read. Display window is unchanged.
+    local iis_date_list_file="${WORK_TMPDIR}/iis_dates.txt"
+    { date_add "$_IIS_DATE_START" -1; cat "$date_list_file"; } > "$iis_date_list_file"
+
+    # UTC datetime bounds for the +8h local-date filter (single source: date_utils).
+    local _iis_win; _iis_win=$(iis_utc_window "$_IIS_DATE_START" "$_IIS_DATE_END")
+    IIS_TZ_LO="${_iis_win%|*}"
+    IIS_TZ_HI="${_iis_win#*|}"
+
     log_info "Period: ${_IIS_DATE_START} → ${_IIS_DATE_END} (${_IIS_N_DATES} days)"
 
     local stats_file="${WORK_TMPDIR}/iis_stats.tsv"
@@ -572,21 +589,23 @@ main() {
             local -a api_srvs app_srvs
             IFS=',' read -ra api_srvs <<< "$apis"
             for srv in "${api_srvs[@]}"; do
-                append_iis_server_files "$srv" "$date_list_file" "$combined_api"
+                append_iis_server_files "$srv" "$iis_date_list_file" "$combined_api"
             done
             IFS=',' read -ra app_srvs <<< "$apps"
             for srv in "${app_srvs[@]}"; do
-                append_iis_server_files "$srv" "$date_list_file" "$combined_app"
+                append_iis_server_files "$srv" "$iis_date_list_file" "$combined_app"
             done
         done
 
         if [[ -s "$combined_api" ]]; then
+            # api-role servers: global SLOW bucket at api threshold (2000ms default).
             iis_corpus_stats "API_SERVERS (merged, all regions)" "api" "all" \
                 "$combined_api" "$OPT_SLOW_API_MS"
         else
             log_warn "  No API IIS logs found for merged analysis"
         fi
         if [[ -s "$combined_app" ]]; then
+            # app-role servers: global SLOW bucket at app threshold (5000ms default).
             iis_corpus_stats "APP_SERVERS (merged, all regions)" "app" "all" \
                 "$combined_app" "$OPT_SLOW_APP_MS"
         else
@@ -605,8 +624,9 @@ main() {
             for srv in "${api_srvs[@]}"; do
                 local combined="${WORK_TMPDIR}/iis_${srv}.log"
                 : > "$combined"
-                append_iis_server_files "$srv" "$date_list_file" "$combined"
+                append_iis_server_files "$srv" "$iis_date_list_file" "$combined"
                 if [[ -s "$combined" ]]; then
+                    # api-role servers: global SLOW bucket at api threshold (2000ms default).
                     iis_corpus_stats "$srv" "api" "$rid" "$combined" "$OPT_SLOW_API_MS"
                 else
                     log_warn "  No IIS logs found for $srv"
@@ -617,8 +637,9 @@ main() {
             for srv in "${app_srvs[@]}"; do
                 local combined="${WORK_TMPDIR}/iis_${srv}.log"
                 : > "$combined"
-                append_iis_server_files "$srv" "$date_list_file" "$combined"
+                append_iis_server_files "$srv" "$iis_date_list_file" "$combined"
                 if [[ -s "$combined" ]]; then
+                    # app-role servers: global SLOW bucket at app threshold (5000ms default).
                     iis_corpus_stats "$srv" "app" "$rid" "$combined" "$OPT_SLOW_APP_MS"
                 else
                     log_warn "  No IIS logs found for $srv"

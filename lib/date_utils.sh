@@ -171,6 +171,26 @@ date_to_iis_file() {
     date -d "$1" '+u_ex%y%m%d.log'
 }
 
+# IIS_UTC_OFFSET_HOURS — IIS logs timestamp in UTC+0; business/reference TZ is
+# UTC+8 (access CSV + .NET app logs). A local day D = UTC [D-1 16:00, D 16:00).
+# 16 = 24 - IIS_UTC_OFFSET_HOURS. Single source for the IIS timezone correction.
+IIS_UTC_OFFSET_HOURS=8
+IIS_TZ_CUTOFF_UTC=$(printf '%02d:00:00' $(( 24 - IIS_UTC_OFFSET_HOURS )))   # 16:00:00
+
+# iis_utc_window START END
+#   Purpose : Map a local (UTC+8) inclusive date range to the half-open UTC
+#             datetime bounds selecting exactly the IIS rows whose LOCAL date
+#             falls in [START,END]. Keep a row when LO <= ($1" "$2) < HI.
+#   Args    : START — YYYY-MM-DD (local UTC+8); END — YYYY-MM-DD (local UTC+8).
+#   Output  : "LO|HI" where LO,HI are "YYYY-MM-DD HH:MM:SS" (UTC) on stdout.
+#   Returns / Side effects : 0; pure stdout.
+#   Notes   : Uses date_add from this file. IIS_TZ_CUTOFF_UTC must be sourced first.
+iis_utc_window() {
+    local start="$1" end="$2" lo_date
+    lo_date=$(date_add "$start" -1)
+    printf '%s %s|%s %s\n' "$lo_date" "$IIS_TZ_CUTOFF_UTC" "$end" "$IIS_TZ_CUTOFF_UTC"
+}
+
 # date_to_app_dir DATE → DATE
 #   Purpose : The .NET application's per-day subdir is named YYYY-MM-DD
 #             verbatim. Kept as a function for symmetry with date_to_iis_file

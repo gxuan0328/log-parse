@@ -33,12 +33,21 @@ plain text. Live runs in a TTY render the same content in colour.
 
 ## Overview
 
+The overview report (`analyze_overview.sh`) presents three panels:
+- **總體概況 (Overall):** access NORMAL/ORPHAN/UNVERIFIED counts with value + percentage of 存取關聯總數; average API→APP latency; 整體健康判定 verdict.
+- **分區別 (By Region):** per-region 正常/異常 counts + %, CJK display-width aligned so columns never shift.
+- **核心功能效能 (Core Function Performance):** three IIS-sourced, UTC+8 day-corrected categories — 雲端查詢 (前端轉跳速度, `/api/GetLungCancerReportURL`), 報告摘要 (摘要載入速度, `/api/DigestSummary` prefix), 影像下載 (影像載入速度, `/api/NhiPatientImage/studies/…` prefix) — each showing count, share% of the 3-category sum, and average response time (seconds). The three categories are a subset of total business requests.
+
+> **IIS UTC+8 day semantics.** IIS W3C logs are timestamped UTC+0. `--date D` (and `--from`/`--to`) select the UTC+8 business day: rows are read from `u_ex(D−1)` (≥ 16:00 UTC) and `u_ex(D)` (< 16:00 UTC), covering local midnight through 23:59. Access and .NET app logs are natively UTC+8 and are unchanged.
+
 | File | What it shows | Reproduce |
 |------|---------------|-----------|
-| `overview_all_week.txt`               | Management overview — all regions, 2026-05-18 → 2026-05-25 (8 days); 三視角 layout: 總體概況/分區別/服務別; summary-only, text-only | `bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --output-dir /tmp/sample` |
-| `overview_taipei_week.txt`            | Management overview — taipei region only, 2026-05-18 → 2026-05-25; single-region 分區別 + 服務別 | `bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --region taipei --output-dir /tmp/sample` |
+| `overview_all_week.txt`               | Management overview — all regions, 2026-05-18 → 2026-05-25 (8 days); three-panel layout: 總體概況 (access value+%), 分區別 (CJK-aligned value+%), 核心功能效能 (3 IIS categories: 雲端查詢 11/1.8%/0.11s, 報告摘要 186/29.8%/0.38s, 影像下載 427/68.4%/0.93s; 合計 624); 服務別 retired | `bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --output-dir /tmp/sample` |
+| `overview_taipei_week.txt`            | Management overview — taipei region only, 2026-05-18 → 2026-05-25; single-region 分區別 + 核心功能效能 (雲端查詢 5/0.02s, 報告摘要 71/0.22s, 影像下載 220/1.48s; 合計 296) | `bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --region taipei --output-dir /tmp/sample` |
 
 ## IIS
+
+> **IIS date selection.** `--date 2026-05-21` means the UTC+8 business day 2026-05-21. The module reads `u_ex260520.log` rows ≥ 16:00 UTC and `u_ex260521.log` rows < 16:00 UTC, then applies a half-open UTC filter `[2026-05-20 16:00:00, 2026-05-21 16:00:00)`. On the bundled sample all business rows have UTC time < 16:00 (architecturally correct; numerically inert here).
 
 | File | What it shows | Reproduce |
 |------|---------------|-----------|

@@ -8,6 +8,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `bin/analyze_overview.sh` — 核心功能效能 (Core Function Performance) section:
+  three IIS-sourced, UTC+8 day-corrected categories each showing count, share%
+  of the 3-category sum, and exact pooled average response time (seconds, 2 dp).
+  Categories (single-source case-insensitive anchored match in `AGG_IIS_AWK`,
+  never Top-N truncated):
+  **雲端查詢 (前端轉跳速度)** ← `/api/GetLungCancerReportURL` (app-role);
+  **報告摘要 (摘要載入速度)** ← `/api/DigestSummary` prefix (api-role);
+  **影像下載 (影像載入速度)** ← `/api/NhiPatientImage/studies/…` prefix (api-role).
+  Pooled mean is exact: overview pools raw integer `sum_ms` / count and divides
+  once (no per-server rounding drift). Sample anchors (2026-05-21, all, exclude):
+  雲端查詢 11 (1.8%) 0.11s, 報告摘要 186 (29.8%) 0.38s,
+  影像下載 427 (68.4%) 0.93s, 核心功能存取合計 624.
+- `lib/date_utils.sh` — `IIS_UTC_OFFSET_HOURS=8` constant and `iis_utc_window`
+  helper: maps a UTC+8 local date range [START, END] to the half-open UTC datetime
+  bounds `[START-1 16:00:00, END 16:00:00)` used to select IIS rows whose local
+  (UTC+8) date falls in [START, END]. Single source for the IIS timezone correction.
+- `lib/aggregate_utils.sh` `AGG_IIS_AWK` — emits `CATEGORY` rows
+  (`glcr` / `ds` / `nhi`) with count and raw summed ms (integer accumulator);
+  always all three rows, never capped by `--top`. `OVERVIEW_AWK` pools
+  `Σsum_ms / Σcount` and divides once for the exact per-category avg_sec. Row
+  shape in `--emit-stats`:
+  `IIS <region> <role> <server> CATEGORY <key> <count> <sum_ms>`.
+- `整體健康判定` criteria table added to `docs/design.md` / `docs/design.zh-TW.md`:
+  interval = fully-resolved `build_date_list` window in UTC+8; criterion =
+  `trunc(NORMAL ÷ 存取關聯總數 × 100)` (integer truncate toward zero via
+  `printf "%d"`, not banker's rounding; 97.6 → 97 → 注意). IIS volume does not
+  enter the verdict. Thresholds: `存取關聯總數=0` → 無資料; `P≥98` → 正常;
+  `90≤P≤97` → 注意; `P<90` → 警告.
+
+### Changed
+- `analyze_iis`: `--date D` (and `--from`/`--to`) now means the **UTC+8 business
+  day D**. Reads `u_ex(D−1)` (rows ≥ 16:00 UTC) plus `u_ex(D)` (rows < 16:00 UTC)
+  and applies a half-open UTC string-bounds filter `[D-1 16:00:00, D 16:00:00)`.
+  Fixes day-boundary omissions (local 00:00–07:59 = UTC 16:00–23:59 of D−1 were
+  previously missed). Access and `.NET` app logs are natively UTC+8 and are
+  unchanged. Filter is host-TZ-independent (lexicographic compare on fixed-width
+  W3C `YYYY-MM-DD HH:MM:SS`). On the bundled sample the shift is architecturally
+  required but numerically inert (all business rows have UTC time < 16:00).
+  `agg_iis_rows` extended with `tz_lo`/`tz_hi` params (empty = no filter,
+  backward-compatible); `AGG_IIS_AWK` adds TZ guard after `NF<17 {next}`.
+  `analyze_iis` builds a D-1-prepended `iis_dates.txt` for file selection;
+  `IIS_TZ_LO`/`IIS_TZ_HI` are computed once via `iis_utc_window` and forwarded.
+- `analyze_overview` — 總體概況 (Overall): now **access-business focused**;
+  every line shows value + percentage of 存取關聯總數. `IIS 總請求數` and
+  `不重複用戶端 IP` lines removed. ORPHAN/UNVERIFIED shown exclusively here
+  (no duplication with the retired 服務別 section).
+- `analyze_overview` — 分區別 (By Region): per-region 正常/異常 counts + % now
+  rendered via `rpad` (CJK display-width engine) so `異常` column starts at an
+  identical display position regardless of NORMAL% width (`0.0%` vs `100.0%`).
+  IIS 佔比 removed.
+- `analyze_access` — 驗證筆數 label: suffix `(有效時間差)` dropped from the
+  NORMAL block statistics line; 40-col `rpad` auto-realigns.
+
+### Removed
+- **BREAKING** `analyze_overview` 服務別 (By Role) section retired. Its
+  IIS-general request-volume and per-role slow-rate lines are removed from the
+  overview (the per-server slow-rate KPI remains in the `analyze_iis` summary).
+  The new 核心功能效能 section instead reports per-category access count and
+  average response time. IIS general totals (總請求數, 不重複 IP, 佔比) are
+  removed from the overview entirely.
+
+Layers: `lib/date_utils.sh` (IIS_UTC_OFFSET_HOURS + iis_utc_window),
+`lib/aggregate_utils.sh` (AGG_IIS_AWK tz-filter + CATEGORY rows + agg_iis_rows sig),
+`bin/analyze_iis.sh` (iis_dates.txt D-1 prepend, IIS_TZ_LO/HI threading),
+`bin/analyze_overview.sh` (OVERVIEW_AWK + render), `bin/analyze_access.sh` (label trim).
+BREAKING CHANGE: overview sections restructured (服務別 removed; IIS general
+totals removed); IIS `--date D` now means the UTC+8 day D.
+Tests: 248/248.
+
+---
+
+### Added
 - `conf/test_hosts.conf` — new configuration file listing internal QA / health-probe
   client IPs (seeds: `192.168.139.79`, `.110`, `.28`). Read on every
   `analyze_iis` / `analyze_access` run (all modes); missing file is a fatal

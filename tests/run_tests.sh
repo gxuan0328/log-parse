@@ -5,12 +5,16 @@
 # and error handling. Baselines are derived from the examples/sample-logs/LUNG-CANCER-REPORT-LOG
 # sample data included in the project (dates 2026-05-18 ~ 2026-05-25).
 #
-# Total: 232 tests across ten sections (A access · B iis · C errors · D log_report ·
+# Total: 248 tests across eleven sections (A access · B iis · C errors · D log_report ·
 #        E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
-#        J test-host/health).
+#        J test-host/health · K timezone+core-function).
 #
 # Usage:  bash tests/run_tests.sh
 # Exit:   0 = all passed,  1 = one or more failures
+
+# Belt-and-suspenders TZ pin: the string-bounds IIS filter is already host-TZ-
+# independent, but this guards any incidental `date` calls in the suite itself.
+export TZ=UTC
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -704,9 +708,11 @@ _ok D26 "--format tsv 轉發至 iis/errors (no-op) 整合報告仍正常執行" 
 _out_default=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null)
 
 # D12: 預設模組輸出順序 overview→iis→access (line-order)
+# Use "Cross-Correlation" for access (unique to access section header; overview now also
+# contains "存取關聯總數" which would match the old "關聯總數" pattern prematurely).
 _line_ovw=$(printf '%s\n' "$_out_default" | grep -n "總體概況" | head -1 | cut -d: -f1)
 _line_iis=$(printf '%s\n' "$_out_default" | grep -n "總請求數"  | head -1 | cut -d: -f1)
-_line_acc=$(printf '%s\n' "$_out_default" | grep -n "關聯總數"  | head -1 | cut -d: -f1)
+_line_acc=$(printf '%s\n' "$_out_default" | grep -n "Cross-Correlation"  | head -1 | cut -d: -f1)
 if [[ -n "${_line_ovw:-}" && -n "${_line_iis:-}" && -n "${_line_acc:-}" ]] && \
    (( _line_ovw < _line_iis )) && (( _line_iis < _line_acc )); then
     _pass "D27  預設模組輸出順序 overview→iis→access (line-order)"
@@ -965,15 +971,15 @@ fi
 # Section F (continued) — F14–F18  新增使用情境
 # ─────────────────────────────────────────────────────────────────────────────
 
-# F9: 情境 — overview 獨立執行顯示三個切面 (總體概況/分區別/服務別)
+# F9: 情境 — overview 獨立執行顯示三個切面 (總體概況/分區別/核心功能效能)
 out_f14=$(bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null); rc_f14=$?
 if [[ "$rc_f14" -eq 0 ]] && \
    printf '%s\n' "$out_f14" | grep -qF "總體概況" && \
    printf '%s\n' "$out_f14" | grep -qF "分區別" && \
-   printf '%s\n' "$out_f14" | grep -qF "服務別"; then
-    _pass "F14  [情境-overview獨立] 三切面 (總體概況/分區別/服務別) 均存在"
+   printf '%s\n' "$out_f14" | grep -qF "核心功能效能"; then
+    _pass "F14  [情境-overview獨立] 三切面 (總體概況/分區別/核心功能效能) 均存在"
 else
-    _fail "F14  [情境-overview獨立] 三切面 (總體概況/分區別/服務別) 均存在 [rc=$rc_f14]"
+    _fail "F14  [情境-overview獨立] 三切面 (總體概況/分區別/核心功能效能) 均存在 [rc=$rc_f14]"
 fi
 
 # F10: 情境 — log_report 預設模組產生 5 個持久化檔案且無 .plain 殘留 (C4)
@@ -1123,11 +1129,14 @@ fi
 # Section G (continued) — G01–G03  新增 CJK 對齊案例 (overview + iis)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# G01: overview 總體概況 KV 區塊數值欄對齊 (單一 token 值列)
-# Baseline: IIS 總請求數 / 不重複用戶端 IP / 存取關聯總數 / NORMAL 正常流程率 / 平均 API→APP 延遲
+# G01: overview 總體概況 KV 區塊數值欄對齊 (label 40-col → value starts same column)
+# Baseline: 存取關聯總數 (value "9") + 平均 API→APP 延遲 (value "19.5s") — both single-token.
+# NORMAL/ORPHAN/UNVERIFIED lines have multi-token values "N (P%)" so _aligncols would
+# strip only the last token "(P%)", leaving "N " in the prefix and give got=2.
+# Single-token lines correctly verify fmt_kv display-width alignment.
 out_g=$(NO_COLOR=1 bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null)
 _g01_block=$(printf '%s\n' "$out_g" | sed -n '/▶ 總體概況/,/▶ 分區別/p' \
-    | grep -E '總請求數|用戶端 IP|關聯總數|流程率|延遲')
+    | grep -E '關聯總數|延遲')
 _eq G01 "overview 總體概況 KV 數值欄對齊 (display-col 一致)" \
     "$(printf '%s' "$_g01_block" | _aligncols)" "1"
 
@@ -1139,20 +1148,23 @@ _g02_block=$(printf '%s\n' "$out_g2" | grep -E '總請求數|用戶端 IP' | gre
 _eq G02 "iis summary KV 數值欄對齊 (display-col 一致)" \
     "$(printf '%s' "$_g02_block" | _aligncols)" "1"
 
-# G03: overview 服務別 API 子區塊數值欄對齊 (5XX 已從 overview 移除; 只含 慢速率/UNVERIFIED)
-# Baseline: 慢速率 (>2000ms) / UNVERIFIED (簽發未使用) — 5XX KPI removed in business-only mode
-_g03_block=$(printf '%s\n' "$out_g" | sed -n '/■ API 伺服器/,/■ APP 伺服器/p' \
-    | grep -E '慢速率|UNVERIFIED')
-_eq G03 "overview 服務別 API 子區塊數值欄對齊 (display-col 一致)" \
-    "$(printf '%s' "$_g03_block" | _aligncols)" "1"
+# G03: overview 核心功能效能 平均欄對齊 (req4 — 平均 column at fixed display position)
+# Baseline: 雲端查詢/報告摘要/影像下載 — col1(24)+col2(14) are rpad-fixed;
+# so "平均" starts at the same display column in every row.
+# _aligncols strips the last token (avg value e.g. "0.11s") and measures the prefix.
+# sed is a no-op guard (慢速 column removed; left in to keep test portable).
+_g03_block=$(printf '%s\n' "$out_g" | grep -E '雲端查詢|報告摘要|影像下載')
+_g03_pre=$(printf '%s\n' "$_g03_block" | sed 's/慢速.*//')
+_eq G03 "overview 核心功能效能 平均欄位固定寬度對齊 (display-col 一致)" \
+    "$(printf '%s' "$_g03_pre" | _aligncols)" "1"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section H — analyze_overview.sh  管理總覽 (H01–H15)
 # Baselines (fixed dates):
-#   --date 2026-05-21 --region all:
-#     IIS grand total = 3734 (external anchor H13; verified by raw grep)
-#     ACCESS: NORMAL=7 ORPHAN=5 UNVERIFIED=0 total=12
-#     NORMAL 正常流程率 = 7/12 = 58.3% (external anchor H14)
+#   --date 2026-05-21 --region all (exclude):
+#     IIS business total = 723 (external anchor H13; +8h window verified by raw grep)
+#     ACCESS: NORMAL=6 ORPHAN=3 UNVERIFIED=0 total=9; NORMAL率 = 6/9 = 66.7%
+#     核心功能效能: glcr=11 ds=186 nhi=427 sum=624 (K-section detailed anchors)
 # ─────────────────────────────────────────────────────────────────────────────
 
 section "H  analyze_overview.sh — 管理總覽"
@@ -1160,70 +1172,84 @@ section "H  analyze_overview.sh — 管理總覽"
 # Base run for H01–H08, H11, H13, H14
 out=$(bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null); rc=$?
 
-# H01: 三個主要區塊均存在 (exit 0 + 總體概況 + IIS 總請求數 + NORMAL 正常流程率)
+# H01: 三個主要區塊均存在 (exit 0 + 總體概況 + 存取關聯總數 + NORMAL 正常流程)
 if [[ "$rc" -eq 0 ]] && \
    printf '%s\n' "$out" | grep -qF "總體概況" && \
-   printf '%s\n' "$out" | grep -qF "IIS 總請求數" && \
-   printf '%s\n' "$out" | grep -qF "NORMAL 正常流程率"; then
-    _pass "H01  overview exit 0 且含 總體概況 + IIS 總請求數 + NORMAL 正常流程率"
+   printf '%s\n' "$out" | grep -qF "存取關聯總數" && \
+   printf '%s\n' "$out" | grep -qF "NORMAL 正常流程"; then
+    _pass "H01  overview exit 0 且含 總體概況 + 存取關聯總數 + NORMAL 正常流程"
 else
-    _fail "H01  overview exit 0 且含 總體概況 + IIS 總請求數 + NORMAL 正常流程率 [rc=$rc]"
+    _fail "H01  overview exit 0 且含 總體概況 + 存取關聯總數 + NORMAL 正常流程 [rc=$rc]"
 fi
 
-# H02: 分區別 含 台北 + 台中 及 佔比 %
+# H02: 分區別 含 台北 + 台中 + 異常; IIS 佔比 不出現 (req5)
 if printf '%s\n' "$out" | grep -qF "台北" && \
    printf '%s\n' "$out" | grep -qF "台中" && \
-   printf '%s\n' "$out" | grep -qF "IIS 佔比"; then
-    _pass "H02  分區別 含 台北 + 台中 及 IIS 佔比"
+   printf '%s\n' "$out" | grep -qF "異常"; then
+    if ! printf '%s\n' "$out" | grep -qF "IIS 佔比"; then
+        _pass "H02  分區別 含 台北+台中+異常; IIS 佔比 不出現"
+    else
+        _fail "H02  分區別 含 台北+台中+異常; IIS 佔比 不應出現"
+    fi
 else
-    _fail "H02  分區別 含 台北 + 台中 及 IIS 佔比"
+    _fail "H02  分區別 含 台北+台中+異常 (未找到所需字串)"
 fi
 
-# H03: 服務別 含 API 伺服器 + APP 伺服器
-if printf '%s\n' "$out" | grep -qF "API 伺服器" && \
-   printf '%s\n' "$out" | grep -qF "APP 伺服器"; then
-    _pass "H03  服務別 含 API 伺服器 + APP 伺服器"
+# H03: 核心功能效能 含 雲端查詢 + 報告摘要 + 影像下載
+if printf '%s\n' "$out" | grep -qF "核心功能效能" && \
+   printf '%s\n' "$out" | grep -qF "雲端查詢" && \
+   printf '%s\n' "$out" | grep -qF "報告摘要" && \
+   printf '%s\n' "$out" | grep -qF "影像下載"; then
+    _pass "H03  核心功能效能 含 雲端查詢+報告摘要+影像下載"
 else
-    _fail "H03  服務別 含 API 伺服器 + APP 伺服器"
+    _fail "H03  核心功能效能 含 雲端查詢+報告摘要+影像下載"
 fi
 
-# H04: 總體概況的 IIS 總請求數 不重複出現於 分區別/服務別 區塊 (C5 line-range scoped)
-h04_iis_total=$(_pick "$out" "IIS 總請求數")
+# H04: 總體概況的 存取關聯總數 不重複出現於 分區別/核心功能效能 區塊 (C5 line-range scoped)
+h04_acc_total=$(_pick "$out" "存取關聯總數")
 after_overall=$(printf '%s\n' "$out" | sed -n '/▶ 分區別/,$p')
-if [[ -n "$h04_iis_total" ]] && printf '%s\n' "$after_overall" | grep -qF "$h04_iis_total"; then
-    _fail "H04  IIS 總請求數 (${h04_iis_total}) 不應重複出現於 分區/服務 區塊"
+# "存取關聯總數" as a KV key must not appear after 總體概況 (the value "9" may appear elsewhere)
+if printf '%s\n' "$after_overall" | grep -qF "存取關聯總數"; then
+    _fail "H04  存取關聯總數 (KV key) 不應重複出現於 分區/核心功能 區塊 (C5)"
 else
-    _pass "H04  IIS 總請求數 (${h04_iis_total}) 不重複出現於 分區/服務 區塊 (C5)"
+    _pass "H04  存取關聯總數 (KV key) 不重複出現於 分區/核心功能 區塊 (C5)"
 fi
 
-# H05: 各區域 IIS 佔比之和 >= 99% (允許捨入誤差)
-share_sum=$(printf '%s\n' "$out" | grep -oE 'IIS 佔比 [0-9]+\.[0-9]+%' | \
-    grep -oE '[0-9]+\.[0-9]+' | gawk '{s+=$1} END{printf "%d", s+0.5}')
-_gte H05 "各區域 IIS 佔比之和 >= 99" "${share_sum:-0}" "99"
+# H05: 核心功能效能 3-row 佔比 之和 >= 99% (允許捨入誤差；三列佔比應近 100%)
+# Extracts percentages from glcr/ds/nhi rows: "1.8%", "29.8%", "68.4%" → sum ~100
+share_sum=$(printf '%s\n' "$out" | grep -E '雲端查詢|報告摘要|影像下載' | \
+    grep -oE '\([0-9]+\.[0-9]+%\)' | grep -oE '[0-9]+\.[0-9]+' | \
+    gawk '{s+=$1} END{printf "%d", s+0.5}')
+_gte H05 "核心功能效能 3-row 佔比之和 >= 99" "${share_sum:-0}" "99"
 
-# H06: ORPHAN 不出現於 API sub-slice (C5 line-range scoped); 5XX/503 KPI 已從 overview 移除
-api_slice=$(printf '%s\n' "$out" | sed -n '/■ API 伺服器/,/■ APP 伺服器/p')
-if ! printf '%s\n' "$api_slice" | grep -qF "ORPHAN"; then
-    _pass "H06  ORPHAN 不在 API sub-slice (C5)"
+# H06: 核心功能效能 區塊含 平均; 不含 ORPHAN 字面 (C5 placement guard); 無 慢速 (removed)
+core_block=$(printf '%s\n' "$out" | sed -n '/▶ 核心功能效能/,/^$/p')
+if printf '%s\n' "$core_block" | grep -qF "平均" && \
+   ! printf '%s\n' "$core_block" | grep -qF "ORPHAN"; then
+    _pass "H06  核心功能效能 含 平均; ORPHAN 不在此區塊 (C5)"
 else
-    _fail "H06  ORPHAN 不在 API sub-slice (C5)"
+    _fail "H06  核心功能效能 含 平均; ORPHAN 不在此區塊 (C5)"
 fi
 
-# H07: overview IIS 總請求數 == analyze_iis --emit-stats TOTAL 之和 (DRY 內部一致性)
+# H07: DRY — overview 核心功能存取合計 == analyze_iis --emit-stats CATEGORY count 之和
+# Use grep -oE '[0-9]+' | head -1 to extract the count (first number on the line).
+# _pick ($NF) would return "(100.0%)" since the value is "624 (100.0%)" — multi-token.
 iis_emit=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --emit-stats 2>/dev/null)
-h07_sum=$(printf '%s\n' "$iis_emit" | gawk -F'\t' '$5=="TOTAL"{s+=$6} END{print s+0}')
-h07_ovw=$(_pick "$out" "IIS 總請求數")
-_eq H07 "overview IIS 總請求數 == iis emit-stats TOTAL 之和" "$h07_ovw" "$h07_sum"
+h07_cat_sum=$(printf '%s\n' "$iis_emit" | gawk -F'\t' '$5=="CATEGORY"{s+=$7} END{print s+0}')
+h07_ovw=$(printf '%s\n' "$out" | grep "核心功能存取合計" | grep -oE '[0-9]+' | head -1)
+_eq H07 "overview 核心功能存取合計 == iis emit-stats CATEGORY count 之和 (DRY)" "$h07_ovw" "$h07_cat_sum"
 
-# H08: overview NORMAL 率 == analyze_access --emit-stats 計算值 (DRY 內部一致性)
+# H08: EXTERNAL anchor — overview NORMAL 正常流程 == 獨立計算值 (DRY 內部一致性)
+# Extract the "(66.7%)" token from the NORMAL 正常流程 line; compare to computed baseline.
 acc_emit=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --emit-stats 2>/dev/null)
 h08_norm=$(printf '%s\n' "$acc_emit" | gawk -F'\t' '$3=="NORMAL"{s+=$4} END{print s+0}')
 h08_tot=$( printf '%s\n' "$acc_emit" | gawk -F'\t' \
     '$3~/^(NORMAL|ORPHAN|UNVERIFIED)$/{s+=$4} END{print s+0}')
-h08_pct=$(gawk -v n="$h08_norm" -v d="$h08_tot" \
-    'BEGIN{if(d>0) printf "%.1f%%", n/d*100; else print "N/A"}')
-h08_ovw=$(_pick "$out" "NORMAL 正常流程率")
-_eq H08 "overview NORMAL 率 == access emit-stats 計算值" "$h08_ovw" "$h08_pct"
+h08_expected="($(gawk -v n="$h08_norm" -v d="$h08_tot" \
+    'BEGIN{if(d>0) printf "%.1f%%", n/d*100; else print "N/A"}'))"
+h08_line=$(printf '%s\n' "$out" | grep "NORMAL 正常流程" | head -1)
+h08_tok=$(printf '%s\n' "$h08_line" | awk '{print $NF}')
+_eq H08 "overview NORMAL 正常流程 (66.7%) == access emit-stats 計算值" "$h08_tok" "$h08_expected"
 
 # H09: --region taipei → 只含 台北; 不含 台中
 out09=$(bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/null)
@@ -1247,37 +1273,48 @@ out12=$(bash "$OVERVIEW" --log-dir "$LOG_DIR" --today 2>/dev/null); rc12=$?
 _ok  H12a "overview --today exit 0" "$rc12"
 _has H12  "overview --today 期間含 '(1 天)'" "$out12" "(1 天)"
 
-# H13: EXTERNAL anchor — IIS 總請求數 == raw grep count (2026-05-21, 獨立驗算)
-# Independent baseline: count non-comment IIS business lines (NF>=17, exclude /health and
-# test-host IPs .79/.110/.28), without using aggregate_utils.sh or any overview code path.
+# H13: EXTERNAL anchor — IIS business total == raw grep count (+8h UTC window, 獨立驗算)
+# Independent baseline: +8h window = u_ex260520 rows $2>="16:00:00" + u_ex260521 rows $2<"16:00:00"
+# Filters: NF>=17, !/^#/, $5!="/health", exclude test-host IPs .79/.110/.28
 _h13_total=0
 for _h13_srv in 10.1.72.35 10.1.72.36 10.1.73.37 10.21.3.35 10.21.3.36 10.22.63.37; do
-    _h13_f="${LOG_DIR}/${_h13_srv}/iis/u_ex260521.log"
-    if [[ -f "$_h13_f" ]]; then
-        _h13_n=$(gawk 'NF>=17 && !/^#/ && $5!="/health" && $9!="192.168.139.79" && $9!="192.168.139.110" && $9!="192.168.139.28" {c++} END{print c+0}' "$_h13_f")
-        _h13_total=$(( _h13_total + _h13_n ))
+    _h13_f20="${LOG_DIR}/${_h13_srv}/iis/u_ex260520.log"
+    _h13_f21="${LOG_DIR}/${_h13_srv}/iis/u_ex260521.log"
+    _h13_n=0
+    if [[ -f "$_h13_f20" ]]; then
+        _h13_n20=$(gawk 'NF>=17 && !/^#/ && $2>="16:00:00" && $5!="/health" && $9!="192.168.139.79" && $9!="192.168.139.110" && $9!="192.168.139.28" {c++} END{print c+0}' "$_h13_f20")
+        _h13_n=$(( _h13_n + _h13_n20 ))
     fi
+    if [[ -f "$_h13_f21" ]]; then
+        _h13_n21=$(gawk 'NF>=17 && !/^#/ && $2<"16:00:00" && $5!="/health" && $9!="192.168.139.79" && $9!="192.168.139.110" && $9!="192.168.139.28" {c++} END{print c+0}' "$_h13_f21")
+        _h13_n=$(( _h13_n + _h13_n21 ))
+    fi
+    _h13_total=$(( _h13_total + _h13_n ))
 done
-h13_ovw=$(_pick "$out" "IIS 總請求數")
-_eq H13 "overview IIS 總請求數 == 獨立 grep 基準 (${_h13_total})" "$h13_ovw" "$_h13_total"
+# Re-point assertion: raw total should == analyze_iis emit-stats TOTAL (K03 also tests this)
+# and the result (723) should equal the 核心功能存取合計 denominator (IIS total, not overview KV)
+h13_emit=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all --emit-stats 2>/dev/null)
+h13_iis_total=$(printf '%s\n' "$h13_emit" | gawk -F'\t' '$5=="TOTAL"{s+=$6} END{print s+0}')
+_eq H13 "IIS business total == 獨立 +8h raw grep (${_h13_total})" "$h13_iis_total" "$_h13_total"
 
-# H14: EXTERNAL anchor — NORMAL 正常流程率 == 獨立計算基準 (6/9 = 66.7%)
-# Independent baseline from filtered sample-data counts (--test-hosts exclude default):
-# taipei 0521: NORMAL=0, ORPHAN=3; taichung 0521: NORMAL=6, ORPHAN=0 → total=9, NORMAL=6
-_h14_expected=$(gawk 'BEGIN{printf "%.1f%%", 6/9*100}')
-h14_ovw=$(_pick "$out" "NORMAL 正常流程率")
-_eq H14 "overview NORMAL 正常流程率 == 獨立基準 (${_h14_expected})" "$h14_ovw" "$_h14_expected"
+# H14: EXTERNAL anchor — NORMAL 正常流程 (66.7%) == 獨立計算基準
+# Independent baseline: taipei 0521 NORMAL=0 ORPHAN=3; taichung 0521 NORMAL=6 ORPHAN=0 → 6/9
+_h14_expected="($(gawk 'BEGIN{printf "%.1f%%", 6/9*100}'))"   # "(66.7%)"
+h14_line=$(printf '%s\n' "$out" | grep "NORMAL 正常流程" | head -1)
+h14_tok=$(printf '%s\n' "$h14_line" | awk '{print $NF}')      # last token = "(66.7%)"
+_eq H14 "overview NORMAL 正常流程 == 獨立基準 ${_h14_expected}" "$h14_tok" "$_h14_expected"
 
-# H15: --slow-api-ms + --slow-app-ms → exit 0 且 API+APP slices 均存在
-# Proves ACCESS spawn does NOT receive --slow-*-ms (C2 forwarding guard)
+# H15: --slow-api-ms + --slow-app-ms → exit 0 且 核心功能效能 存在 (C2 forwarding guard)
+# Proves ACCESS spawn does NOT receive --slow-*-ms (access would die on unknown flag).
+# Custom thresholds influence 核心功能效能 慢速 column (ds/nhi use api threshold, glcr uses app).
 out15=$(bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 \
     --slow-api-ms 1000 --slow-app-ms 3000 2>/dev/null); rc15=$?
 if [[ "$rc15" -eq 0 ]] && \
-   printf '%s\n' "$out15" | grep -qF "API 伺服器" && \
-   printf '%s\n' "$out15" | grep -qF "APP 伺服器"; then
-    _pass "H15  --slow-api/app-ms exit 0 且 API+APP slices 均存在 (C2 forwarding guard)"
+   printf '%s\n' "$out15" | grep -qF "核心功能效能" && \
+   printf '%s\n' "$out15" | grep -qF "雲端查詢"; then
+    _pass "H15  --slow-api/app-ms exit 0 且 核心功能效能 存在 (C2 forwarding guard)"
 else
-    _fail "H15  --slow-api/app-ms exit 0 且 API+APP slices 均存在 (C2 forwarding guard) [rc=$rc15]"
+    _fail "H15  --slow-api/app-ms exit 0 且 核心功能效能 存在 (C2 forwarding guard) [rc=$rc15]"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1567,15 +1604,146 @@ j18_out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichun
 j18_oracle=$(_sum "$j18_out" "OracleDB health failures")
 _eq J18 "log_report --test-hosts only: errors OracleDB 計數 == 基準值 44 (no-op on errors)" "$j18_oracle" "44"
 
-# J19: overview --test-hosts only: IIS 總請求數 == 209
+# J19: overview --test-hosts only: 核心功能存取合計 == 179 (glcr6+ds75+nhi98)
+# Use grep -oE '[0-9]+' | head -1; _pick ($NF) would return "(100.0%)" for "179 (100.0%)".
 j19_out=$(bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 --test-hosts only 2>/dev/null)
-j19_total=$(_pick "$j19_out" "IIS 總請求數")
-_eq J19 "overview --test-hosts only: IIS 總請求數 == 209" "$j19_total" "209"
+j19_total=$(printf '%s\n' "$j19_out" | grep "核心功能存取合計" | grep -oE '[0-9]+' | head -1)
+_eq J19 "overview --test-hosts only: 核心功能存取合計 == 179" "$j19_total" "179"
 
-# J20: overview 預設 (exclude): IIS 總請求數 == 723
+# J20: overview 預設 (exclude): 核心功能存取合計 == 624 (glcr11+ds186+nhi427)
+# Use grep -oE '[0-9]+' | head -1; _pick ($NF) would return "(100.0%)" for "624 (100.0%)".
 j20_out=$(bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null)
-j20_total=$(_pick "$j20_out" "IIS 總請求數")
-_eq J20 "overview 預設 (exclude): IIS 總請求數 == 723" "$j20_total" "723"
+j20_total=$(printf '%s\n' "$j20_out" | grep "核心功能存取合計" | grep -oE '[0-9]+' | head -1)
+_eq J20 "overview 預設 (exclude): 核心功能存取合計 == 624" "$j20_total" "624"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section K — timezone correction + core-function CATEGORY (K01–K12)
+# Anchors (2026-05-21, --region all, +8h window, /health excluded):
+#   IIS business total: exclude=723, only=209, all=932
+#   CATEGORY (exclude): glcr=11/0.11s, ds=186/0.38s, nhi=427/0.93s, sum=624
+#   CATEGORY (only):    glcr=6, ds=75, nhi=98, sum=179
+#   (慢速 column removed; K13/K14 tests deleted — see commit history)
+# ─────────────────────────────────────────────────────────────────────────────
+
+section "K  timezone correction + core-function CATEGORY"
+
+# K01: TZ cross-midnight INCLUDED — synthetic fixture
+# Rows: u_ex260520.log 16:30 UTC → local 00:30 (INCLUDED); u_ex260521.log 03:00 UTC → local 11:00 (INCLUDED)
+_k01_dir=$(mktemp -d /tmp/lp_k01.XXXXXX)
+printf '%s\n' "2026-05-20 16:30:00 10.0.0.1 GET /api/t1 - 443 - 1.2.3.4 - - 200 0 0 100 200 50" \
+    > "${_k01_dir}/combined.log"
+printf '%s\n' "2026-05-21 03:00:00 10.0.0.1 GET /api/t2 - 443 - 1.2.3.4 - - 200 0 0 100 200 30" \
+    >> "${_k01_dir}/combined.log"
+_k01_total=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/aggregate_utils.sh'
+    agg_iis_rows '${_k01_dir}/combined.log' 2000 0 all '' '2026-05-20 16:00:00' '2026-05-21 16:00:00'
+" 2>/dev/null | gawk -F'\t' '$1=="TOTAL"{print $2; exit}')
+_eq K01 "TZ 跨午夜 INCLUDED: 16:30 UTC(+8=00:30) 及 03:00 UTC(+8=11:00) 均在窗口 TOTAL==2" \
+    "${_k01_total:-0}" "2"
+rm -rf "$_k01_dir"
+
+# K02: TZ cross-midnight EXCLUDED — add 16:30 row on u_ex260521 (local 2026-05-22 → outside window)
+_k02_dir=$(mktemp -d /tmp/lp_k02.XXXXXX)
+printf '%s\n' "2026-05-20 16:30:00 10.0.0.1 GET /api/t1 - 443 - 1.2.3.4 - - 200 0 0 100 200 50" \
+    > "${_k02_dir}/combined.log"
+printf '%s\n' "2026-05-21 03:00:00 10.0.0.1 GET /api/t2 - 443 - 1.2.3.4 - - 200 0 0 100 200 30" \
+    >> "${_k02_dir}/combined.log"
+printf '%s\n' "2026-05-21 16:30:00 10.0.0.1 GET /api/t3 - 443 - 1.2.3.4 - - 200 0 0 100 200 20" \
+    >> "${_k02_dir}/combined.log"
+_k02_total=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/aggregate_utils.sh'
+    agg_iis_rows '${_k02_dir}/combined.log' 2000 0 all '' '2026-05-20 16:00:00' '2026-05-21 16:00:00'
+" 2>/dev/null | gawk -F'\t' '$1=="TOTAL"{print $2; exit}')
+_eq K02 "TZ 跨午夜 EXCLUDED: 16:30 UTC on 0521 (local 2026-05-22) 不在窗口 TOTAL 仍==2" \
+    "${_k02_total:-0}" "2"
+rm -rf "$_k02_dir"
+
+# K03: tz no-drift on real data — analyze_iis emit-stats Σ TOTAL == 723 (exclude mode)
+k03_emit=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all --emit-stats 2>/dev/null)
+k03_total=$(printf '%s\n' "$k03_emit" | gawk -F'\t' '$5=="TOTAL"{s+=$6} END{print s+0}')
+_eq K03 "tz no-drift on real data: emit-stats Σ TOTAL == 723 (exclude)" "$k03_total" "723"
+
+# K04: CATEGORY rows present — emit-stats contains one row per category key
+k04_has_glcr=$(printf '%s\n' "$k03_emit" | grep -cF $'\tCATEGORY\tglcr\t' || true)
+k04_has_ds=$(  printf '%s\n' "$k03_emit" | grep -cF $'\tCATEGORY\tds\t'   || true)
+k04_has_nhi=$( printf '%s\n' "$k03_emit" | grep -cF $'\tCATEGORY\tnhi\t'  || true)
+if [[ "$k04_has_glcr" -ge 1 && "$k04_has_ds" -ge 1 && "$k04_has_nhi" -ge 1 ]]; then
+    _pass "K04  emit-stats 含 CATEGORY glcr, ds, nhi 各至少一列"
+else
+    _fail "K04  emit-stats 含 CATEGORY glcr, ds, nhi 各至少一列 [glcr=${k04_has_glcr} ds=${k04_has_ds} nhi=${k04_has_nhi}]"
+fi
+
+# K05: glcr anchor — Σ count == 11; Σsum_ms/Σcount/1000 == 0.11 (cross-server exact pooled avg)
+k05_cnt=$(printf '%s\n' "$k03_emit" | gawk -F'\t' '$5=="CATEGORY"&&$6=="glcr"{s+=$7} END{print s+0}')
+k05_ms=$( printf '%s\n' "$k03_emit" | gawk -F'\t' '$5=="CATEGORY"&&$6=="glcr"{s+=$8} END{print s+0}')
+k05_avg=$(gawk -v ms="$k05_ms" -v c="${k05_cnt:-1}" 'BEGIN{printf "%.2f", ms/c/1000}')
+_eq K05 "CATEGORY glcr count == 11"    "$k05_cnt" "11"
+_eq K05b "CATEGORY glcr derived avg == 0.11 (exact pooled mean)" "$k05_avg" "0.11"
+
+# K06: ds anchor — count 186, derived avg 0.38
+k06_cnt=$(printf '%s\n' "$k03_emit" | gawk -F'\t' '$5=="CATEGORY"&&$6=="ds"{s+=$7} END{print s+0}')
+k06_ms=$( printf '%s\n' "$k03_emit" | gawk -F'\t' '$5=="CATEGORY"&&$6=="ds"{s+=$8} END{print s+0}')
+k06_avg=$(gawk -v ms="$k06_ms" -v c="${k06_cnt:-1}" 'BEGIN{printf "%.2f", ms/c/1000}')
+_eq K06 "CATEGORY ds count == 186"    "$k06_cnt" "186"
+_eq K06b "CATEGORY ds derived avg == 0.38 (exact pooled mean)" "$k06_avg" "0.38"
+
+# K07: nhi anchor — count 427, derived avg 0.93; guards cross-server exact pooled mean
+k07_cnt=$(printf '%s\n' "$k03_emit" | gawk -F'\t' '$5=="CATEGORY"&&$6=="nhi"{s+=$7} END{print s+0}')
+k07_ms=$( printf '%s\n' "$k03_emit" | gawk -F'\t' '$5=="CATEGORY"&&$6=="nhi"{s+=$8} END{print s+0}')
+k07_avg=$(gawk -v ms="$k07_ms" -v c="${k07_cnt:-1}" 'BEGIN{printf "%.2f", ms/c/1000}')
+_eq K07 "CATEGORY nhi count == 427"    "$k07_cnt" "427"
+_eq K07b "CATEGORY nhi derived avg == 0.93 (cross-server exact pooled mean)" "$k07_avg" "0.93"
+
+# K08: category NOT Top-N capped — --top 1 still emits all 3 distinct CATEGORY keys
+# With 6 servers (all regions) each emitting 3 CATEGORY rows, total = 18.  The --top N
+# cap limits ENDPOINT/CLIENT_IP rows but must NOT limit CATEGORY rows.  Count distinct
+# category KEYS to prove all 3 (glcr, ds, nhi) are present regardless of --top value.
+k08_emit=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all \
+    --top 1 --emit-stats 2>/dev/null)
+k08_cat_keys=$(printf '%s\n' "$k08_emit" | gawk -F'\t' '$5=="CATEGORY"{seen[$6]=1} END{print length(seen)}')
+_eq K08 "CATEGORY rows not Top-N capped: --top 1 still emits all 3 distinct category keys" "$k08_cat_keys" "3"
+
+# K09: overview 核心功能效能 present + values/avg
+k09_out=$(bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null)
+if printf '%s\n' "$k09_out" | grep -qF "雲端查詢" && \
+   printf '%s\n' "$k09_out" | grep -qF "11 (" && \
+   printf '%s\n' "$k09_out" | grep -qF "平均 0.11s" && \
+   printf '%s\n' "$k09_out" | grep -qF "核心功能存取合計" && \
+   printf '%s\n' "$k09_out" | grep -qF "624"; then
+    _pass "K09  overview 核心功能效能 含 雲端查詢, 11 (, 平均 0.11s; 核心功能存取合計 624"
+else
+    _fail "K09  overview 核心功能效能 含 雲端查詢, 11 (, 平均 0.11s; 核心功能存取合計 624"
+fi
+
+# K10: overview 總體概況 access value+% + lacks IIS 總請求數
+if printf '%s\n' "$k09_out" | grep -qF "NORMAL 正常流程" && \
+   printf '%s\n' "$k09_out" | grep -qF "6 (66.7%)" && \
+   printf '%s\n' "$k09_out" | grep -qF "ORPHAN 無對應簽發" && \
+   printf '%s\n' "$k09_out" | grep -qF "3 (33.3%)" && \
+   printf '%s\n' "$k09_out" | grep -qF "UNVERIFIED 簽發未使用" && \
+   printf '%s\n' "$k09_out" | grep -qF "0 (0.0%)"; then
+    if ! printf '%s\n' "$k09_out" | grep -qF "IIS 總請求數"; then
+        _pass "K10  總體概況 含 access value+%; 無 IIS 總請求數"
+    else
+        _fail "K10  總體概況 不應含 IIS 總請求數 (req5)"
+    fi
+else
+    _fail "K10  總體概況 缺少 NORMAL/ORPHAN/UNVERIFIED value+%"
+fi
+
+# K11: 分區別 fixed-width req4 regression — 異常 column at identical display position
+# Both 台北 (NORMAL 0.0%) and 台中 (NORMAL 100.0%) lines must have same prefix width before 異常
+_k11_block=$(NO_COLOR=1 bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null \
+    | grep -E '台北|台中')
+_eq K11 "分區別 fixed-width: 台北/台中 異常欄 display-col 一致 (req4 regression)" \
+    "$(printf '%s' "$_k11_block" | grep '異常' | _aligncols)" "1"
+
+# K12: label trim (req2) — access NORMAL block has 驗證筆數; does NOT have 有效時間差
+k12_out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung 2>/dev/null)
+_has K12a "access NORMAL block 含 驗證筆數" "$k12_out" "驗證筆數"
+_lacks K12 "access NORMAL block 不含 有效時間差 (label trimmed req2)" "$k12_out" "有效時間差"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Summary

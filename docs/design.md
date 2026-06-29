@@ -1,6 +1,6 @@
 # log-parse — Design Specification
 
-> Version 2.1 · 2026-06-29 · Audience: developers, SREs, on-call engineers.
+> Version 2.2 · 2026-06-30 · Audience: developers, SREs, on-call engineers.
 > **Language**: **English** · [繁體中文](design.zh-TW.md)
 
 This document specifies **what** the system does and **why** it is structured
@@ -99,7 +99,7 @@ Each server emits three log families:
 3. **Configuration layer** (`conf/`) — plain text files with no executable
    content. `regions.conf` is pipe-delimited and consumed by the per-bin
    `load_regions()`. `test_hosts.conf` lists one IPv4 per line and is consumed
-   by `load_test_hosts` in `lib/common.sh` (see §3.2.13).
+   by `load_test_hosts` in `lib/common.sh` (see §3.2.14).
 
 ### 2.2 Process model
 
@@ -134,19 +134,41 @@ every CLI defaults `OPT_OUTPUT_DIR=""` so the flag > env precedence holds.
 
 Single source of truth for IIS metric awk and the RFC-4180 CSV quoter:
 
-- **`AGG_IIS_AWK`** — IIS W3C log analyser (relocated verbatim from
-  `bin/analyze_iis.sh`; no logic change). Used via `agg_iis_rows COMBINED SLOW_MS`.
+- **`AGG_IIS_AWK`** — IIS W3C log analyser. Applies (in order): UTC timezone
+  window filter (tz guard, see §3.2.14), `/health` exclusion, test-host mode
+  filter, DICOM endpoint grouping, per-category classification. Emits standard
+  tagged rows plus `CATEGORY <key> <count> <sum_ms>` rows (one per category,
+  always all three for stable downstream parsing; `sum_ms` is the raw integer
+  accumulator so downstream can pool across servers and divide once for an
+  exact mean — no intermediate rounding). Used via `agg_iis_rows`.
 - **`AGG_CSV_FUNC`** — RFC-4180 gawk `q(s)` function (relocated verbatim from
   `bin/analyze_access.sh`). Prepended to both the access `render_csv` and the
   iis csv-detail gawk programs via string concatenation. **No bash-side
   `fmt_csv_field` is introduced** — `q()` is a gawk function; a bash
   reimplementation would create a third parallel copy.
-- **`agg_iis_rows COMBINED SLOW_MS [TOP]`** — runs `AGG_IIS_AWK`, emits tagged rows.
+- **`agg_iis_rows COMBINED SLOW_MS [TOP] [TH_MODE] [TH_SET] [TZ_LO] [TZ_HI]`** —
+  runs `AGG_IIS_AWK`; the optional `TZ_LO`/`TZ_HI` arguments are the
+  half-open UTC datetime bounds computed by `iis_utc_window` (empty = no
+  filter, back-compatible with older callers).
 - **`agg_access_rows RESULT_SORTED`** — single gawk pass that replaces the three
   separate counting passes formerly at `analyze_access.sh:351-353`.
 - **Schema constants** `IIS_STAT_SCHEMA` / `ACCESS_STAT_SCHEMA` + field-index
   helpers (`IIS_F_REGION`, `IIS_F_TAG`, etc.) so analyzers, renderers, and
-  overview share one contract.
+  overview share one contract. `IIS_STAT_SCHEMA` includes the `CATEGORY` row;
+  `IIS_F_AVGSEC` (position 8) is overloaded: it holds `avg_sec` for `ENDPOINT`
+  rows and `sum_ms` (integer ms) for `CATEGORY` rows — documented in the
+  schema comment.
+
+#### `lib/date_utils.sh` — IIS timezone offset constant and window helper
+
+Two additions support the IIS UTC→UTC+8 correction (see §3.2.14):
+
+- **`IIS_UTC_OFFSET_HOURS=8`** — single source for the +8h offset (16 = 24 − 8
+  is the UTC cutoff). Set at source time.
+- **`IIS_TZ_CUTOFF_UTC`** — `16:00:00` derived from the constant above.
+- **`iis_utc_window START END`** — maps a UTC+8 inclusive date range to the
+  half-open UTC string bounds `"LO|HI"` used by `agg_iis_rows`. Pure stdout;
+  no side effects.
 
 #### `lib/common.sh` — test-host loader and predicate (single source)
 
@@ -238,10 +260,13 @@ IIS  ...                         UNIQUE_IPS <n>
 IIS  ...                         STATUS     <code>  <count>
 IIS  ...                         ENDPOINT   <uri>   <count>  <avg_sec>
 IIS  ...                         CLIENT_IP  <ip>    <count>
+IIS  ...                         CATEGORY   <key:glcr|ds|nhi>  <count>  <sum_ms:int>
+  NOTE: CATEGORY position 8 = summed time-taken in ms (NOT avg_sec).
+        avg_sec = sum_ms/count/1000 (single division → exact cross-server pooled mean).
 ```
 
 All rows reflect **business-only traffic**: `/health` requests are excluded
-unconditionally and the test-host mode (§3.2.13) is applied before any row is
+unconditionally and the test-host mode (§3.2.14) is applied before any row is
 emitted. `TOTAL` therefore counts business requests only. The `STATUS` rows
 are the descriptive Top-N status-code distribution (business-only); 302/404
 may appear there — this is intentional, as they represent real business
@@ -251,8 +276,8 @@ been removed; dependency-health detection now lives exclusively in
 
 `role` is `api` or `app` (from `conf/regions.conf`). `region` is `taipei` or
 `taichung`; merged mode tags `region=all, server=API_SERVERS|APP_SERVERS`.
-Per-server granularity lets overview bucket into total / per-region / per-role
-by summation.
+Per-server granularity lets overview pool CATEGORY `sum_ms`/`count` across
+servers with a single division (exact pooled mean, no intermediate rounding).
 
 **Access schema** (`ACCESS_STAT_SCHEMA`):
 ```
@@ -272,55 +297,70 @@ ACCESS  ...       DELTA_MAX     <sec>
 The report presents three distinct decomposition dimensions. **No single
 numeric literal appears in more than one cut.**
 
-- **總體概況 (Overall)** — system grand totals + headline rates + qualitative
-  verdict. Grand totals (`IIS 總請求數`, `存取關聯總數`) appear **only here**.
-  The verdict line is numeric-free (words only).
-- **分區別 (By Region)** — per-region request *share %*, per-region NORMAL%,
-  per-region combined anomaly count. No grand totals; no role-specific signals.
-- **服務別 (By Service Role)** — per-role request volume + share % plus role-
-  specific problem signals: `UNVERIFIED` only in the API sub-slice (issuance
-  side); `ORPHAN` and `SLOW` only in the APP sub-slice (verification side).
-  `SLOW` literals appear **only** inside this block.
+- **總體概況 (Overall)** — access-business grand totals with value + percentage,
+  average API→APP latency, and the qualitative verdict. `存取關聯總數` appears
+  **only here**. The verdict line is numeric-free (words only). IIS general
+  totals (`IIS 總請求數`, unique IPs) are **not shown** — the overview is
+  access-business-focused.
+- **分區別 (By Region)** — per-region 正常 N (p%) / 異常 N (p%), rendered with
+  CJK display-width fixed-width padding (`rpad` via `FMT_AWK_WIDTH`) so the
+  `異常` column never shifts regardless of NORMAL% string width.
+- **核心功能效能 (Core Function Performance)** — three IIS-sourced, UTC+8
+  day-corrected categories, each showing: count, share % of the three-category
+  sum, and average response time in seconds (exact pooled mean). The three
+  categories are a **subset** of total business requests (footnote line
+  clarifies this). See §3.0.7 for category definitions.
 
-Request volume legitimately appears as three different decompositions (grand
-total, region split, role split) — but each numeric literal is distinct.
+**服務別 (By Service Role) is retired.** Its IIS general-request content was
+removed as part of the access-business focus (req5); its remaining access role
+signals (UNVERIFIED/ORPHAN) are now present in 總體概況, so keeping it would
+duplicate information (C5 single-placement rule). No information is lost.
 
-Sample output (weekly, `--from 2026-05-18 --to 2026-05-25`, all regions,
+**整體健康判定 criteria** (req3): The verdict is computed over the fully-resolved
+analysis window (the `build_date_list` output in UTC+8 business time). Criterion:
+`正常流程率 = trunc(NORMAL ÷ 存取關聯總數 × 100)` — integer **truncate toward
+zero** (implemented as `printf "%d"`, not banker's rounding; 97.6 % → 97 →
+注意). IIS request volume does **not** enter the verdict.
+
+| Condition (integer P = trunc(NORMAL ÷ 存取關聯總數 × 100)) | 判定 | Text |
+|---|---|---|
+| 存取關聯總數 = 0 | 無資料 | 無資料 — 本期間無存取關聯記錄 |
+| P ≥ 98 | 正常 | 正常 — 系統整體運作健康 |
+| 90 ≤ P ≤ 97 | 注意 | 注意 — 存在異常存取，建議持續監控 |
+| P < 90 | 警告 | 警告 — 存取異常比例偏高，建議立即調查 |
+
+Lower bounds are inclusive (`>=`). P = 97.6 % → trunc → 97 → 注意 (not 正常).
+
+Sample output (single day `--date 2026-05-21`, all regions,
 `--test-hosts exclude` default — business traffic only):
 ```
 ========================================================================
   營運總覽報告 (Management Overview)
 ========================================================================
-  分析期間                                2026-05-18  →  2026-05-25  (8 天)
+  分析期間                                2026-05-21  →  2026-05-21  (1 天)
   涵蓋範圍                                2 區域 / 6 伺服器 (2 API · 4 APP)
 
 ▶ 總體概況 (Overall)
 ------------------------------------------------------------------------
-  IIS 總請求數                            738
-  不重複用戶端 IP                         12
   存取關聯總數                            9
-  NORMAL 正常流程率                       66.7%
+  NORMAL 正常流程                         6 (66.7%)
+  ORPHAN 無對應簽發                       3 (33.3%)
+  UNVERIFIED 簽發未使用                   0 (0.0%)
   平均 API→APP 延遲                       19.5s
   整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
 
 ▶ 分區別 (By Region)
 ------------------------------------------------------------------------
-  [佔比；總量見總體概況]
-  台北                                    IIS 佔比 45.9%   NORMAL 0.0%   異常 3
-  台中                                    IIS 佔比 54.1%   NORMAL 100.0%   異常 0
+  台北        正常 0 (0.0%)         異常 3 (100.0%)
+  台中        正常 6 (100.0%)       異常 0 (0.0%)
 
-▶ 服務別 (By Service Role)
+▶ 核心功能效能 (Core Function Performance)
 ------------------------------------------------------------------------
-
-    ■ API 伺服器 (2 台 · 簽發 Token)
-  IIS 請求數 (佔比)                       11 (1.5%)
-  慢速率 (>2000ms)                        0.0%
-  UNVERIFIED (簽發未使用)                 0
-
-    ■ APP 伺服器 (4 台 · 驗證 Token / DICOM)
-  IIS 請求數 (佔比)                       727 (98.5%)
-  慢速率 (>5000ms)                        0.7%
-  ORPHAN (無對應簽發)                     3
+  [佔比為三大核心功能合計之占比 (三者為核心功能子集，非全體業務請求)；回應時間為平均值]
+  雲端查詢 (前端轉跳速度) 11 (1.8%)     平均 0.11s
+  報告摘要 (摘要載入速度) 186 (29.8%)   平均 0.38s
+  影像下載 (影像載入速度) 427 (68.4%)   平均 0.93s
+  核心功能存取合計                        624 (100.0%)
 ```
 
 #### 3.0.5 Flags accepted / rejected
@@ -337,6 +377,37 @@ Not accepted (die on receipt): `--view`, `--format`, `--merge`, `--top`,
 Summary-only: `persist_views overview summary text overview_render ''`.
 Only `overview_summary_<TS>.txt` is written (`DETAIL_FN=""` → no detail file).
 Empty-window boundary: percentages rendered as `N/A` / `0.0%`, exit 0.
+
+#### 3.0.7 核心功能效能 — category definitions (single source: `AGG_IIS_AWK`)
+
+The three categories are matched **case-insensitively on the raw `cs-uri-stem`**
+using anchored regex patterns defined once in `AGG_IIS_AWK` (`lib/aggregate_utils.sh`)
+and consumed by both `analyze_iis` and `analyze_overview`:
+
+| Key | Label | Pattern | Role |
+|-----|-------|---------|------|
+| `glcr` | 雲端查詢 (前端轉跳速度) | `^/api/GetLungCancerReportURL$` (exact) | APP |
+| `ds` | 報告摘要 (摘要載入速度) | `^/api/DigestSummary(/|$)` (prefix) | API |
+| `nhi` | 影像下載 (影像載入速度) | `^/api/NhiPatientImage/studies/` (prefix) | API |
+
+Category matching is independent of the ENDPOINT Top-N cap (`--top`); all
+matching rows accumulate regardless of the cap. The `nhi` prefix covers the
+full DICOM download family (`series`, `series-uid`, `instances`, `jpg`);
+a non-download `NhiPatientImage` sub-path would be excluded by design.
+
+`glcr` traffic is served entirely by APP-role servers (verified in sample:
+6 taichung-app + 5 taipei-app = 11 total). `ds` and `nhi` are API-role.
+
+**Exact pooled mean:** `AGG_IIS_AWK` emits the raw integer `sum_ms`
+accumulator. `OVERVIEW_AWK` pools `Σsum_ms` and `Σcount` across servers and
+divides **once** (`sum_ms / count / 1000.0`) — no intermediate per-server
+rounding, no last-digit drift.
+
+**`--slow-api-ms` / `--slow-app-ms` and the overview:** these thresholds are
+accepted by `analyze_overview` and forwarded to the IIS child spawn. They
+control the global IIS `SLOW` bucket. However, the overview only consumes
+`CATEGORY` rows (which carry `count` + `sum_ms`, no slow field), so the
+thresholds do **not** influence any value displayed in the overview output.
 
 ---
 
@@ -372,7 +443,7 @@ CSV schema (header row required):
 Before correlation, records whose `CLIENT_IP` (CSV column 7) matches the
 test-host set are dropped at the **extract stage** (inside `extract_api_records`
 / `extract_app_records` in `lib/csv_utils.sh`), controlled by `--test-hosts`
-mode (§3.2.13). Because both the API issuance row and the APP verification row
+mode (§3.2.14). Because both the API issuance row and the APP verification row
 for a test-host token carry the same `CLIENT_IP`, both sides are filtered out
 together — no orphan/unverified artifacts are created.
 
@@ -555,9 +626,60 @@ source. Accepts only the interval/region/conf/verbose subset of flags — never
 Surface HTTP-level signals from **business traffic only**: request volume,
 status-code distribution, slow endpoints, and unique client IPs. `/health`
 requests are unconditionally excluded from all aggregation; test-host IPs are
-filtered per `--test-hosts` mode (default: `exclude`). See §3.2.13.
+filtered per `--test-hosts` mode (default: `exclude`). See §3.2.14.
 
-#### 3.2.2 Inputs
+#### 3.2.2 Timezone correction (UTC+0 → UTC+8)
+
+IIS W3C logs carry timestamps in **UTC+0**. The business/reference timezone
+(access CSV and .NET app logs) is **UTC+8**. A UTC+8 local day `D` equals
+UTC `[D−1 16:00:00, D 16:00:00)` (cutoff = 24 − `IIS_UTC_OFFSET_HOURS` = 16).
+
+**File selection:** for a requested local range `[START, END]`, the analyser
+reads files `u_ex(START−1) .. u_ex(END)` (the D−1 file is prepended to
+capture the UTC evening hours that map to local midnight–07:59). If the
+prior-day file is absent (e.g. `u_ex260517` when `START` is the first
+available date), the existing `[[ -f ]]` guard skips it silently — the
+boundary is incomplete for the first local morning but does not abort.
+
+**Row filter:** after file selection, `AGG_IIS_AWK` applies a half-open UTC
+string-bounds guard:
+
+```
+TZ_LO = (START − 1) " 16:00:00"   inclusive
+TZ_HI =  END        " 16:00:00"   exclusive
+keep row  ⟺  TZ_LO ≤ ($1 " " $2) < TZ_HI
+```
+
+`$1` (`YYYY-MM-DD`) and `$2` (`HH:MM:SS`) are fixed-width zero-padded W3C
+fields, so lexicographic string comparison is chronologically exact — no
+`mktime`, no host-`TZ` dependency.
+
+**Worked midnight example** (`--date 2026-05-21`; `TZ_LO="2026-05-20 16:00:00"`,
+`TZ_HI="2026-05-21 16:00:00"`):
+
+| UTC `$1 $2` | Local (+8h) | Result |
+|---|---|---|
+| `2026-05-20 15:59:00` | 2026-05-20 23:59 | DROP (prior local day) |
+| `2026-05-20 16:30:00` | 2026-05-21 00:30 | **KEEP** |
+| `2026-05-21 10:48:18` | 2026-05-21 18:48 | **KEEP** |
+| `2026-05-21 16:00:00` | 2026-05-22 00:00 | DROP (next local day) |
+
+**Single source of truth:** `IIS_UTC_OFFSET_HOURS=8` and `iis_utc_window`
+live in `lib/date_utils.sh`; the string-bounds filter guard lives in
+`AGG_IIS_AWK` in `lib/aggregate_utils.sh`. These are the only two places
+where the +8h semantic exists. `analyze_iis` and `analyze_overview` are
+pure consumers — no TZ logic is duplicated.
+
+**`--date D` semantics:** `analyze_iis --date D` now means the UTC+8 business
+day `D`. The display window (`dates.txt`) is unchanged; the IIS file-selection
+list (`iis_dates.txt`) is formed by prepending `date_add(START, -1)`.
+Access and .NET app logs are natively UTC+8 and are not affected.
+
+**Numerics on the bundled sample:** all non-`/health` IIS rows in the sample
+dataset have UTC time < 16:00:00 — the +8h shift is architecturally required
+but numerically inert on this dataset (no business counts change).
+
+#### 3.2.3 Inputs
 
 `<log_dir>/<server>/iis/u_ex<YYMMDD>.log` — IIS W3C extended format.
 
@@ -576,7 +698,7 @@ Field schema (1-based positional, default IIS configuration):
 Lines starting with `#` are W3C directives and are skipped. Lines with fewer
 than 17 fields are skipped (malformed / truncated).
 
-#### 3.2.3 Endpoint grouping
+#### 3.2.4 Endpoint grouping
 
 The raw `cs-uri-stem` contains DICOM study and series UIDs which would
 explode the cardinality of any endpoint count. The analyser collapses three
@@ -590,14 +712,14 @@ DICOM-specific path families before counting:
 
 Other paths are reported verbatim.
 
-#### 3.2.4 Aggregated signals
+#### 3.2.5 Aggregated signals
 
 All metrics apply to **business requests only**: `/health` requests are
 excluded unconditionally (exact stem match `cs-uri-stem == "/health"`,
 case-sensitive; the query-string field is separate, so `/health?x=1` still
 matches on the stem; `/healthz` and `/Health` are NOT filtered — intentional,
 matches prior semantics). Test-host IPs are filtered per `--test-hosts` mode
-before any counting (§3.2.13).
+before any counting (§3.2.14).
 
 | Metric             | Definition                                                                          |
 |--------------------|-------------------------------------------------------------------------------------|
@@ -612,16 +734,16 @@ The `% of total` denominator for all three tables is the `total` business
 requests count for that server or bucket. When `--top` truncates the endpoint
 or client-IP list, the visible rows' percentages will not sum to 100.
 
-#### 3.2.5 Single computation source
+#### 3.2.6 Single computation source
 
 `main()` builds each server's `$combined` once, runs `agg_iis_rows` once per
 corpus (writing dimensioned rows with `region role server` prefix to
 `iis_stats.tsv`), and never re-parses logs. Pure renderers read `iis_stats.tsv`.
 
-#### 3.2.6 Views
+#### 3.2.7 Views
 
 `--view detail` (standalone default — D2): the per-server report layout
-described in §3.2.7–3.2.8. No information loss.
+described in §3.2.8–3.2.9. No information loss.
 
 `--view summary` (management text; format-independent — always text): concise
 KPIs + % for each scope (overall header, then per region→server, or merged
@@ -632,7 +754,7 @@ enumerations only; omits full tables. Every line carries a %.
 **The summary view is always text regardless of `--format`** (C10). `--format`
 governs only the detail file extension and render path.
 
-#### 3.2.7 Detail text output (--format text)
+#### 3.2.8 Detail text output (--format text)
 
 For each server in the selected region(s), or each role bucket under `--merge`:
 
@@ -651,7 +773,7 @@ For each server in the selected region(s), or each role bucket under `--merge`:
 IIS tables are exclusively count-descending ranked lists; there is no
 per-record chronological detail list.
 
-#### 3.2.8 Detail machine-readable output (--format tsv|csv)
+#### 3.2.9 Detail machine-readable output (--format tsv|csv)
 
 Real long-format table (NEW — was a no-op+warn before this refactor). One
 standardized record per metric row; header emitted once; `--top` cap applied
@@ -673,7 +795,7 @@ and `REDIRECT` SUMMARY rows have been removed.
 CSV uses the shared `q()` RFC-4180 quoter (`AGG_CSV_FUNC`). TSV uses TAB
 delimiter with no quoting. Both persisted files carry no ANSI color.
 
-#### 3.2.9 Per-role slow thresholds
+#### 3.2.10 Per-role slow thresholds
 
 `--slow-api-ms` (default 2000 ms) applies to servers listed in `REGION_APIS`;
 `--slow-app-ms` (default 5000 ms) applies to servers in `REGION_APPS`. Role
@@ -682,14 +804,14 @@ tighter SLA expected of API token-issuance endpoints versus APP DICOM-serving
 endpoints. The `Slow (>Nms)` label in the report shows the actual threshold
 used for that server's role.
 
-#### 3.2.10 `--top` flag
+#### 3.2.11 `--top` flag
 
 Controls the maximum number of rows shown in both the Endpoint table and the
 Client IP table (default 10; 0=all). The same cap applies to both tables in
 the same invocation. The flag is unified across `analyze_iis` and
 `analyze_errors` (same name, same 0=all semantics, different target list).
 
-#### 3.2.11 `--merge` — two-bucket cross-region corpus
+#### 3.2.12 `--merge` — two-bucket cross-region corpus
 
 Under `--merge`, `analyze_merged_iis` builds two corpora by iterating over all
 configured regions:
@@ -701,12 +823,12 @@ configured regions:
 1. `IIS — API_SERVERS (merged, all regions)` — uses `--slow-api-ms` threshold.
 2. `IIS — APP_SERVERS (merged, all regions)` — uses `--slow-app-ms` threshold.
 
-#### 3.2.12 `--emit-stats`
+#### 3.2.13 `--emit-stats`
 
 Prints `iis_stats.tsv` verbatim to stdout, then returns before `persist_init`
 (no files, no banners). This is `analyze_overview.sh`'s data source.
 
-#### 3.2.13 Test-host filtering and `/health` exclusion
+#### 3.2.14 Test-host filtering and `/health` exclusion
 
 Two pre-filters run at the read stage inside `agg_iis_rows` (in
 `lib/aggregate_utils.sh`), in this fixed order:
@@ -1102,7 +1224,11 @@ test suite to confirm baselines still hold (or update them deliberately).
 
 ## 7. Known limitations
 
-- IIS time field is treated as UTC; reports do not localise.
+- IIS timestamps are UTC+0; `analyze_iis` and `analyze_overview` correct for
+  UTC+8 business time via a half-open UTC window filter (`iis_utc_window` in
+  `lib/date_utils.sh`). Access and .NET app logs are natively UTC+8 and are
+  not adjusted. `analyze_errors` uses `.NET` app logs directly (UTC+8); no TZ
+  correction is applied to that module.
 - The error-pattern grouper is heuristic — it will collapse messages that
   differ only by numeric IDs / timestamps, which is correct most of the
   time but loses fidelity for error families distinguished by string state.

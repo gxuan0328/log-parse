@@ -4,7 +4,7 @@
 > 比對存取 Token、揭露 IIS 異常、追蹤應用程式生命週期事件，
 > 涵蓋兩個區域共六台 API / APP 伺服器。
 
-[![Tests](https://img.shields.io/badge/tests-232%2F232-brightgreen)](tests/run_tests.sh)
+[![Tests](https://img.shields.io/badge/tests-248%2F248-brightgreen)](tests/run_tests.sh)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bash 4+](https://img.shields.io/badge/bash-4%2B-lightgrey)](https://www.gnu.org/software/bash/)
 
@@ -19,7 +19,7 @@
 
 | 模組                  | 輸入資料                                       | 產出內容                                                                        |
 |-----------------------|----------------------------------------------|---------------------------------------------------------------------------------|
-| `analyze_overview`    | 透過 `--emit-stats` 取得 IIS + Access 統計數據 | 管理總覽：總體概況 / 分區別 / 服務別；僅摘要、純文字                             |
+| `analyze_overview`    | 透過 `--emit-stats` 取得 IIS + Access 統計數據 | 管理總覽：總體概況（存取筆數+%）/ 分區別（CJK 固定寬對齊）/ 核心功能效能（IIS UTC+8 修正：雲端查詢/報告摘要/影像下載 筆數+平均回應時間）；僅摘要、純文字 |
 | `analyze_access`      | API + APP 存取 CSV                            | Token 簽發 ↔ 驗證流程、孤兒存取、未使用簽發；`--view summary|detail`           |
 | `analyze_iis`         | IIS W3C 擴充欄位日誌                          | 純業務請求指標：慢請求、端點分析、狀態碼分布；`--view summary|detail`          |
 | `analyze_errors`      | `app-all` / `app-error` / `app-lifetime`     | OracleDB 中斷、Top 錯誤模式、應用程式重啟停機時間                               |
@@ -54,7 +54,7 @@ bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-L
 ### 常見使用情境
 
 ```bash
-# 管理總覽 — 全區域、最近 7 天（三視角：總體概況 / 分區別 / 服務別）
+# 管理總覽 — 全區域、最近 7 天（總體概況 / 分區別 / 核心功能效能）
 bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG
 
 # 每日例行 — 指定日期的完整快照（預設模組：overview→iis→access）
@@ -88,7 +88,7 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── analyze_access.sh    API/APP Token 交叉比對
 │   ├── analyze_iis.sh       IIS W3C 日誌分析
 │   ├── analyze_errors.sh    應用程式錯誤與生命週期分析
-│   ├── analyze_overview.sh  管理總覽（三視角：總體概況 / 分區別 / 服務別）
+│   ├── analyze_overview.sh  管理總覽（總體概況 / 分區別 / 核心功能效能）
 │   └── log_report.sh        主控統籌器（預設：overview→iis→access）
 ├── lib/                     可重複使用之 shell 模組（sourced-only）
 │   ├── common.sh            日誌、暫存目錄、依賴檢查、色彩狀態
@@ -108,7 +108,7 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── sample-outputs/      範例輸出報告
 │   └── *.sh                 情境驅動腳本
 ├── tests/
-│   └── run_tests.sh         232 項功能測試套件
+│   └── run_tests.sh         248 項功能測試套件
 ├── .claude/
 │   ├── CLAUDE.md            核心慣例（每個 session 自動載入）
 │   ├── rules/               路徑範圍細項慣例（按需載入）
