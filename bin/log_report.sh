@@ -50,6 +50,7 @@ OPT_TOP=10
 OPT_SLOW_API_MS=2000
 OPT_SLOW_APP_MS=5000
 OPT_MERGE=0
+OPT_TEST_HOSTS="exclude"
 REGIONS_CONF=""
 INTERVAL_ARGS=()
 
@@ -144,6 +145,7 @@ parse_args() {
             --slow-api-ms)  OPT_SLOW_API_MS="$2";   shift 2 ;;
             --slow-app-ms)  OPT_SLOW_APP_MS="$2";   shift 2 ;;
             --merge)        OPT_MERGE=1;             shift ;;
+            --test-hosts)   OPT_TEST_HOSTS="$2";     shift 2 ;;
             -v|--verbose)   LOG_LEVEL=DEBUG;         shift ;;
             -h|--help)      usage; exit 0 ;;
             *) die "Unknown option: $1" ;;
@@ -154,8 +156,9 @@ parse_args() {
     if [[ -n "$REGIONS_CONF" && ! -f "$REGIONS_CONF" ]]; then
         die "conf file not found: $REGIONS_CONF"
     fi
-    assert_enum "--view"   "$OPT_VIEW"   summary detail
-    assert_enum "--format" "$OPT_FORMAT" text tsv csv
+    assert_enum "--view"       "$OPT_VIEW"       summary detail
+    assert_enum "--format"     "$OPT_FORMAT"     text tsv csv
+    assert_enum "--test-hosts" "$OPT_TEST_HOSTS" exclude only all
     assert_uint "--top"          "$OPT_TOP"
     assert_uint "--slow-api-ms"  "$OPT_SLOW_API_MS"
     assert_uint "--slow-app-ms"  "$OPT_SLOW_APP_MS"
@@ -190,6 +193,9 @@ build_module_args() {
     _MOD_ARGS+=("${INTERVAL_ARGS[@]}")
     if [[ -n "${REGIONS_CONF:-}" ]]; then _MOD_ARGS+=("--conf" "$REGIONS_CONF"); fi
     if [[ "$LOG_LEVEL" == "DEBUG" ]]; then _MOD_ARGS+=("--verbose"); fi
+    if [[ "$module" != "analyze_errors" ]]; then
+        _MOD_ARGS+=(--test-hosts "$OPT_TEST_HOSTS")
+    fi
     case "$module" in
         analyze_overview)
             _MOD_ARGS+=(--slow-api-ms "$OPT_SLOW_API_MS" \

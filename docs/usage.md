@@ -70,12 +70,43 @@ artifacts.
 | `--top N` | **Unified** | Now accepted by iis (endpoints + client IPs) and errors (patterns). `0` = ALL. |
 | `--modules LIST` on log_report | **New default** | Default changed from `access,iis,errors` to `overview,iis,access`. errors is opt-in. |
 
+### Test-host filtering
+
+All `analyze_iis` and `analyze_access` runs require **`conf/test_hosts.conf`** — a
+plain-text list of internal QA / health-probe client IPs (one IPv4 per line).
+The file seeds three addresses: `192.168.139.79`, `192.168.139.110`, and
+`192.168.139.28`. A missing file is a fatal error even with `--test-hosts all`
+(fail-fast, consistent with `regions.conf`).
+
+The `--test-hosts` flag controls how those IPs are treated at the read stage:
+
+| Value | Behavior |
+|---|---|
+| `exclude` (default) | Drop records from test-host IPs — reports reflect real external traffic. |
+| `only` | Keep **only** records from test-host IPs — audit internal QA / non-health client traffic. |
+| `all` | No test-host filtering — include every client IP. |
+
+**Important:** `/health` is excluded from IIS aggregation **unconditionally** (before
+the test-host filter runs) in all three modes. Health-probe volume (`192.168.139.28`,
+~95% of raw IIS traffic) is therefore **never visible via `--test-hosts`**.
+`--test-hosts only` surfaces only the non-health hits of test hosts
+(e.g. `192.168.139.110`'s 209 business requests on 2026-05-21) — it is an audit of
+internal QA or non-health client traffic, **not** an audit of probe traffic.
+
+`analyze_overview` and `log_report` accept `--test-hosts` and forward it to their
+`analyze_iis` and `analyze_access` children. `analyze_errors` does **not** accept
+`--test-hosts` (app logs have no client IP field; passing it is a fatal error).
+
+**Total request counts** throughout IIS reports are always **business-only**
+(post `/health`-exclusion, post test-host filter). The `資料範圍` line in the
+summary and the `Scope` line in the detail banner show the active mode explicitly.
+
 ---
 
 ## 0. `bin/analyze_overview.sh`
 
-Management overview combining IIS health and cross-correlation metrics
-into a single report with three cuts:
+Management overview combining IIS business-traffic metrics and cross-correlation
+results into a single report with three cuts:
 
 - **總體概況 (Overall)** — system grand totals, headline rates, qualitative verdict.
 - **分區別 (By Region)** — per-region request share and NORMAL%.
@@ -100,6 +131,7 @@ the output directory (no detail file).
 | `--days N` | uint ≥ 1 | `7` | no | Last N days ending today. Implicit fallback only. |
 | `--slow-api-ms N` | uint ms | `2000` | no | Slow-request threshold for API-role servers. Forwarded to the iis spawn only (not to access). |
 | `--slow-app-ms N` | uint ms | `5000` | no | Slow-request threshold for APP-role servers. Forwarded to the iis spawn only. |
+| `--test-hosts exclude\|only\|all` | enum | `exclude` | no | Test-host IP filter mode. Forwarded to both `analyze_iis` and `analyze_access` children. See [Test-host filtering](#test-host-filtering). |
 | `--output-dir DIR` | path | `""` | no | Persistence directory. Resolved as: flag > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`. |
 | `--conf FILE` | path | `conf/regions.conf` | no | Override region mapping. File must exist. |
 | `-v`, `--verbose` | flag | off | no | Enable DEBUG-level logging. |
@@ -142,39 +174,41 @@ bash bin/analyze_overview.sh --log-dir "$LOG_DIR" \
 
 ▶ 總體概況 (Overall)
 ------------------------------------------------------------------------
-  IIS 總請求數                            3734
-  不重複用戶端 IP                         15
-  存取關聯總數                            12
-  NORMAL 正常流程率                       58.3%
-  平均 API→APP 延遲                       17.4s
+  IIS 總請求數                            723
+  不重複用戶端 IP                         6
+  存取關聯總數                            9
+  NORMAL 正常流程率                       66.7%
+  平均 API→APP 延遲                       19.5s
   整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
 
 ▶ 分區別 (By Region)
 ------------------------------------------------------------------------
   [佔比；總量見總體概況]
-  台北                                    IIS 佔比 52.3%   NORMAL 16.7%   異常 5
-  台中                                    IIS 佔比 47.7%   NORMAL 100.0%   異常 0
+  台北                                    IIS 佔比 45.8%   NORMAL 0.0%   異常 3
+  台中                                    IIS 佔比 54.2%   NORMAL 100.0%   異常 0
 
 ▶ 服務別 (By Service Role)
 ------------------------------------------------------------------------
 
     ■ API 伺服器 (2 台 · 簽發 Token)
-  IIS 請求數 (佔比)                       961 (25.7%)
-  5XX 錯誤                                17
+  IIS 請求數 (佔比)                       11 (1.5%)
   慢速率 (>2000ms)                        0.0%
   UNVERIFIED (簽發未使用)                 0
 
     ■ APP 伺服器 (4 台 · 驗證 Token / DICOM)
-  IIS 請求數 (佔比)                       2773 (74.3%)
-  健康檢查 503 (Oracle 相依)              50
-  慢速率 (>5000ms)                        0.1%
-  ORPHAN (無對應簽發)                     5
+  IIS 請求數 (佔比)                       712 (98.5%)
+  慢速率 (>5000ms)                        0.3%
+  ORPHAN (無對應簽發)                     3
 ```
+
+`IIS 總請求數` is **business-only** (excludes `/health` and, with the default
+`--test-hosts exclude`, also excludes test-host IPs). The numbers above reflect
+`--date 2026-05-21`, default `exclude` mode.
 
 Content rules enforced by the implementation:
 - Grand totals (`IIS 總請求數`, `存取關聯總數`) appear only in the 總體概況 block.
-- `5XX`, `SLOW`, `503`, `ORPHAN`, `UNVERIFIED` literals appear only inside the 服務別 block.
-- `UNVERIFIED` appears only in the API sub-slice; `ORPHAN` / `503` only in the APP sub-slice.
+- `SLOW`, `ORPHAN`, `UNVERIFIED` literals appear only inside the 服務別 block.
+- `UNVERIFIED` appears only in the API sub-slice; `ORPHAN` only in the APP sub-slice.
 - The verdict line is always numeric-free.
 - An empty analysis window (no data) yields zeros and `N/A` rates; exit code 0.
 
@@ -201,6 +235,7 @@ UNVERIFIED tokens.
 | `--view summary\|detail` | enum | `detail` | no | Console view. `summary` = concise management text; `detail` = full per-record tables. Both files are always written regardless. |
 | `--format text\|tsv\|csv` | enum | `text` | no | Governs the **detail** file extension and the detail console mirror. Summary is always text. `tsv` = tab-separated; `csv` = RFC-4180. |
 | `--merge` | flag | off | no | Cross-region correlation in one combined block. **Requires `--region all`** (explicit or default). |
+| `--test-hosts exclude\|only\|all` | enum | `exclude` | no | Test-host client IP filter. `conf/test_hosts.conf` is **always required**, even for `all` mode. See [Test-host filtering](#test-host-filtering). |
 | `--output-dir DIR` | path | `""` | no | Persistence directory. Resolved as: flag > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`. |
 | `--conf FILE` | path | `conf/regions.conf` | no | Override region mapping. File must exist. |
 | `-v`, `--verbose` | flag | off | no | Enable DEBUG-level logging. |
@@ -243,6 +278,16 @@ bash bin/analyze_access.sh --log-dir "$LOG_DIR" --today --view summary
 # 7. Custom region mapping
 bash bin/analyze_access.sh --log-dir "$LOG_DIR" \
     --conf ./conf/regions.staging.conf
+
+# 8. Audit internal/QA non-health client traffic (test-hosts only mode)
+#    NOTE: /health is removed before mode selection; only mode shows non-health
+#    hits from test-host IPs (e.g. 192.168.139.110 business requests).
+bash bin/analyze_access.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --test-hosts only --view summary
+
+# 9. Include all client IPs (no test-host filter)
+bash bin/analyze_access.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --test-hosts all --view summary
 ```
 
 ### Summary view
@@ -306,8 +351,11 @@ always the first line. The summary file is always `.txt` regardless of
 
 ## 2. `bin/analyze_iis.sh`
 
-Analyse IIS W3C extended logs for request volume, status distribution,
-slow requests, and health-check 503 anomalies.
+Analyse IIS W3C extended logs for **business** request volume, status distribution,
+slow requests, and per-endpoint breakdowns. The `/health` endpoint is excluded
+unconditionally from all aggregation (totals, endpoints, status mix, slow counts,
+unique IPs). Test-host client IPs are pre-filtered per `--test-hosts` mode.
+Dependency-health / Oracle-outage detection is handled by `analyze_errors` instead.
 
 ### Options
 
@@ -325,6 +373,7 @@ slow requests, and health-check 503 anomalies.
 | `--slow-api-ms N` | uint ms | `2000` | no | Slow-request threshold for API-role servers. |
 | `--slow-app-ms N` | uint ms | `5000` | no | Slow-request threshold for APP-role servers. |
 | `--merge` | flag | off | no | Cross-region host merge; renders one API-servers block and one APP-servers block. **Requires `--region all`**. |
+| `--test-hosts exclude\|only\|all` | enum | `exclude` | no | Test-host client IP filter. `conf/test_hosts.conf` is **always required**, even for `all` mode. See [Test-host filtering](#test-host-filtering). |
 | `--output-dir DIR` | path | `""` | no | Persistence directory. Resolved as: flag > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`. |
 | `--conf FILE` | path | `conf/regions.conf` | no | Override region mapping. File must exist. |
 | `-v`, `--verbose` | flag | off | no | Enable DEBUG-level logging. |
@@ -363,32 +412,48 @@ bash bin/analyze_iis.sh --log-dir "$LOG_DIR" \
 
 # 7. Today's quick IIS summary
 bash bin/analyze_iis.sh --log-dir "$LOG_DIR" --today --view summary
+
+# 8. Audit internal/QA non-health client traffic (only mode)
+#    Shows the 209 non-/health hits from test-host IPs on 2026-05-21.
+#    Health-probe IP 192.168.139.28 never appears — /health is dropped before mode selection.
+bash bin/analyze_iis.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --test-hosts only --view summary
+
+# 9. No test-host filter — all client IPs retained (all mode)
+bash bin/analyze_iis.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --test-hosts all --view summary
 ```
 
 ### Summary view
 
+The `資料範圍` line appears at the top of every summary and states the active
+scope. `總請求數` is always **business-only** (post `/health`-exclusion and post
+test-host filter).
+
 ```
 ============ IIS Summary — Region: all ============
   Period                                  2026-05-21  →  2026-05-21  (1 days)
-  總請求數                                3734
-  不重複用戶端 IP                         15
-  5xx 錯誤率                              1.3%  (50)
-    其中 健康檢查 503                     50
-  慢速率                                  0.1%  (2)
-  302 轉址率                              0.3%
+  資料範圍                                業務請求 (排除 /health；測試主機=exclude)
+  總請求數                                723
+  不重複用戶端 IP                         6
+  慢速率                                  0.3%  (2)
 
     ■ Top 端點 (佔比)
-    1. /health                                               75.0%
-    2. /api/NhiPatientImage/studies/{uid}/series/{uid}/...   12.2%
-    3. /api/DigestSummary/hospital                           6.1%
+    1. /api/NhiPatientImage/studies/{uid}/series/{uid}/...   50.8%
+    2. /api/DigestSummary/hospital                           21.9%
+    3. /api/NhiPatientImage/studies/{uid}/series-uid          8.3%
     ...
 
     ■ 狀態碼分布 (Top 3)
-      200 95.7% · 404 1.9% · 503 1.3%
+      200 87.3% · 404 9.7% · 304 1.8%
 
     ■ Top 用戶端 IP
-      192.168.139.28 75.0% · 192.168.139.119 19.1% · 192.168.139.110 5.6%
+      192.168.139.119 98.5% · 10.1.73.37 0.8% · 10.22.63.37 0.7%
 ```
+
+The status-code distribution (Top-N) is retained as descriptive business-status
+accounting. 302 or 4xx codes may still appear there; that is intentional
+(business-only view of actual HTTP responses).
 
 > Full summary sample: [`../examples/sample-outputs/iis_summary_all_2026-05-21.txt`](../examples/sample-outputs/iis_summary_all_2026-05-21.txt).
 
@@ -397,34 +462,34 @@ bash bin/analyze_iis.sh --log-dir "$LOG_DIR" --today --view summary
 The detail view shows per-server KV blocks with Status, Endpoint, and
 Client-IP percentage tables. API-role servers show `Slow (>2000ms)`;
 APP-role servers show `Slow (>5000ms)` unless overridden with
-`--slow-api-ms` / `--slow-app-ms`. `/health` requests are always
-excluded from slow counts.
+`--slow-api-ms` / `--slow-app-ms`. The `Scope` line at the top of each
+server block confirms the active mode. `/health` is excluded from every
+count — totals, endpoints, status codes, slow, and client IPs.
 
 ```
 ▶ IIS — 10.22.63.37
 ------------------------------------------------------------------------
-  Total requests                          483
-  Unique client IPs                       3
-  302 Redirects                           0
-  5xx errors                              0
-    Health 503                            0
+  Scope                                   business requests (excl. /health; test-hosts=exclude)
+  Total requests                          5
+  Unique client IPs                       1
   Slow (>2000ms)                          0
 
     Status      Count     % of total
     --------------------------------
-    200         480        99.4%
-    204         3           0.6%
+    200         5         100.0%
 
     Endpoint                                                 Avg(s)    Count     % of total
     ---------------------------------------------------------------------------------------
-    /health                                                  0.06      472        97.7%
-    /api/GetLungCancerReportURL                              0.10      11          2.3%
+    /api/GetLungCancerReportURL                              0.02      5         100.0%
+
+    Client IP           Count     % of total
+    ----------------------------------------
+    10.22.63.37         5         100.0%
 ```
 
 > Full detail sample (all regions): [`../examples/sample-outputs/iis_all_2026-05-21.txt`](../examples/sample-outputs/iis_all_2026-05-21.txt).
 > Taipei: [`../examples/sample-outputs/iis_taipei_2026-05-21.txt`](../examples/sample-outputs/iis_taipei_2026-05-21.txt).
-> Taichung: [`../examples/sample-outputs/iis_taichung_2026-05-21.txt`](../examples/sample-outputs/iis_taichung_2026-05-21.txt)
-> (exhibits 50 Health-503 events from the simulated OracleDB outage).
+> Taichung: [`../examples/sample-outputs/iis_taichung_2026-05-21.txt`](../examples/sample-outputs/iis_taichung_2026-05-21.txt).
 
 ### Detail view (tsv / csv)
 
@@ -433,18 +498,19 @@ standardized long-format table. One header line, then one data row per
 metric per server:
 
 ```
-REGION  ROLE  SERVER         METRIC     KEY     COUNT  AVG_SEC  PCT
-taipei  api   10.22.63.37    SUMMARY    TOTAL   483    -        100.0
-taipei  api   10.22.63.37    SUMMARY    5XX     0      -        0.0
-taipei  api   10.22.63.37    STATUS     200     480    -        99.4
-taipei  api   10.22.63.37    ENDPOINT   /health 472    0.06     97.7
-taipei  api   10.22.63.37    CLIENT_IP  192.168.139.28  472  -  97.7
+REGION  ROLE  SERVER         METRIC     KEY                      COUNT  AVG_SEC  PCT
+taipei  api   10.22.63.37    SUMMARY    TOTAL                    5      -        100.0
+taipei  api   10.22.63.37    SUMMARY    SLOW                     0      -        0.0
+taipei  api   10.22.63.37    SUMMARY    UNIQUE_IPS               1      -        0.0
+taipei  api   10.22.63.37    STATUS     200                      5      -        100.0
+taipei  api   10.22.63.37    ENDPOINT   /api/GetLungCancerReportURL  5  0.02     100.0
+taipei  api   10.22.63.37    CLIENT_IP  10.22.63.37              5      -        100.0
 ```
 
-`METRIC` values: `SUMMARY` (totals), `STATUS` (per HTTP code),
-`ENDPOINT` (per URI, capped by `--top`), `CLIENT_IP` (per IP, capped by
-`--top`). The summary view is always text regardless of `--format` (the
-summary file is always `.txt`).
+`METRIC` values: `SUMMARY` (totals: `TOTAL`, `SLOW`, `UNIQUE_IPS`), `STATUS` (per
+HTTP code), `ENDPOINT` (per URI, capped by `--top`), `CLIENT_IP` (per IP, capped by
+`--top`). `/health` rows never appear in the output. The summary view is always text
+regardless of `--format` (the summary file is always `.txt`).
 
 > Samples: [`../examples/sample-outputs/iis_detail_all_2026-05-21.tsv`](../examples/sample-outputs/iis_detail_all_2026-05-21.tsv) · [`../examples/sample-outputs/iis_detail_all_2026-05-21.csv`](../examples/sample-outputs/iis_detail_all_2026-05-21.csv)
 
@@ -593,6 +659,7 @@ directory; all files share one launch timestamp.
 | `--slow-api-ms N` | uint ms | `2000` | no | Forwarded to overview and iis; applies to API-role servers. |
 | `--slow-app-ms N` | uint ms | `5000` | no | Forwarded to overview and iis; applies to APP-role servers. |
 | `--merge` | flag | off | no | Forwarded to access and iis. **Requires `--region all`**. |
+| `--test-hosts exclude\|only\|all` | enum | `exclude` | no | Forwarded to overview, iis, and access. **Not** forwarded to errors (`analyze_errors` does not accept it — fatal error if supplied directly). See [Test-host filtering](#test-host-filtering). |
 | `--output-dir DIR` | path | `""` | no | Persistence directory. Resolved as: flag > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`. Shared by all child modules via `$LOG_PARSE_OUTPUT_DIR`; `--output-dir` is NOT forwarded as a flag to children. |
 | `--conf FILE` | path | `conf/regions.conf` | no | Override region mapping. Forwarded to all modules when supplied. |
 | `-v`, `--verbose` | flag | off | no | Forwards `--verbose` to all child modules. |
@@ -608,6 +675,7 @@ directory; all files share one launch timestamp.
 | `--top` | — | F | — | F |
 | `--slow-api-ms`, `--slow-app-ms` | F | F | — | — |
 | `--merge` | — | F | F | — |
+| `--test-hosts` | F | F | F | — |
 | `--output-dir`, `--modules` | own | own | own | own |
 
 F = forwarded. `--output-dir` is resolved once by log_report and shared
@@ -757,6 +825,34 @@ bash bin/analyze_overview.sh \
     --output-dir ./reports
 ```
 
+### 5.9 Test-host audit (non-health hits from internal QA clients)
+
+Use `--test-hosts only` to see only the IIS and access activity originating
+from the test-host IPs in `conf/test_hosts.conf`, after `/health` exclusion.
+This is useful for auditing internal QA tool behaviour, not for viewing
+health-probe traffic (health probes are never visible in any mode).
+
+```bash
+# IIS report scoped to test-host client IPs only (health excluded)
+bash bin/analyze_iis.sh \
+    --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --date 2026-05-21 --test-hosts only --view summary
+
+# Access correlation for test-host client IPs only
+bash bin/analyze_access.sh \
+    --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --date 2026-05-21 --test-hosts only --view summary
+
+# Full report including all client IPs (no test-host filter)
+bash bin/log_report.sh \
+    --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --date 2026-05-21 --test-hosts all \
+    --output-dir ./reports
+```
+
+See [`../examples/sample-outputs/iis_only_2026-05-21.txt`](../examples/sample-outputs/iis_only_2026-05-21.txt) for the `--test-hosts only` sample.
+See [`../examples/sample-outputs/iis_allmode_2026-05-21.txt`](../examples/sample-outputs/iis_allmode_2026-05-21.txt) for the `--test-hosts all` sample.
+
 ---
 
 ## 6. Exit codes
@@ -764,7 +860,7 @@ bash bin/analyze_overview.sh \
 | Code | Meaning |
 |------|---------|
 | 0 | Success (even when no data was found for the requested period). |
-| 1 | Usage / validation error: missing `--log-dir`, bad flag value, unknown region or module, missing config file, `--merge` without `--region all`, more than one interval selector supplied. |
+| 1 | Usage / validation error: missing `--log-dir`, bad flag value, unknown region or module, missing config file (`regions.conf` or `test_hosts.conf`), `--merge` without `--region all`, more than one interval selector supplied, or `--test-hosts` passed to `analyze_errors`. |
 
 ---
 

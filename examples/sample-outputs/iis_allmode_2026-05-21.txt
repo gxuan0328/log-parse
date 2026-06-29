@@ -10,83 +10,88 @@
 
 ▶ IIS — 10.22.63.37
 ------------------------------------------------------------------------
-  Scope                                   business requests (excl. /health; test-hosts=exclude)
-  Total requests                          5
-  Unique client IPs                       1
+  Scope                                   business requests (excl. /health; test-hosts=all)
+  Total requests                          11
+  Unique client IPs                       2
   Slow (>2000ms)                          0
 
     Status      Count     % of total
     --------------------------------
-    200         5         100.0%
+    200         8          72.7%
+    204         3          27.3%
 
     Endpoint                                                 Avg(s)    Count     % of total
     ---------------------------------------------------------------------------------------
-    /api/GetLungCancerReportURL                              0.02      5         100.0%
+    /api/GetLungCancerReportURL                              0.10      11        100.0%
 
     Client IP           Count     % of total
     ----------------------------------------
-    10.22.63.37         5         100.0%
+    192.168.139.110     6          54.5%
+    10.22.63.37         5          45.5%
 
 ▶ IIS — 10.21.3.35
 ------------------------------------------------------------------------
-  Scope                                   business requests (excl. /health; test-hosts=exclude)
-  Total requests                          117
-  Unique client IPs                       1
+  Scope                                   business requests (excl. /health; test-hosts=all)
+  Total requests                          271
+  Unique client IPs                       2
   Slow (>5000ms)                          0
 
     Status      Count     % of total
     --------------------------------
-    200         86         73.5%
-    404         30         25.6%
-    302         1           0.9%
+    200         225        83.0%
+    404         30         11.1%
+    304         13          4.8%
+    302         3           1.1%
 
     Endpoint                                                 Avg(s)    Count     % of total
     ---------------------------------------------------------------------------------------
-    /api/NhiPatientImage/studies/{uid}/series/{uid}/...      1.87      70         59.8%
-    /api/DigestSummary/hospital                              0.21      21         17.9%
-    /api/NhiPatientImage/studies/{uid}/series-uid            0.14      8           6.8%
-    /api/DigestSummary/key-images                            0.03      4           3.4%
-    /api/registration/get-target-instance                    0.19      2           1.7%
-    /api/digestsummary                                       0.63      2           1.7%
-    /vite.svg                                                0.00      1           0.9%
-    /reports/view                                            4.18      1           0.9%
-    /assets/react-vendor-CWOlZk79.js                         0.01      1           0.9%
-    /assets/openjpegwasm_decode-C4nnCcr6.wasm                0.01      1           0.9%
+    /api/NhiPatientImage/studies/{uid}/series/{uid}/...      1.03      146        53.9%
+    /api/DigestSummary/hospital                              0.08      67         24.7%
+    /api/NhiPatientImage/studies/{uid}/series-uid            0.16      15          5.5%
+    /api/DigestSummary/key-images                            0.06      6           2.2%
+    /api/registration/get-target-instance                    0.15      4           1.5%
+    /api/digestsummary                                       0.90      4           1.5%
+    /reports/view                                            1.59      3           1.1%
+    /assets/react-vendor-CWOlZk79.js                         0.01      3           1.1%
+    /assets/index-Cj5Ra9vo.css                               0.01      3           1.1%
+    /assets/index-BhWnmaLL.js                                0.02      3           1.1%
 
     Client IP           Count     % of total
     ----------------------------------------
-    192.168.139.119     117       100.0%
+    192.168.139.110     154        56.8%
+    192.168.139.119     117        43.2%
 
 ▶ IIS — 10.21.3.36
 ------------------------------------------------------------------------
-  Scope                                   business requests (excl. /health; test-hosts=exclude)
-  Total requests                          209
-  Unique client IPs                       1
+  Scope                                   business requests (excl. /health; test-hosts=all)
+  Total requests                          258
+  Unique client IPs                       2
   Slow (>5000ms)                          0
 
     Status      Count     % of total
     --------------------------------
-    200         154        73.7%
-    404         40         19.1%
-    304         13          6.2%
-    302         2           1.0%
+    200         202        78.3%
+    404         40         15.5%
+    304         13          5.0%
+    302         3           1.2%
 
     Endpoint                                                 Avg(s)    Count     % of total
     ---------------------------------------------------------------------------------------
-    /api/NhiPatientImage/studies/{uid}/series/{uid}/...      1.49      128        61.2%
-    /api/DigestSummary/hospital                              0.19      38         18.2%
-    /api/NhiPatientImage/studies/{uid}/series-uid            0.11      14          6.7%
-    /api/registration/get-target-instance                    0.11      4           1.9%
-    /api/DigestSummary/key-images                            0.08      4           1.9%
-    /assets/openjpegwasm_decode-C4nnCcr6.wasm                0.41      3           1.4%
-    /reports/view                                            0.29      2           1.0%
-    /assets/react-vendor-CWOlZk79.js                         0.02      2           1.0%
-    /assets/index-Cj5Ra9vo.css                               0.02      2           1.0%
-    /assets/index-BhWnmaLL.js                                0.03      2           1.0%
+    /api/NhiPatientImage/studies/{uid}/series/{uid}/...      1.37      142        55.0%
+    /api/DigestSummary/hospital                              0.12      61         23.6%
+    /api/NhiPatientImage/studies/{uid}/series-uid            0.10      15          5.8%
+    /api/DigestSummary/key-images                            0.07      5           1.9%
+    /api/registration/get-target-instance                    0.11      4           1.6%
+    /reports/view                                            0.21      3           1.2%
+    /assets/react-vendor-CWOlZk79.js                         0.02      3           1.2%
+    /assets/openjpegwasm_decode-C4nnCcr6.wasm                0.41      3           1.2%
+    /assets/index-Cj5Ra9vo.css                               0.02      3           1.2%
+    /assets/index-BhWnmaLL.js                                0.03      3           1.2%
 
     Client IP           Count     % of total
     ----------------------------------------
-    192.168.139.119     209       100.0%
+    192.168.139.119     209        81.0%
+    192.168.139.110     49         19.0%
 
 ========================================================================
   IIS Analysis — Region: 台中
@@ -94,7 +99,7 @@
 
 ▶ IIS — 10.1.73.37
 ------------------------------------------------------------------------
-  Scope                                   business requests (excl. /health; test-hosts=exclude)
+  Scope                                   business requests (excl. /health; test-hosts=all)
   Total requests                          6
   Unique client IPs                       1
   Slow (>2000ms)                          0
@@ -113,7 +118,7 @@
 
 ▶ IIS — 10.1.72.35
 ------------------------------------------------------------------------
-  Scope                                   business requests (excl. /health; test-hosts=exclude)
+  Scope                                   business requests (excl. /health; test-hosts=all)
   Total requests                          88
   Unique client IPs                       1
   Slow (>5000ms)                          1
@@ -142,7 +147,7 @@
 
 ▶ IIS — 10.1.72.36
 ------------------------------------------------------------------------
-  Scope                                   business requests (excl. /health; test-hosts=exclude)
+  Scope                                   business requests (excl. /health; test-hosts=all)
   Total requests                          298
   Unique client IPs                       1
   Slow (>5000ms)                          1

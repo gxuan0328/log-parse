@@ -7,69 +7,65 @@
 
 ▶ 總體概況 (Overall)
 ------------------------------------------------------------------------
-  IIS 總請求數                            3734
-  不重複用戶端 IP                         15
-  存取關聯總數                            12
-  NORMAL 正常流程率                       58.3%
-  平均 API→APP 延遲                       17.4s
+  IIS 總請求數                            723
+  不重複用戶端 IP                         6
+  存取關聯總數                            9
+  NORMAL 正常流程率                       66.7%
+  平均 API→APP 延遲                       19.5s
   整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
 
 ▶ 分區別 (By Region)
 ------------------------------------------------------------------------
   [佔比；總量見總體概況]
-  台北                                    IIS 佔比 52.3%   NORMAL 16.7%   異常 5
-  台中                                    IIS 佔比 47.7%   NORMAL 100.0%   異常 0
+  台北                                    IIS 佔比 45.8%   NORMAL 0.0%   異常 3
+  台中                                    IIS 佔比 54.2%   NORMAL 100.0%   異常 0
 
 ▶ 服務別 (By Service Role)
 ------------------------------------------------------------------------
 
     ■ API 伺服器 (2 台 · 簽發 Token)
-  IIS 請求數 (佔比)                       961 (25.7%)
-  5XX 錯誤                                17
+  IIS 請求數 (佔比)                       11 (1.5%)
   慢速率 (>2000ms)                        0.0%
   UNVERIFIED (簽發未使用)                 0
 
     ■ APP 伺服器 (4 台 · 驗證 Token / DICOM)
-  IIS 請求數 (佔比)                       2773 (74.3%)
-  健康檢查 503 (Oracle 相依)              50
-  慢速率 (>5000ms)                        0.1%
-  ORPHAN (無對應簽發)                     5
+  IIS 請求數 (佔比)                       712 (98.5%)
+  慢速率 (>5000ms)                        0.3%
+  ORPHAN (無對應簽發)                     3
 ============ IIS Summary — Region: all ============
   Period                                  2026-05-21  →  2026-05-21  (1 days)
-  總請求數                                3734
-  不重複用戶端 IP                         15
-  5xx 錯誤率                              1.3%  (50)
-    其中 健康檢查 503                     50
-  慢速率                                  0.1%  (2)
-  302 轉址率                              0.3%
+  資料範圍                                業務請求 (排除 /health；測試主機=exclude)
+  總請求數                                723
+  不重複用戶端 IP                         6
+  慢速率                                  0.3%  (2)
 
     ■ Top 端點 (佔比)
-    1. /health                                               75.0%
-    2. /api/NhiPatientImage/studies/{uid}/series/{uid}/...   12.2%
-    3. /api/DigestSummary/hospital                           6.1%
-    4. /api/NhiPatientImage/studies/{uid}/series-uid         1.8%
-    5. /api/DigestSummary/key-images                         0.6%
-    6. /api/registration/get-target-instance                 0.5%
-    7. /api/GetLungCancerReportURL                           0.5%
-    8. /reports/view                                         0.3%
-    9. /assets/decodeImageFrameWorker-Be17YydA.js            0.3%
-    10. /api/digestsummary                                    0.3%
+    1. /api/NhiPatientImage/studies/{uid}/series/{uid}/...   50.8%
+    2. /api/DigestSummary/hospital                           21.9%
+    3. /api/NhiPatientImage/studies/{uid}/series-uid         8.3%
+    4. /api/DigestSummary/key-images                         2.5%
+    5. /api/registration/get-target-instance                 2.4%
+    6. /assets/decodeImageFrameWorker-Be17YydA.js            1.7%
+    7. /api/GetLungCancerReportURL                           1.5%
+    8. /reports/view                                         1.2%
+    9. /api/digestsummary                                    1.1%
+    10. /assets/react-vendor-CWOlZk79.js                      1.0%
 
     ■ 狀態碼分布 (Top 3)
-      200 95.7% · 404 1.9% · 503 1.3%
+      200 87.3% · 404 9.7% · 304 1.8%
 
     ■ Top 用戶端 IP
-      192.168.139.28 75.0% · 192.168.139.119 19.1% · 192.168.139.110 5.6%
+      192.168.139.119 98.5% · 10.1.73.37 0.8% · 10.22.63.37 0.7%
 ============ Access Cross-Correlation Summary ============
   Period                                  2026-05-21  →  2026-05-21  (1 days)
   Region filter                           all
-  關聯總數                                12
-    NORMAL  (正常流程)                    7  (58.3%)
-    ORPHAN  (APP無對應API)                5  (41.7%)
+  關聯總數                                9
+    NORMAL  (正常流程)                    6  (66.7%)
+    ORPHAN  (APP無對應API)                3  (33.3%)
     UNVERIFIED (API未被使用)              0  (0.0%)
-  ORPHAN 驗證結果                         5 (成功) / 0 (失敗)
-  延遲 API→APP                            平均 17.4s · 最短 4.822s · 最長 37.554s
+  ORPHAN 驗證結果                         3 (成功) / 0 (失敗)
+  延遲 API→APP                            平均 19.5s · 最短 11.466s · 最長 37.554s
 
     ■ 分區別 (% within region)
-    台北    NORMAL 16.7%     ORPHAN 83.3%     UNVERIFIED 0.0%
+    台北    NORMAL 0.0%      ORPHAN 100.0%    UNVERIFIED 0.0%
     台中    NORMAL 100.0%    ORPHAN 0.0%      UNVERIFIED 0.0%

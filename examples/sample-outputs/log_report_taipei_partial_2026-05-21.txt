@@ -1,35 +1,32 @@
 ============ IIS Summary — Region: 台北 ============
   Period                                  2026-05-21  →  2026-05-21  (1 days)
-  總請求數                                1954
-  不重複用戶端 IP                         9
-  5xx 錯誤率                              0.0%  (0)
-    其中 健康檢查 503                     0
+  資料範圍                                業務請求 (排除 /health；測試主機=exclude)
+  總請求數                                331
+  不重複用戶端 IP                         3
   慢速率                                  0.0%  (0)
-  302 轉址率                              0.3%
 
     ■ Top 端點 (佔比)
-    1. /health                                               72.4%
-    2. /api/NhiPatientImage/studies/{uid}/series/{uid}/...   14.7%
-    3. /api/DigestSummary/hospital                           6.6%
-    4. /api/NhiPatientImage/studies/{uid}/series-uid         1.5%
-    5. /api/GetLungCancerReportURL                           0.6%
-    6. /api/DigestSummary/key-images                         0.6%
-    7. /api/registration/get-target-instance                 0.4%
-    8. /reports/view                                         0.3%
-    9. /assets/react-vendor-CWOlZk79.js                      0.3%
-    10. /assets/index-Cj5Ra9vo.css                            0.3%
+    1. /api/NhiPatientImage/studies/{uid}/series/{uid}/...   59.8%
+    2. /api/DigestSummary/hospital                           17.8%
+    3. /api/NhiPatientImage/studies/{uid}/series-uid         6.6%
+    4. /api/DigestSummary/key-images                         2.4%
+    5. /api/registration/get-target-instance                 1.8%
+    6. /api/GetLungCancerReportURL                           1.5%
+    7. /assets/openjpegwasm_decode-C4nnCcr6.wasm             1.2%
+    8. /reports/view                                         0.9%
+    9. /assets/react-vendor-CWOlZk79.js                      0.9%
+    10. /assets/index-Cj5Ra9vo.css                            0.6%
 
     ■ 狀態碼分布 (Top 3)
-      200 94.6% · 404 3.6% · 304 1.3%
+      200 74.0% · 404 21.1% · 304 3.9%
 
     ■ Top 用戶端 IP
-      192.168.139.28 72.4% · 192.168.139.119 16.7% · 192.168.139.110 10.7%
+      192.168.139.119 98.5% · 10.22.63.37 1.5%
 ============ Access Cross-Correlation Summary ============
   Period                                  2026-05-21  →  2026-05-21  (1 days)
   Region filter                           taipei
-  關聯總數                                6
-    NORMAL  (正常流程)                    1  (16.7%)
-    ORPHAN  (APP無對應API)                5  (83.3%)
+  關聯總數                                3
+    NORMAL  (正常流程)                    0  (0.0%)
+    ORPHAN  (APP無對應API)                3  (100.0%)
     UNVERIFIED (API未被使用)              0  (0.0%)
-  ORPHAN 驗證結果                         5 (成功) / 0 (失敗)
-  延遲 API→APP                            平均 4.8s · 最短 4.822s · 最長 4.822s
+  ORPHAN 驗證結果                         3 (成功) / 0 (失敗)

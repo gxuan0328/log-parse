@@ -53,46 +53,59 @@ csv_col_index() {
 #   API.ISSUE_TOKEN (col 9)  ≡  APP.TOKEN (col 2)
 # ---------------------------------------------------------------------------
 
-# extract_api_records FILE
-#   Purpose : Project the API-issuance side of the join.
-#   Args    : FILE — path to an API server's app-access-<date>.csv.
+# extract_api_records FILE [TH_MODE] [TH_SET]
+#   Purpose : Project the API-issuance side of the join, filtered by test-host mode.
+#   Args    : FILE    — path to an API server's app-access-<date>.csv.
+#             TH_MODE — [optional] test-host mode: exclude (default) | only | all.
+#             TH_SET  — [optional] space-joined IP string from load_test_hosts.
 #   Output  : TAB-delimited rows on stdout:
 #               ISSUE_TOKEN | REQUEST_ID | PATIENT_ID_AES | HOSP_ID |
 #               PRSN_ID     | CLIENT_IP  | SERVER_IP      | REQUEST_TIME
-#   Skipped : Header row (NR==1); rows with empty ISSUE_TOKEN (col 9).
+#   Skipped : Header row (NR==1); rows with empty ISSUE_TOKEN (col 9);
+#             rows whose CLIENT_IP (col 7) fails th_skip per TH_MODE.
 #   Returns : 0 silently when FILE is missing (allows callers to loop over a
 #             list that may include yet-unrotated dates).
+#   Notes   : Requires $TH_FILTER_FUNC from common.sh (sourced before any call).
+#             CLIENT_IP = source column $7. $7 is mid-row (CR rides on $10),
+#             so the exact match is CR-safe.
 extract_api_records() {
-    local file="$1"
+    local file="$1" th_mode="${2:-exclude}" th_set="${3:-}"
     [[ -f "$file" ]] || return 0
-    gawk -F',' '
+    gawk -F',' -v _th_mode="$th_mode" -v th_set="$th_set" \
+        "$TH_FILTER_FUNC"'
+        BEGIN { th_init(th_set) }
         NR == 1 { next }
         $9 == "" { next }
-        {
-            gsub(/\r/, "")
-            print $9 "\t" $1 "\t" $4 "\t" $5 "\t" $6 "\t" $7 "\t" $8 "\t" $10
-        }
+        th_skip($7) { next }                 # CLIENT_IP = source col 7
+        { gsub(/\r/, ""); print $9 "\t" $1 "\t" $4 "\t" $5 "\t" $6 "\t" $7 "\t" $8 "\t" $10 }
     ' "$file"
 }
 
-# extract_app_records FILE
-#   Purpose : Project the APP-verification side of the join.
-#   Args    : FILE — path to an APP server's app-access-<date>.csv.
+# extract_app_records FILE [TH_MODE] [TH_SET]
+#   Purpose : Project the APP-verification side of the join, filtered by test-host mode.
+#   Args    : FILE    — path to an APP server's app-access-<date>.csv.
+#             TH_MODE — [optional] test-host mode: exclude (default) | only | all.
+#             TH_SET  — [optional] space-joined IP string from load_test_hosts.
 #   Output  : TAB-delimited rows on stdout:
 #               TOKEN  | REQUEST_ID | VERIFY_STATUS | PATIENT_ID_AES |
 #               HOSP_ID| PRSN_ID    | CLIENT_IP     | SERVER_IP      |
 #               REQUEST_TIME
-#   Skipped : Header row; rows with empty TOKEN (col 2).
+#   Skipped : Header row; rows with empty TOKEN (col 2);
+#             rows whose CLIENT_IP (col 7) fails th_skip per TH_MODE.
+#   Notes   : Requires $TH_FILTER_FUNC from common.sh (sourced before any call).
+#             CLIENT_IP = source column $7. Both issuance and verification rows
+#             for a test-host token share CLIENT_IP, so filtering both sides
+#             removes the whole correlation record cleanly (no orphan artifacts).
 extract_app_records() {
-    local file="$1"
+    local file="$1" th_mode="${2:-exclude}" th_set="${3:-}"
     [[ -f "$file" ]] || return 0
-    gawk -F',' '
+    gawk -F',' -v _th_mode="$th_mode" -v th_set="$th_set" \
+        "$TH_FILTER_FUNC"'
+        BEGIN { th_init(th_set) }
         NR == 1 { next }
         $2 == "" { next }
-        {
-            gsub(/\r/, "")
-            print $2 "\t" $1 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $7 "\t" $8 "\t" $10
-        }
+        th_skip($7) { next }                 # CLIENT_IP = source col 7
+        { gsub(/\r/, ""); print $2 "\t" $1 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $7 "\t" $8 "\t" $10 }
     ' "$file"
 }
 

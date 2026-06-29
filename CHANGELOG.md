@@ -8,6 +8,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `conf/test_hosts.conf` — new configuration file listing internal QA / health-probe
+  client IPs (seeds: `192.168.139.79`, `.110`, `.28`). Read on every
+  `analyze_iis` / `analyze_access` run (all modes); missing file is a fatal
+  error consistent with `regions.conf` fail-fast (D11).
+- `--test-hosts exclude|only|all` flag (default: `exclude`) on `analyze_iis`,
+  `analyze_access`, `analyze_overview`, and `log_report` (forwarded; not
+  accepted by `analyze_errors` — no client IP in app logs). Pre-filters
+  client IPs at the read stage on IIS `c-ip` and access `CLIENT_IP` so
+  reports reflect real external user traffic. `analyze_errors --test-hosts`
+  → non-zero exit (fail-fast, no-op guarantee).
+- `load_test_hosts` function and `TH_FILTER_FUNC` gawk predicate in
+  `lib/common.sh` — single-source loader and three-mode filter
+  (`exclude` / `only` / `all`). First true shared loader in `common.sh`;
+  placed beside `assert_enum` / `die`, not `load_regions` (which is per-bin).
+- `資料範圍` / `Scope` management banner in IIS summary and detail views
+  (`業務請求 (排除 /health；測試主機=MODE)` / `business requests (excl. /health;
+  test-hosts=MODE)`).
+- Section J tests J01–J20 covering test-host filter modes, `/health` exclusion
+  in all modes, conf loader, `analyze_errors` unknown-option rejection,
+  `log_report` no-op on errors, and overview forwarding.
+
+### Changed
+- `analyze_iis`, `analyze_access`, `analyze_overview`, `log_report`:
+  `--test-hosts` validated by `assert_enum`; `log_report` uses a guarded
+  `build_module_args` branch to skip forwarding to `analyze_errors`.
+- All IIS request totals, endpoint tables, status distribution, slow counts,
+  unique-IP tables, and detail rows are now **business-only**: `/health`
+  endpoint requests are excluded unconditionally at the gawk read stage
+  (before mode selection) in `AGG_IIS_AWK`. Health probes
+  (`192.168.139.28`) account for 95.4% of the IIS sample; excluding them
+  aligns counts with actual user-observable load. Composition order:
+  `/health` removed first, then test-host mode applied on `c-ip`.
+- `agg_iis_rows` signature extended to `agg_iis_rows COMBINED SLOW_MS [TOP]
+  [TH_MODE] [TH_SET]`; caller passes `OPT_TEST_HOSTS` and `TEST_HOST_SET`.
+- `extract_api_records` / `extract_app_records` in `lib/csv_utils.sh`
+  extended with `[TH_MODE] [TH_SET]` params; `TH_FILTER_FUNC` prepended and
+  `th_skip($7)` guard added at the extract stage. `CLIENT_IP` is source
+  column `$7` in both API and APP CSVs.
+- All IIS / overview / `log_report` and taipei / all-regions access baselines
+  shift under the new default `exclude` mode. Tests: 232 (was 215;
+  −B04/B06/B07, +J01–J20).
+
+### Removed
+- **BREAKING — partially reverses 772c434.** The following items added in
+  commit 772c434 are removed:
+  - `iis` summary KPI lines: `5xx 錯誤率`, `其中 健康檢查 503`, `302 轉址率`.
+  - `iis` detail-text lines: `302 Redirects`, `5xx errors`, `  Health 503`.
+  - `overview` 服務別 lines: `5XX 錯誤`, `健康檢查 503 (Oracle 相依)`.
+  - `--emit-stats` metrics: `iis.5XX`, `iis.503_HEALTH`, `iis.REDIRECT`,
+    `overview.IIS_API_5XX`, `overview.IIS_503`.
+  In this dataset every sample 5xx was a 503 on `/health`, so business 5xx
+  is genuinely zero after exclusion. The status-code distribution (Top-N,
+  now business-only) is **retained** — 302 / 4xx remain visible there
+  (intentional: distribution is descriptive accounting, not an editorialised
+  KPI line; course-correct by filtering the STATUS render if 2xx-only is
+  preferred).
+  External consumers of the dropped emit-stats keys will break; this is a
+  breaking change.
+  Dependency-health / Oracle-outage detection now lives **only in
+  `analyze_errors`** (.NET app logs) — the IIS 503-on-`/health` signal is
+  intentionally removed. No actionable outage signal is lost; `analyze_errors`
+  surfaces OracleDB failures from structured app logs.
+- `B04` (`5xx errors=0` label), `B06` (`Health 503=50` metric), `B07`
+  (`5xx >=1` premise) removed from the test suite (premise gone with the
+  deleted KPI lines). −3 test IDs.
+
+### Fixed
+- `AGG_IIS_AWK` slow-request guard simplified: dead `&& uri != health_path`
+  condition removed now that `/health` is unconditionally `next`-ed before
+  the slow counter.
+
+---
+
+### Added
 - `bin/analyze_overview.sh` — New management overview module. Sources metric
   data from `analyze_iis` and `analyze_access` via `--emit-stats` (zero
   log-re-parse; DRY via `lib/aggregate_utils.sh`). Renders three-cut layout:

@@ -1,6 +1,6 @@
 # log-parse — Design Specification
 
-> Version 2.0 · 2026-06-29 · Audience: developers, SREs, on-call engineers.
+> Version 2.1 · 2026-06-29 · Audience: developers, SREs, on-call engineers.
 > **Language**: **English** · [繁體中文](design.zh-TW.md)
 
 This document specifies **what** the system does and **why** it is structured
@@ -70,7 +70,8 @@ Each server emits three log families:
                                │ sources
                                ▼
   ┌──────────────────────────────────────────────────────┐
-  │  lib/common.sh        logging, tmpdir, deps          │
+  │  lib/common.sh        logging, tmpdir, deps,         │
+  │                        load_test_hosts, TH_FILTER_FUNC│
   │  lib/date_utils.sh    date ranges, resolve_interval  │
   │  lib/csv_utils.sh     field extraction (awk)         │
   │  lib/fmt_utils.sh     text rendering, fmt_set_color  │
@@ -80,9 +81,10 @@ Each server emits three log families:
   └──────────────────────────────────────────────────────┘
                                │ reads
                                ▼
-  ┌────────────────────────────────────────────────┐
-  │   conf/regions.conf  (region → server mapping) │
-  └────────────────────────────────────────────────┘
+  ┌─────────────────────────────────────────────────────────────┐
+  │   conf/regions.conf    (region → server mapping)            │
+  │   conf/test_hosts.conf (QA/probe client IPs — single source)│
+  └─────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.1 Layering rules
@@ -94,8 +96,10 @@ Each server emits three log families:
    parsing; no global mutation outside documented sanctioned globals
    (`WORK_TMPDIR`, `LOG_LEVEL`, region arrays, `RUN_OUTPUT_DIR`, `RUN_TS`,
    `INTERVAL_ARGS`).
-3. **Configuration layer** (`conf/`) — pipe-delimited text consumed by
-   `load_regions()`. No executable content.
+3. **Configuration layer** (`conf/`) — plain text files with no executable
+   content. `regions.conf` is pipe-delimited and consumed by the per-bin
+   `load_regions()`. `test_hosts.conf` lists one IPv4 per line and is consumed
+   by `load_test_hosts` in `lib/common.sh` (see §3.2.13).
 
 ### 2.2 Process model
 
@@ -143,6 +147,28 @@ Single source of truth for IIS metric awk and the RFC-4180 CSV quoter:
 - **Schema constants** `IIS_STAT_SCHEMA` / `ACCESS_STAT_SCHEMA` + field-index
   helpers (`IIS_F_REGION`, `IIS_F_TAG`, etc.) so analyzers, renderers, and
   overview share one contract.
+
+#### `lib/common.sh` — test-host loader and predicate (single source)
+
+`load_test_hosts(conf)` reads `conf/test_hosts.conf`, strips `#` comments and
+blank lines, and returns the IP set as a single space-joined string for passing
+to gawk via `-v th_set=...` (matched by exact string equality, never regex).
+`load_test_hosts` dies if the file is absent — fail-fast parity with
+`regions.conf`.
+
+`TH_FILTER_FUNC` is a gawk snippet (a shell variable) that implements the
+three filter modes. It is prepended to any gawk program that needs to filter
+by client IP, via `"$TH_FILTER_FUNC$AWK_PROG"`. Callers pass
+`-v _th_mode=exclude|only|all` and `-v th_set="ip ip ..."`, then call
+`th_init(th_set)` in `BEGIN` and `if (th_skip(ip)) next` at the read stage.
+`th_skip` returns 1 (drop) or 0 (keep):
+- `exclude` (default) — drops requests whose client IP is in the test-host set.
+- `only` — keeps only requests from test-host IPs.
+- `all` — keeps every request regardless of IP.
+
+This is the **first true shared loader/predicate** in `common.sh`. It mirrors
+the `assert_enum`/`die` placement pattern. `load_regions` is defined per-bin
+and is **not** a shared loader; do not conflate the two.
 
 #### `lib/fmt_utils.sh` + `lib/common.sh` — re-entrant color state (C3)
 
@@ -207,15 +233,21 @@ as constants in `lib/aggregate_utils.sh`):
 **IIS schema** (`IIS_STAT_SCHEMA`):
 ```
 IIS  <region>  <role>  <server>  TOTAL      <n>
-IIS  ...                         5XX        <n>
-IIS  ...                         503_HEALTH <n>
 IIS  ...                         SLOW       <n>
-IIS  ...                         REDIRECT   <n>
 IIS  ...                         UNIQUE_IPS <n>
 IIS  ...                         STATUS     <code>  <count>
 IIS  ...                         ENDPOINT   <uri>   <count>  <avg_sec>
 IIS  ...                         CLIENT_IP  <ip>    <count>
 ```
+
+All rows reflect **business-only traffic**: `/health` requests are excluded
+unconditionally and the test-host mode (§3.2.13) is applied before any row is
+emitted. `TOTAL` therefore counts business requests only. The `STATUS` rows
+are the descriptive Top-N status-code distribution (business-only); 302/404
+may appear there — this is intentional, as they represent real business
+responses. The former `5XX`, `503_HEALTH`, and `REDIRECT` aggregate rows have
+been removed; dependency-health detection now lives exclusively in
+`analyze_errors` (see §3.3).
 
 `role` is `api` or `app` (from `conf/regions.conf`). `region` is `taipei` or
 `taichung`; merged mode tags `region=all, server=API_SERVERS|APP_SERVERS`.
@@ -247,13 +279,14 @@ numeric literal appears in more than one cut.**
   per-region combined anomaly count. No grand totals; no role-specific signals.
 - **服務別 (By Service Role)** — per-role request volume + share % plus role-
   specific problem signals: `UNVERIFIED` only in the API sub-slice (issuance
-  side); `ORPHAN`, `503_HEALTH`, `SLOW` only in the APP sub-slice (verification
-  side). `5XX` and `SLOW` literals appear **only** inside this block.
+  side); `ORPHAN` and `SLOW` only in the APP sub-slice (verification side).
+  `SLOW` literals appear **only** inside this block.
 
 Request volume legitimately appears as three different decompositions (grand
 total, region split, role split) — but each numeric literal is distinct.
 
-Sample output (weekly, `--from 2026-05-18 --to 2026-05-25`, all regions):
+Sample output (weekly, `--from 2026-05-18 --to 2026-05-25`, all regions,
+`--test-hosts exclude` default — business traffic only):
 ```
 ========================================================================
   營運總覽報告 (Management Overview)
@@ -263,39 +296,38 @@ Sample output (weekly, `--from 2026-05-18 --to 2026-05-25`, all regions):
 
 ▶ 總體概況 (Overall)
 ------------------------------------------------------------------------
-  IIS 總請求數                            20651
-  不重複用戶端 IP                         21
-  存取關聯總數                            14
-  NORMAL 正常流程率                       57.1%
-  平均 API→APP 延遲                       15.6s
+  IIS 總請求數                            738
+  不重複用戶端 IP                         12
+  存取關聯總數                            9
+  NORMAL 正常流程率                       66.7%
+  平均 API→APP 延遲                       19.5s
   整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
 
 ▶ 分區別 (By Region)
 ------------------------------------------------------------------------
   [佔比；總量見總體概況]
-  台北                                    IIS 佔比 50.4%   NORMAL 25.0%   異常 6
-  台中                                    IIS 佔比 49.6%   NORMAL 100.0%   異常 0
+  台北                                    IIS 佔比 45.9%   NORMAL 0.0%   異常 3
+  台中                                    IIS 佔比 54.1%   NORMAL 100.0%   異常 0
 
 ▶ 服務別 (By Service Role)
 ------------------------------------------------------------------------
 
     ■ API 伺服器 (2 台 · 簽發 Token)
-  IIS 請求數 (佔比)                       6595 (31.9%)
-  5XX 錯誤                                125
+  IIS 請求數 (佔比)                       11 (1.5%)
   慢速率 (>2000ms)                        0.0%
   UNVERIFIED (簽發未使用)                 0
 
     ■ APP 伺服器 (4 台 · 驗證 Token / DICOM)
-  IIS 請求數 (佔比)                       14056 (68.1%)
-  健康檢查 503 (Oracle 相依)              367
-  慢速率 (>5000ms)                        0.0%
-  ORPHAN (無對應簽發)                     6
+  IIS 請求數 (佔比)                       727 (98.5%)
+  慢速率 (>5000ms)                        0.7%
+  ORPHAN (無對應簽發)                     3
 ```
 
 #### 3.0.5 Flags accepted / rejected
 
 Accepted: `--log-dir`, `--region`, `--today`, `--date`, `--from`/`--to`,
-`--days`, `--slow-api-ms`, `--slow-app-ms`, `--output-dir`, `--conf`, `-v`, `-h`.
+`--days`, `--slow-api-ms`, `--slow-app-ms`, `--test-hosts`, `--output-dir`,
+`--conf`, `-v`, `-h`.
 
 Not accepted (die on receipt): `--view`, `--format`, `--merge`, `--top`,
 `--emit-stats`.
@@ -336,6 +368,13 @@ CSV schema (header row required):
 #### 3.1.3 Correlation logic
 
 **Join key**: `API.ISSUE_TOKEN (col 9)` ≡ `APP.TOKEN (col 2)`.
+
+Before correlation, records whose `CLIENT_IP` (CSV column 7) matches the
+test-host set are dropped at the **extract stage** (inside `extract_api_records`
+/ `extract_app_records` in `lib/csv_utils.sh`), controlled by `--test-hosts`
+mode (§3.2.13). Because both the API issuance row and the APP verification row
+for a test-host token carry the same `CLIENT_IP`, both sides are filtered out
+together — no orphan/unverified artifacts are created.
 
 For each region, the analyser:
 
@@ -513,8 +552,10 @@ source. Accepts only the interval/region/conf/verbose subset of flags — never
 ### 3.2 `analyze_iis.sh` — IIS W3C log analysis
 
 #### 3.2.1 Purpose
-Surface HTTP-level signals: traffic volume, error rates, slow endpoints,
-and health-check failures.
+Surface HTTP-level signals from **business traffic only**: request volume,
+status-code distribution, slow endpoints, and unique client IPs. `/health`
+requests are unconditionally excluded from all aggregation; test-host IPs are
+filtered per `--test-hosts` mode (default: `exclude`). See §3.2.13.
 
 #### 3.2.2 Inputs
 
@@ -551,26 +592,25 @@ Other paths are reported verbatim.
 
 #### 3.2.4 Aggregated signals
 
+All metrics apply to **business requests only**: `/health` requests are
+excluded unconditionally (exact stem match `cs-uri-stem == "/health"`,
+case-sensitive; the query-string field is separate, so `/health?x=1` still
+matches on the stem; `/healthz` and `/Health` are NOT filtered — intentional,
+matches prior semantics). Test-host IPs are filtered per `--test-hosts` mode
+before any counting (§3.2.13).
+
 | Metric             | Definition                                                                          |
 |--------------------|-------------------------------------------------------------------------------------|
-| `total`            | Lines parsed (excluding comments and short rows)                                    |
-| `status_count[]`   | Per-status-code count (e.g. 200, 302, 404, 500, 503)                                |
-| `error5xx`         | Rows where `status >= 500`                                                          |
-| `health503`        | Rows where `status == 503` **AND** `uri == /health`                                 |
-| `slow`             | Rows where `time-taken >= threshold` **AND** `uri != /health`; threshold is `--slow-api-ms` (default 2000 ms) for API-role servers and `--slow-app-ms` (default 5000 ms) for APP-role servers |
-| `redirect`         | Rows where `status == 302`                                                          |
+| `total`            | Business requests parsed (after /health exclusion and test-host mode applied)       |
+| `status_count[]`   | Per-status-code count (e.g. 200, 302, 404) — descriptive Top-N distribution, business-only |
+| `slow`             | Rows where `time-taken >= threshold`; threshold is `--slow-api-ms` (default 2000 ms) for API-role servers and `--slow-app-ms` (default 5000 ms) for APP-role servers |
 | `client_ips`       | Hash of `c-ip → request_count`; `length()` yields unique-IP count; iterated for the per-IP table. `-` excluded. |
 | `top endpoints`    | Top-N endpoints by request count (after DICOM grouping), N controlled by `--top` (default 10, 0=all); each with **mean response time** in seconds (2 dp) |
 | `client_ip_roster` | Top-N unique `c-ip` values with request count and `% of total`, N controlled by `--top` (0=all) |
 
-Health-check 503s are surfaced as a **separate metric** (not just a 5xx
-count) because they indicate dependency-health failure, not application
-fault — the response is intentionally 503 when OracleDB is unhealthy.
-
-The `% of total` denominator for all three tables is the `total` requests
-count for that server or bucket (including `/health` and redirects). When
-`--top` truncates the endpoint or client-IP list, the visible rows' percentages
-will not sum to 100.
+The `% of total` denominator for all three tables is the `total` business
+requests count for that server or bucket. When `--top` truncates the endpoint
+or client-IP list, the visible rows' percentages will not sum to 100.
 
 #### 3.2.5 Single computation source
 
@@ -585,7 +625,9 @@ described in §3.2.7–3.2.8. No information loss.
 
 `--view summary` (management text; format-independent — always text): concise
 KPIs + % for each scope (overall header, then per region→server, or merged
-buckets). Top-3 enumerations only; omits full tables. Every line carries a %.
+buckets). Includes a `資料範圍` (scope) management banner showing the traffic
+universe (business requests; /health excluded; test-hosts mode). Top-3
+enumerations only; omits full tables. Every line carries a %.
 
 **The summary view is always text regardless of `--format`** (C10). `--format`
 governs only the detail file extension and render path.
@@ -594,14 +636,15 @@ governs only the detail file extension and render path.
 
 For each server in the selected region(s), or each role bucket under `--merge`:
 
-1. Top-line counters: `Total requests`, `Unique client IPs`, `302 Redirects`,
-   `5xx errors`, `Health 503`, `Slow (>Nms)` — the threshold value in the
-   label reflects the server's role.
-2. HTTP status-code table — columns `["Status", "Count", "% of total"]`,
+1. `Scope` banner — `business requests (excl. /health; test-hosts=MODE)` — so
+   the reader knows exactly which traffic universe is being reported.
+2. Top-line counters: `Total requests`, `Unique client IPs`, `Slow (>Nms)` —
+   the threshold value in the label reflects the server's role.
+3. HTTP status-code table — columns `["Status", "Count", "% of total"]`,
    sorted by count descending. Sorting happens in-gawk (no external `sort`).
-3. Endpoint table — columns `["Endpoint", "Avg(s)", "Count", "% of total"]`,
+4. Endpoint table — columns `["Endpoint", "Avg(s)", "Count", "% of total"]`,
    sorted by count descending. Capped at `--top` rows (default 10; 0=all).
-4. Client IP table — columns `["Client IP", "Count", "% of total"]`, sorted
+5. Client IP table — columns `["Client IP", "Count", "% of total"]`, sorted
    by count descending. Capped at `--top` rows. Empty when all rows have
    `c-ip = -`.
 
@@ -616,12 +659,16 @@ to ENDPOINT and CLIENT_IP rows. Column schema:
 
 ```
 REGION  ROLE  SERVER       METRIC    KEY                COUNT  AVG_SEC  PCT
-taipei  api   10.22.63.37  SUMMARY   TOTAL              40000  -        100.0
-taipei  api   10.22.63.37  SUMMARY   5XX                120    -        0.3
-taipei  api   10.22.63.37  STATUS    200                36800  -        92.0
+taipei  api   10.22.63.37  SUMMARY   TOTAL              723    -        100.0
+taipei  api   10.22.63.37  SUMMARY   SLOW               2      -        0.3
+taipei  api   10.22.63.37  STATUS    200                631    -        87.3
 taipei  api   10.22.63.37  ENDPOINT  /api/Auth/IssueTok 5000   0.12     12.5
-taipei  api   10.22.63.37  CLIENT_IP 10.21.3.35         7280   -        18.2
+taipei  api   10.22.63.37  CLIENT_IP 192.168.139.119    712    -        98.5
 ```
+
+`TOTAL` and all derived rows count business requests only. The `SUMMARY`
+rows are `TOTAL`, `SLOW`, and `UNIQUE_IPS`; the former `5XX`, `503_HEALTH`,
+and `REDIRECT` SUMMARY rows have been removed.
 
 CSV uses the shared `q()` RFC-4180 quoter (`AGG_CSV_FUNC`). TSV uses TAB
 delimiter with no quoting. Both persisted files carry no ANSI color.
@@ -658,6 +705,48 @@ configured regions:
 
 Prints `iis_stats.tsv` verbatim to stdout, then returns before `persist_init`
 (no files, no banners). This is `analyze_overview.sh`'s data source.
+
+#### 3.2.13 Test-host filtering and `/health` exclusion
+
+Two pre-filters run at the read stage inside `agg_iis_rows` (in
+`lib/aggregate_utils.sh`), in this fixed order:
+
+1. **`/health` unconditional exclusion** — any row where `cs-uri-stem ==
+   "/health"` (exact, case-sensitive field equality) is dropped before any
+   counter is incremented, in all `--test-hosts` modes. This is the business
+   universe boundary: health probes account for 95.4% of raw IIS traffic in
+   the sample dataset and represent infrastructure checks, not business
+   requests. Note: `/healthz`, `/Health`, and `/health?query=...` are NOT
+   filtered (the query string is a separate IIS field; only the stem matches).
+
+2. **Test-host IP filter** — after `/health` is dropped, the `--test-hosts`
+   mode is applied on `c-ip` (field 9) using the predicate `TH_FILTER_FUNC`
+   from `lib/common.sh`:
+   - `exclude` (default) — drops rows whose `c-ip` is in `conf/test_hosts.conf`.
+   - `only` — keeps only rows from IPs listed in `conf/test_hosts.conf`
+     (useful for auditing internal/QA non-health client traffic).
+   - `all` — keeps all rows regardless of IP (equivalent to no IP filter).
+
+**`conf/test_hosts.conf`** — one IPv4 per line, `#` comments allowed. The
+seeded IPs are `192.168.139.79`, `192.168.139.110`, `192.168.139.28`.
+`192.168.139.28` is the health-probe host (95.4% of IIS traffic is `/health`
+from this IP, which is already removed by filter 1). `192.168.139.110` is a
+QA host (209 business requests/week). Note: `192.168.139.119` is the
+production gateway (712 business hits/week) and must **not** be in this file.
+
+The file is **required** on every `analyze_iis` / `analyze_access` run,
+including `--test-hosts all` (where the set is not consulted). A missing
+file aborts with `die` — fail-fast parity with `regions.conf`.
+
+**`load_test_hosts`** and **`TH_FILTER_FUNC`** live in `lib/common.sh`
+(beside `assert_enum`/`die`). They are the first true shared loader/predicate
+in `common.sh`. `load_regions` is defined per-bin and is not a shared loader.
+
+**Dependency-health detection** (Oracle-outage): the former IIS 503-on-`/health`
+signal has been intentionally removed as part of the business-only exclusion.
+Oracle-dependency failures remain fully observable via `analyze_errors` (§3.3),
+which reads the `.NET` app logs. No actionable signal is lost — the detection
+simply lives only in the errors module now.
 
 ---
 
@@ -820,6 +909,7 @@ the resolved dir (see §3.4.3).
 | `--slow-api-ms` | F→{overview,iis} | F | — | API-role servers | — | default 2000 ms |
 | `--slow-app-ms` | F→{overview,iis} | F | — | APP-role servers | — | default 5000 ms |
 | `--merge` | F→{access,iis} | — | cross-region | two-bucket | — | requires `--region all` |
+| `--test-hosts` | F→{overview,iis,access} | F | F | F | **no** | `exclude`; errors has no client IP |
 
 Legend: `own` = log_report acts on this flag itself · `F` = forwarded to child ·
 `env` = carried via `LOG_PARSE_OUTPUT_DIR` env var · `—` = not accepted.
@@ -975,6 +1065,7 @@ KV rows and stat blocks are padded by **display width** (wcwidth: CJK ideographs
 | `--slow-api-ms` | yes | — | yes | — | fwd→overview,iis | `2000` |
 | `--slow-app-ms` | yes | — | yes | — | fwd→overview,iis | `5000` |
 | `--merge` | — | yes | yes | — | fwd→access,iis | off |
+| `--test-hosts` | yes | yes | yes | **no** | fwd→overview,iis,access | `exclude` |
 | `--output-dir` | yes | yes | yes | yes | yes | `""` → `./log-parse` |
 | `--emit-stats` | — | yes | yes | — | — | off |
 | `--modules` | — | — | — | — | yes | `overview,iis,access` |

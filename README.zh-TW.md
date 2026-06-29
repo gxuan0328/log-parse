@@ -4,7 +4,7 @@
 > 比對存取 Token、揭露 IIS 異常、追蹤應用程式生命週期事件，
 > 涵蓋兩個區域共六台 API / APP 伺服器。
 
-[![Tests](https://img.shields.io/badge/tests-215%2F215-brightgreen)](tests/run_tests.sh)
+[![Tests](https://img.shields.io/badge/tests-232%2F232-brightgreen)](tests/run_tests.sh)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bash 4+](https://img.shields.io/badge/bash-4%2B-lightgrey)](https://www.gnu.org/software/bash/)
 
@@ -21,9 +21,11 @@
 |-----------------------|----------------------------------------------|---------------------------------------------------------------------------------|
 | `analyze_overview`    | 透過 `--emit-stats` 取得 IIS + Access 統計數據 | 管理總覽：總體概況 / 分區別 / 服務別；僅摘要、純文字                             |
 | `analyze_access`      | API + APP 存取 CSV                            | Token 簽發 ↔ 驗證流程、孤兒存取、未使用簽發；`--view summary|detail`           |
-| `analyze_iis`         | IIS W3C 擴充欄位日誌                          | 5xx 錯誤、慢請求、健康檢查 503 異常；`--view summary|detail`                   |
+| `analyze_iis`         | IIS W3C 擴充欄位日誌                          | 純業務請求指標：慢請求、端點分析、狀態碼分布；`--view summary|detail`          |
 | `analyze_errors`      | `app-all` / `app-error` / `app-lifetime`     | OracleDB 中斷、Top 錯誤模式、應用程式重啟停機時間                               |
 | `log_report`          | 上述全部                                      | 統籌排程器；預設模組：`overview,iis,access`；errors 須透過 `--modules` 明確加入 |
+
+所有報告預設僅反映**真實業務流量**：`/health` 請求無條件從所有 IIS 聚合中排除，`conf/test_hosts.conf` 所列的內部測試主機 IP 則透過 `--test-hosts exclude|only|all`（預設：`exclude`）在讀取階段即予以預先過濾。因此 `Total requests` / `IIS 總請求數` 僅反映真實外部用戶流量。
 
 每次執行均會自動將報告寫入當前工作目錄下的 `./log-parse/`（可透過
 `--output-dir DIR` 或 `$LOG_PARSE_OUTPUT_DIR` 覆寫）。檔案命名格式為
@@ -96,7 +98,8 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── output_utils.sh      常時持久化輸出（persist_init / persist_views）
 │   └── aggregate_utils.sh   共用指標計算與 CSV quoter（AGG_IIS_AWK）
 ├── conf/
-│   └── regions.conf         區域 ↔ 伺服器對應表
+│   ├── regions.conf         區域 ↔ 伺服器對應表
+│   └── test_hosts.conf      QA / 健康探針用戶端 IP（搭配 --test-hosts 使用）
 ├── docs/
 │   ├── design.md / design.zh-TW.md   架構與資料流規格
 │   └── usage.md  / usage.zh-TW.md    完整 CLI 參考
@@ -105,7 +108,7 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── sample-outputs/      範例輸出報告
 │   └── *.sh                 情境驅動腳本
 ├── tests/
-│   └── run_tests.sh         215 項功能測試套件
+│   └── run_tests.sh         232 項功能測試套件
 ├── .claude/
 │   ├── CLAUDE.md            核心慣例（每個 session 自動載入）
 │   ├── rules/               路徑範圍細項慣例（按需載入）

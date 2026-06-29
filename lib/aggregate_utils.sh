@@ -29,15 +29,16 @@
 AGG_IIS_AWK='
 # ----------------------------------------------------------------------------
 # Purpose : Analyse IIS W3C log lines; emit TAB-delimited kind-tagged rows.
+#           Unconditionally excludes /health requests before any counting.
+#           Applies test-host mode (exclude|only|all) on c-ip (field 9).
 # Input   : Raw W3C extended log lines (space-delimited; # lines = comments).
-# Vars    : slow_ms — role-resolved slow-request threshold in milliseconds.
-#           top     — max rows for ENDPOINT and CLIENT_IP (0 = all).
-# Output  : TAB-delimited, kind-prefixed rows on stdout:
+# Vars    : slow_ms   — role-resolved slow-request threshold in milliseconds.
+#           top       — max rows for ENDPOINT and CLIENT_IP (0 = all).
+#           _th_mode  — test-host mode: exclude (default) | only | all.
+#           th_set    — space-joined test-host IP string (from load_test_hosts).
+# Output  : TAB-delimited, kind-prefixed rows on stdout (business requests only):
 #             TOTAL\t<n>
-#             5XX\t<n>
-#             503_HEALTH\t<n>
 #             SLOW\t<n>
-#             REDIRECT\t<n>
 #             UNIQUE_IPS\t<n>
 #             STATUS\t<status>\t<count>
 #             ENDPOINT\t<uri>\t<count>\t<avg_sec>   (Top-N by count desc,
@@ -48,6 +49,12 @@ AGG_IIS_AWK='
 BEGIN {
     health_path    = "/health"
     slow_threshold = slow_ms + 0
+    th_init(th_set)
+    # Force-initialize arrays so asorti() never receives an unset variable
+    # when all records are filtered (e.g. --test-hosts only on a server with
+    # no test-host traffic, or --test-hosts exclude with only /health + test-host records).
+    split("", ep_count); split("", ep_time_ms)
+    split("", client_ips); split("", status_count)
 }
 
 # Skip W3C directive lines and any truncated rows missing required fields.
@@ -65,6 +72,9 @@ NF < 17 { next }
     status = $12 + 0
     ttms   = $17 + 0
     client = $9
+
+    if (uri == health_path) next     # /health removed from business universe (ALL modes)
+    if (th_skip(client))    next     # test-host MODE on c-ip (field 9)
 
     total++
     status_count[status]++
@@ -86,21 +96,14 @@ NF < 17 { next }
     ep_count[ep]++
     ep_time_ms[ep] += ttms   # accumulate time-taken for the per-endpoint mean
 
-    # Severity / health counters. Note: health-check 503s are deliberately
-    # split out from the generic 5xx bucket because they signal a dependency
-    # outage (OracleDB unhealthy), not an application fault.
-    if (status >= 500)                                error5xx++
-    if (ttms >= slow_threshold && uri != health_path) slow++
-    if (status == 503 && uri == health_path)          health503++
-    if (status == 302)                                redirect++
+    # Slow counter. STATUS Top-N distribution is retained (D7) so 302/4xx remain
+    # visible in the status table as descriptive business-status accounting.
+    if (ttms >= slow_threshold) slow++
 }
 
 END {
     printf "TOTAL\t%d\n",      total
-    printf "5XX\t%d\n",        error5xx+0
-    printf "503_HEALTH\t%d\n", health503+0
     printf "SLOW\t%d\n",       slow+0
-    printf "REDIRECT\t%d\n",   redirect+0
     printf "UNIQUE_IPS\t%d\n", length(client_ips)
 
     # Emit raw STATUS counts; render_iis_stats re-sorts in-gawk for display.
@@ -144,13 +147,11 @@ function q(s) {
 # ---------------------------------------------------------------------------
 # IIS_STAT_SCHEMA — row format emitted by analyze_iis --emit-stats.
 # Each row: IIS <TAB> region <TAB> role <TAB> server <TAB> TAG [<TAB> fields...]
+# All rows reflect business-only traffic (/health excluded; test-host mode applied).
 #
 # Tags and trailing fields:
 #   TOTAL      <n>
-#   5XX        <n>
-#   503_HEALTH <n>
 #   SLOW       <n>
-#   REDIRECT   <n>
 #   UNIQUE_IPS <n>
 #   STATUS     <code>  <count>
 #   ENDPOINT   <uri>   <count>  <avg_sec>
@@ -162,7 +163,7 @@ IIS_F_MODULE=1   # "IIS"
 IIS_F_REGION=2
 IIS_F_ROLE=3     # api | app
 IIS_F_SERVER=4
-IIS_F_TAG=5      # TOTAL | 5XX | ... | STATUS | ENDPOINT | CLIENT_IP
+IIS_F_TAG=5      # TOTAL | SLOW | UNIQUE_IPS | STATUS | ENDPOINT | CLIENT_IP
 IIS_F_KEY=6      # code (STATUS) | uri (ENDPOINT) | ip (CLIENT_IP) | n (scalars)
 IIS_F_COUNT=7    # count for STATUS / ENDPOINT / CLIENT_IP
 IIS_F_AVGSEC=8   # avg_sec for ENDPOINT only
@@ -185,21 +186,28 @@ ACC_F_VALUE=4    # numeric value
 # agg_iis_rows — run AGG_IIS_AWK on a combined IIS log corpus
 # ---------------------------------------------------------------------------
 
-# agg_iis_rows COMBINED SLOW_MS [TOP]
+# agg_iis_rows COMBINED SLOW_MS [TOP] [TH_MODE] [TH_SET]
 #   Purpose : Execute AGG_IIS_AWK against a concatenated IIS log file and emit
 #             the raw TAB-delimited kind-tagged rows to stdout.
+#             /health is excluded unconditionally; test-host mode is applied on c-ip.
 #   Args    : COMBINED — path to concatenated IIS log file (may be empty → no output).
 #             SLOW_MS  — slow-request threshold in milliseconds (role-resolved).
 #             TOP      — [optional] max ENDPOINT/CLIENT_IP rows (0=all; default from
 #                        $OPT_TOP global when set, else 0).
-#   Output  : TAB-delimited rows: TOTAL, 5XX, 503_HEALTH, SLOW, REDIRECT,
-#             UNIQUE_IPS, STATUS <code> <count>, ENDPOINT <uri> <count> <avg_sec>,
+#             TH_MODE  — [optional] test-host mode: exclude (default) | only | all.
+#             TH_SET   — [optional] space-joined IP string from load_test_hosts.
+#   Output  : TAB-delimited rows (business-only): TOTAL, SLOW, UNIQUE_IPS,
+#             STATUS <code> <count>, ENDPOINT <uri> <count> <avg_sec>,
 #             CLIENT_IP <ip> <count>.
 #   Returns / Side effects : none (pure stdout pipeline).
 #   Errors / Notes : empty COMBINED produces no output (gawk handles gracefully).
+#             Default th_mode=exclude/empty-set drops /health only (no test-host in set).
 agg_iis_rows() {
     local combined="$1" slow_ms="$2" top_n="${3:-${OPT_TOP:-0}}"
-    gawk -v slow_ms="$slow_ms" -v top="$top_n" "$AGG_IIS_AWK" "$combined"
+    local th_mode="${4:-exclude}" th_set="${5:-}"
+    gawk -v slow_ms="$slow_ms" -v top="$top_n" \
+         -v _th_mode="$th_mode" -v th_set="$th_set" \
+         "$TH_FILTER_FUNC$AGG_IIS_AWK" "$combined"
 }
 
 # ---------------------------------------------------------------------------

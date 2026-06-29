@@ -179,3 +179,43 @@ assert_uint() { case "$2" in ''|*[!0-9]*) die "$1 must be a non-negative integer
 assert_enum() { local name="$1" val="$2"; shift 2; local a
                 for a in "$@"; do if [[ "$val" == "$a" ]]; then return 0; fi; done
                 die "$name must be one of: $* (got '$val')"; }
+
+# ----------------------------------------------------------------------------
+# Purpose : Read test_hosts.conf and emit its IP set as one space-joined string
+#           for passing to gawk via -v th_set=... (matched exactly, never regex).
+# Args    : $1 CONF — path to test_hosts.conf.
+# Output  : space-joined IP string on stdout (empty string if file has no IPs).
+# Returns : 0; dies (fail-fast) if CONF is given but unreadable.
+# Notes   : Strips inline/whole-line '#' comments, blank lines, and surrounding
+#           whitespace/CR. Single source for the test-host IP list. First true
+#           shared loader in common.sh (mirrors assert_enum/die placement, NOT
+#           the per-bin load_regions).
+# ----------------------------------------------------------------------------
+load_test_hosts() {
+    local conf="$1"
+    if [[ ! -f "$conf" ]]; then die "test-hosts config not found: $conf"; fi
+    gawk '
+        { sub(/#.*/, ""); gsub(/[ \t\r]+/, "") }
+        $0 != "" { ips = (ips == "" ? $0 : ips " " $0) }
+        END { print ips }
+    ' "$conf"
+}
+
+# TH_FILTER_FUNC — gawk snippet implementing the test-host membership filter.
+# Prepend to any gawk program that filters by client IP. Requires the program
+# to set, via -v: _th_mode=exclude|only|all and th_set="ip ip ...".
+# Call th_init(th_set) in BEGIN; then `if (th_skip(ip)) next` at the read stage.
+TH_FILTER_FUNC='
+function th_init(set_str,   n, i, a) {
+    n = split(set_str, a, " ")
+    for (i = 1; i <= n; i++) if (a[i] != "") _th[a[i]] = 1
+}
+# th_skip(ip) -> 1 = DROP this record, 0 = KEEP, per mode.
+#   exclude (default): drop test hosts; only: keep ONLY test hosts; all: keep all.
+function th_skip(ip,   inset) {
+    inset = (ip in _th)
+    if (_th_mode == "only") return !inset
+    if (_th_mode == "all")  return 0
+    return inset            # exclude (default)
+}
+'

@@ -1,0 +1,145 @@
+
+========================================================================
+  IIS Log Analysis Report
+========================================================================
+  Period                                  2026-05-21  →  2026-05-21  (1 days)
+
+========================================================================
+  IIS Analysis — Region: 台北
+========================================================================
+
+▶ IIS — 10.22.63.37
+------------------------------------------------------------------------
+  Scope                                   business requests (excl. /health; test-hosts=only)
+  Total requests                          6
+  Unique client IPs                       1
+  Slow (>2000ms)                          0
+
+    Status      Count     % of total
+    --------------------------------
+    204         3          50.0%
+    200         3          50.0%
+
+    Endpoint                                                 Avg(s)    Count     % of total
+    ---------------------------------------------------------------------------------------
+    /api/GetLungCancerReportURL                              0.17      6         100.0%
+
+    Client IP           Count     % of total
+    ----------------------------------------
+    192.168.139.110     6         100.0%
+
+▶ IIS — 10.21.3.35
+------------------------------------------------------------------------
+  Scope                                   business requests (excl. /health; test-hosts=only)
+  Total requests                          154
+  Unique client IPs                       1
+  Slow (>5000ms)                          0
+
+    Status      Count     % of total
+    --------------------------------
+    200         139        90.3%
+    304         13          8.4%
+    302         2           1.3%
+
+    Endpoint                                                 Avg(s)    Count     % of total
+    ---------------------------------------------------------------------------------------
+    /api/NhiPatientImage/studies/{uid}/series/{uid}/...      0.26      76         49.4%
+    /api/DigestSummary/hospital                              0.02      46         29.9%
+    /api/NhiPatientImage/studies/{uid}/series-uid            0.17      7           4.5%
+    /reports/view                                            0.29      2           1.3%
+    /expired                                                 0.01      2           1.3%
+    /assets/react-vendor-CWOlZk79.js                         0.01      2           1.3%
+    /assets/index-Cj5Ra9vo.css                               0.02      2           1.3%
+    /assets/index-BhWnmaLL.js                                0.03      2           1.3%
+    /assets/cornerstone-t3NNYA1R.js                          0.02      2           1.3%
+    /api/registration/get-target-instance                    0.11      2           1.3%
+
+    Client IP           Count     % of total
+    ----------------------------------------
+    192.168.139.110     154       100.0%
+
+▶ IIS — 10.21.3.36
+------------------------------------------------------------------------
+  Scope                                   business requests (excl. /health; test-hosts=only)
+  Total requests                          49
+  Unique client IPs                       1
+  Slow (>5000ms)                          0
+
+    Status      Count     % of total
+    --------------------------------
+    200         48         98.0%
+    302         1           2.0%
+
+    Endpoint                                                 Avg(s)    Count     % of total
+    ---------------------------------------------------------------------------------------
+    /api/DigestSummary/hospital                              0.00      23         46.9%
+    /api/NhiPatientImage/studies/{uid}/series/{uid}/...      0.28      14         28.6%
+    /vite.svg                                                0.01      1           2.0%
+    /reports/view                                            0.05      1           2.0%
+    /assets/react-vendor-CWOlZk79.js                         0.02      1           2.0%
+    /assets/lossless-BDvWhinS.js                             0.01      1           2.0%
+    /assets/index-Cj5Ra9vo.css                               0.01      1           2.0%
+    /assets/index-BhWnmaLL.js                                0.03      1           2.0%
+    /assets/decodeImageFrameWorker-Be17YydA.js               0.03      1           2.0%
+    /assets/cornerstone-t3NNYA1R.js                          0.06      1           2.0%
+
+    Client IP           Count     % of total
+    ----------------------------------------
+    192.168.139.110     49        100.0%
+
+========================================================================
+  IIS Analysis — Region: 台中
+========================================================================
+
+▶ IIS — 10.1.73.37
+------------------------------------------------------------------------
+  Scope                                   business requests (excl. /health; test-hosts=only)
+  Total requests                          0
+  Unique client IPs                       0
+  Slow (>2000ms)                          0
+
+    Status      Count     % of total
+    --------------------------------
+
+    Endpoint                                                 Avg(s)    Count     % of total
+    ---------------------------------------------------------------------------------------
+
+    Client IP           Count     % of total
+    ----------------------------------------
+
+▶ IIS — 10.1.72.35
+------------------------------------------------------------------------
+  Scope                                   business requests (excl. /health; test-hosts=only)
+  Total requests                          0
+  Unique client IPs                       0
+  Slow (>5000ms)                          0
+
+    Status      Count     % of total
+    --------------------------------
+
+    Endpoint                                                 Avg(s)    Count     % of total
+    ---------------------------------------------------------------------------------------
+
+    Client IP           Count     % of total
+    ----------------------------------------
+
+▶ IIS — 10.1.72.36
+------------------------------------------------------------------------
+  Scope                                   business requests (excl. /health; test-hosts=only)
+  Total requests                          0
+  Unique client IPs                       0
+  Slow (>5000ms)                          0
+
+    Status      Count     % of total
+    --------------------------------
+
+    Endpoint                                                 Avg(s)    Count     % of total
+    ---------------------------------------------------------------------------------------
+
+    Client IP           Count     % of total
+    ----------------------------------------
+
+========================================================================
+  Generated: 2026-05-21 00:00:00
+========================================================================
+

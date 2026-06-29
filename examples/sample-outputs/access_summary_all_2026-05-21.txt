@@ -1,13 +1,13 @@
 ============ Access Cross-Correlation Summary ============
   Period                                  2026-05-21  →  2026-05-21  (1 days)
   Region filter                           all
-  關聯總數                                12
-    NORMAL  (正常流程)                    7  (58.3%)
-    ORPHAN  (APP無對應API)                5  (41.7%)
+  關聯總數                                9
+    NORMAL  (正常流程)                    6  (66.7%)
+    ORPHAN  (APP無對應API)                3  (33.3%)
     UNVERIFIED (API未被使用)              0  (0.0%)
-  ORPHAN 驗證結果                         5 (成功) / 0 (失敗)
-  延遲 API→APP                            平均 17.4s · 最短 4.822s · 最長 37.554s
+  ORPHAN 驗證結果                         3 (成功) / 0 (失敗)
+  延遲 API→APP                            平均 19.5s · 最短 11.466s · 最長 37.554s
 
     ■ 分區別 (% within region)
-    台北    NORMAL 16.7%     ORPHAN 83.3%     UNVERIFIED 0.0%
+    台北    NORMAL 0.0%      ORPHAN 100.0%    UNVERIFIED 0.0%
     台中    NORMAL 100.0%    ORPHAN 0.0%      UNVERIFIED 0.0%

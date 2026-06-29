@@ -64,11 +64,42 @@ interval flags are mutually exclusive
 | `--top N` | **已統一** | 現在適用於 iis（端點 + 客戶端 IP）與 errors（模式）。`0` = ALL。 |
 | log_report 的 `--modules LIST` | **預設值已更改** | 預設由 `access,iis,errors` 改為 `overview,iis,access`；errors 須手動加入。 |
 
+### 測試主機過濾
+
+所有 `analyze_iis` 與 `analyze_access` 執行均需要 **`conf/test_hosts.conf`** —
+純文字格式的內部 QA / 健康探針客戶端 IP 清單（每行一個 IPv4）。
+該檔案預先設定三個 IP：`192.168.139.79`、`192.168.139.110` 與 `192.168.139.28`。
+即使使用 `--test-hosts all` 模式，若檔案不存在仍會立即失敗（與 `regions.conf`
+的 fail-fast 行為一致）。
+
+`--test-hosts` 旗標控制在讀取階段如何處理這些 IP：
+
+| 值 | 行為 |
+|---|---|
+| `exclude`（預設） | 捨棄來自測試主機 IP 的紀錄 — 報告反映真實外部流量。 |
+| `only` | 僅保留來自測試主機 IP 的紀錄 — 稽核內部 QA 或非 /health 客戶端流量。 |
+| `all` | 不過濾測試主機 — 納入所有客戶端 IP。 |
+
+**重要說明：** `/health` 在所有三種模式中均**無條件**排除於 IIS 聚合之外
+（在測試主機過濾執行之前就已移除）。健康探針流量（`192.168.139.28`，
+約佔原始 IIS 流量的 95%）因此在任何模式下**都不會**出現於報告中。
+`--test-hosts only` 顯示的是測試主機 IP 的**非 /health 業務請求**
+（例如 `192.168.139.110` 在 2026-05-21 的 209 筆業務請求）——
+這是對內部 QA 或非健康探針客戶端流量的稽核，**不是**對探針流量的稽核。
+
+`analyze_overview` 與 `log_report` 接受 `--test-hosts` 並轉發給其子行程
+`analyze_iis` 與 `analyze_access`。`analyze_errors` **不接受** `--test-hosts`
+（應用程式日誌沒有客戶端 IP 欄位；直接傳入會導致致命錯誤）。
+
+整份 IIS 報告中的**總請求數**一律是**業務請求數**（排除 `/health` 及依測試主機
+過濾模式所篩除的 IP 後計算）。Summary 的 `資料範圍` 行與 detail 的 `Scope` 行
+會明確顯示當前模式。
+
 ---
 
 ## 0. `bin/analyze_overview.sh`
 
-管理總覽報告，透過三個切面整合 IIS 健康狀態與存取關聯指標：
+管理總覽報告，透過三個切面整合 IIS 業務流量指標與存取關聯結果：
 
 - **總體概況 (Overall)** — 系統全域總量、主要比率、質性健康判定。
 - **分區別 (By Region)** — 各區域請求佔比與 NORMAL 率。
@@ -91,6 +122,7 @@ overview 為**僅 summary**（無 `--view`）且**僅文字**（無 `--format`�
 | `--days N` | uint ≥ 1 | `7` | 否 | 至今日為止之最後 N 天。僅為隱式回退。 |
 | `--slow-api-ms N` | uint ms | `2000` | 否 | API 角色伺服器之慢請求門檻。僅轉發給 iis 子行程（不轉發給 access）。 |
 | `--slow-app-ms N` | uint ms | `5000` | 否 | APP 角色伺服器之慢請求門檻。僅轉發給 iis 子行程。 |
+| `--test-hosts exclude\|only\|all` | enum | `exclude` | 否 | 測試主機 IP 過濾模式。轉發給 `analyze_iis` 與 `analyze_access` 子行程。詳見[測試主機過濾](#測試主機過濾)。 |
 | `--output-dir DIR` | path | `""` | 否 | 持久化目錄。解析順序：旗標 > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`。 |
 | `--conf FILE` | path | `conf/regions.conf` | 否 | 覆寫區域對應表，檔案必須存在。 |
 | `-v`, `--verbose` | flag | 關閉 | 否 | 啟用 DEBUG 等級日誌。 |
@@ -133,39 +165,40 @@ bash bin/analyze_overview.sh --log-dir "$LOG_DIR" \
 
 ▶ 總體概況 (Overall)
 ------------------------------------------------------------------------
-  IIS 總請求數                            3734
-  不重複用戶端 IP                         15
-  存取關聯總數                            12
-  NORMAL 正常流程率                       58.3%
-  平均 API→APP 延遲                       17.4s
+  IIS 總請求數                            723
+  不重複用戶端 IP                         6
+  存取關聯總數                            9
+  NORMAL 正常流程率                       66.7%
+  平均 API→APP 延遲                       19.5s
   整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
 
 ▶ 分區別 (By Region)
 ------------------------------------------------------------------------
   [佔比；總量見總體概況]
-  台北                                    IIS 佔比 52.3%   NORMAL 16.7%   異常 5
-  台中                                    IIS 佔比 47.7%   NORMAL 100.0%   異常 0
+  台北                                    IIS 佔比 45.8%   NORMAL 0.0%   異常 3
+  台中                                    IIS 佔比 54.2%   NORMAL 100.0%   異常 0
 
 ▶ 服務別 (By Service Role)
 ------------------------------------------------------------------------
 
     ■ API 伺服器 (2 台 · 簽發 Token)
-  IIS 請求數 (佔比)                       961 (25.7%)
-  5XX 錯誤                                17
+  IIS 請求數 (佔比)                       11 (1.5%)
   慢速率 (>2000ms)                        0.0%
   UNVERIFIED (簽發未使用)                 0
 
     ■ APP 伺服器 (4 台 · 驗證 Token / DICOM)
-  IIS 請求數 (佔比)                       2773 (74.3%)
-  健康檢查 503 (Oracle 相依)              50
-  慢速率 (>5000ms)                        0.1%
-  ORPHAN (無對應簽發)                     5
+  IIS 請求數 (佔比)                       712 (98.5%)
+  慢速率 (>5000ms)                        0.3%
+  ORPHAN (無對應簽發)                     3
 ```
+
+`IIS 總請求數` 是**業務請求數**（排除 `/health` 及依預設 `exclude` 模式過濾的測試
+主機 IP）。上方數值反映 `--date 2026-05-21`、預設 `exclude` 模式下的結果。
 
 實作強制執行的內容規則：
 - 全域總量（`IIS 總請求數`、`存取關聯總數`）僅出現在總體概況區塊。
-- `5XX`、`SLOW`、`503`、`ORPHAN`、`UNVERIFIED` 關鍵字僅出現在服務別區塊。
-- `UNVERIFIED` 僅出現在 API 子切面；`ORPHAN` / `503` 僅出現在 APP 子切面。
+- `SLOW`、`ORPHAN`、`UNVERIFIED` 關鍵字僅出現在服務別區塊。
+- `UNVERIFIED` 僅出現在 API 子切面；`ORPHAN` 僅出現在 APP 子切面。
 - 健康判定行永遠不含數字。
 - 空窗口（無資料）時輸出零值與 `N/A` 比率；退出碼 0。
 
@@ -191,6 +224,7 @@ bash bin/analyze_overview.sh --log-dir "$LOG_DIR" \
 | `--view summary\|detail` | enum | `detail` | 否 | 主控台視圖。`summary` = 精簡管理文字；`detail` = 完整逐筆紀錄表格。不論 `--view` 為何，兩個檔案均永遠寫入。 |
 | `--format text\|tsv\|csv` | enum | `text` | 否 | 控制 **detail** 檔案的副檔名與 detail 主控台鏡像。summary 永遠為文字。`tsv` = tab 分隔；`csv` = RFC-4180。 |
 | `--merge` | flag | 關閉 | 否 | 跨區域合併關聯，輸出單一合併區塊。**需要 `--region all`**（明確指定或使用預設值）。 |
+| `--test-hosts exclude\|only\|all` | enum | `exclude` | 否 | 測試主機客戶端 IP 過濾。`conf/test_hosts.conf` **任何模式下均為必要檔案**，包括 `all` 模式。詳見[測試主機過濾](#測試主機過濾)。 |
 | `--output-dir DIR` | path | `""` | 否 | 持久化目錄。解析順序：旗標 > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`。 |
 | `--conf FILE` | path | `conf/regions.conf` | 否 | 覆寫區域對應表，檔案必須存在。 |
 | `-v`, `--verbose` | flag | 關閉 | 否 | 啟用 DEBUG 等級日誌。 |
@@ -232,6 +266,16 @@ bash bin/analyze_access.sh --log-dir "$LOG_DIR" --today --view summary
 # 7. 自訂區域對應表
 bash bin/analyze_access.sh --log-dir "$LOG_DIR" \
     --conf ./conf/regions.staging.conf
+
+# 8. 稽核內部 QA 非健康探針客戶端流量（only 模式）
+#    注意：/health 在模式選擇前即已移除；only 模式顯示測試主機 IP
+#    的非 /health 業務請求（例如 192.168.139.110 的業務請求）。
+bash bin/analyze_access.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --test-hosts only --view summary
+
+# 9. 不過濾測試主機（all 模式）
+bash bin/analyze_access.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --test-hosts all --view summary
 ```
 
 ### Summary 視圖
@@ -292,7 +336,10 @@ API_SERVER  APP_SERVER  HOSP_ID  PRSN_ID  CLIENT_IP  PATIENT_ID_AES
 
 ## 2. `bin/analyze_iis.sh`
 
-分析 IIS W3C 擴充欄位日誌：請求量、狀態分佈、慢請求、健康檢查 503 異常。
+分析 IIS W3C 擴充欄位日誌：**業務**請求量、狀態分佈、慢請求與端點細項。
+`/health` 端點在所有聚合中**無條件**排除（總請求數、端點列表、狀態分佈、
+慢請求計數、不重複客戶端 IP）。測試主機客戶端 IP 依 `--test-hosts` 模式在讀取
+階段預先過濾。相依性健康 / Oracle 中斷偵測改由 `analyze_errors` 負責。
 
 ### 旗標
 
@@ -310,6 +357,7 @@ API_SERVER  APP_SERVER  HOSP_ID  PRSN_ID  CLIENT_IP  PATIENT_ID_AES
 | `--slow-api-ms N` | uint ms | `2000` | 否 | API 角色伺服器之慢請求門檻。 |
 | `--slow-app-ms N` | uint ms | `5000` | 否 | APP 角色伺服器之慢請求門檻。 |
 | `--merge` | flag | 關閉 | 否 | 跨區域主機合併；輸出一個 API-servers 區塊與一個 APP-servers 區塊。**需要 `--region all`**。 |
+| `--test-hosts exclude\|only\|all` | enum | `exclude` | 否 | 測試主機客戶端 IP 過濾。`conf/test_hosts.conf` **任何模式下均為必要檔案**，包括 `all` 模式。詳見[測試主機過濾](#測試主機過濾)。 |
 | `--output-dir DIR` | path | `""` | 否 | 持久化目錄。解析順序：旗標 > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`。 |
 | `--conf FILE` | path | `conf/regions.conf` | 否 | 覆寫區域對應表，檔案必須存在。 |
 | `-v`, `--verbose` | flag | 關閉 | 否 | 啟用 DEBUG 等級日誌。 |
@@ -322,7 +370,7 @@ API_SERVER  APP_SERVER  HOSP_ID  PRSN_ID  CLIENT_IP  PATIENT_ID_AES
 ```bash
 LOG_DIR=./examples/sample-logs/LUNG-CANCER-REPORT-LOG
 
-# 1. 每日健康檢查，全區域，使用預設各角色慢請求門檻
+# 1. 每日健康確認，全區域，使用預設各角色慢請求門檻
 bash bin/analyze_iis.sh --log-dir "$LOG_DIR" --date 2026-05-21
 
 # 2. 管理 summary 視圖，全區域，單日
@@ -348,32 +396,46 @@ bash bin/analyze_iis.sh --log-dir "$LOG_DIR" \
 
 # 7. 今日快速 IIS summary
 bash bin/analyze_iis.sh --log-dir "$LOG_DIR" --today --view summary
+
+# 8. 稽核內部 QA 非健康探針客戶端流量（only 模式）
+#    顯示 2026-05-21 測試主機 IP 的 209 筆非 /health 業務請求。
+#    健康探針 IP 192.168.139.28 不會出現——/health 在模式選擇前即已移除。
+bash bin/analyze_iis.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --test-hosts only --view summary
+
+# 9. 不過濾測試主機（all 模式）
+bash bin/analyze_iis.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --test-hosts all --view summary
 ```
 
 ### Summary 視圖
 
+每份 summary 最上方的 `資料範圍` 行顯示當前有效範圍。`總請求數` 一律是**業務
+請求數**（排除 `/health` 及測試主機過濾後計算）。
+
 ```
 ============ IIS Summary — Region: all ============
   Period                                  2026-05-21  →  2026-05-21  (1 days)
-  總請求數                                3734
-  不重複用戶端 IP                         15
-  5xx 錯誤率                              1.3%  (50)
-    其中 健康檢查 503                     50
-  慢速率                                  0.1%  (2)
-  302 轉址率                              0.3%
+  資料範圍                                業務請求 (排除 /health；測試主機=exclude)
+  總請求數                                723
+  不重複用戶端 IP                         6
+  慢速率                                  0.3%  (2)
 
     ■ Top 端點 (佔比)
-    1. /health                                               75.0%
-    2. /api/NhiPatientImage/studies/{uid}/series/{uid}/...   12.2%
-    3. /api/DigestSummary/hospital                           6.1%
+    1. /api/NhiPatientImage/studies/{uid}/series/{uid}/...   50.8%
+    2. /api/DigestSummary/hospital                           21.9%
+    3. /api/NhiPatientImage/studies/{uid}/series-uid          8.3%
     ...
 
     ■ 狀態碼分布 (Top 3)
-      200 95.7% · 404 1.9% · 503 1.3%
+      200 87.3% · 404 9.7% · 304 1.8%
 
     ■ Top 用戶端 IP
-      192.168.139.28 75.0% · 192.168.139.119 19.1% · 192.168.139.110 5.6%
+      192.168.139.119 98.5% · 10.1.73.37 0.8% · 10.22.63.37 0.7%
 ```
+
+狀態碼分布（Top-N）作為描述性業務狀態統計予以保留。302 或 4xx 代碼可能仍會出現
+於其中；此為設計如此（反映業務請求的實際 HTTP 回應分布）。
 
 > 完整 summary 範例：[`../examples/sample-outputs/iis_summary_all_2026-05-21.txt`](../examples/sample-outputs/iis_summary_all_2026-05-21.txt)。
 
@@ -381,34 +443,34 @@ bash bin/analyze_iis.sh --log-dir "$LOG_DIR" --today --view summary
 
 detail 視圖顯示含狀態碼、端點、Client-IP 百分比表格的逐伺服器 KV 區塊。
 API 角色伺服器顯示 `Slow (>2000ms)`；APP 角色伺服器顯示 `Slow (>5000ms)`，
-除非透過 `--slow-api-ms` / `--slow-app-ms` 覆寫。`/health` 請求永遠排除在
-慢請求計數之外。
+除非透過 `--slow-api-ms` / `--slow-app-ms` 覆寫。每個伺服器區塊最上方的
+`Scope` 行確認當前有效模式。`/health` 排除在所有計數之外——包括
+總請求數、端點、狀態碼、慢請求計數與客戶端 IP。
 
 ```
 ▶ IIS — 10.22.63.37
 ------------------------------------------------------------------------
-  Total requests                          483
-  Unique client IPs                       3
-  302 Redirects                           0
-  5xx errors                              0
-    Health 503                            0
+  Scope                                   business requests (excl. /health; test-hosts=exclude)
+  Total requests                          5
+  Unique client IPs                       1
   Slow (>2000ms)                          0
 
     Status      Count     % of total
     --------------------------------
-    200         480        99.4%
-    204         3           0.6%
+    200         5         100.0%
 
     Endpoint                                                 Avg(s)    Count     % of total
     ---------------------------------------------------------------------------------------
-    /health                                                  0.06      472        97.7%
-    /api/GetLungCancerReportURL                              0.10      11          2.3%
+    /api/GetLungCancerReportURL                              0.02      5         100.0%
+
+    Client IP           Count     % of total
+    ----------------------------------------
+    10.22.63.37         5         100.0%
 ```
 
 > 完整 detail 範例（全區域）：[`../examples/sample-outputs/iis_all_2026-05-21.txt`](../examples/sample-outputs/iis_all_2026-05-21.txt)。
 > 台北：[`../examples/sample-outputs/iis_taipei_2026-05-21.txt`](../examples/sample-outputs/iis_taipei_2026-05-21.txt)。
-> 台中：[`../examples/sample-outputs/iis_taichung_2026-05-21.txt`](../examples/sample-outputs/iis_taichung_2026-05-21.txt)
->（呈現 OracleDB 中斷引發之 50 筆 Health-503 事件）。
+> 台中：[`../examples/sample-outputs/iis_taichung_2026-05-21.txt`](../examples/sample-outputs/iis_taichung_2026-05-21.txt)。
 
 ### Detail 視圖（tsv / csv）
 
@@ -416,16 +478,18 @@ API 角色伺服器顯示 `Slow (>2000ms)`；APP 角色伺服器顯示 `Slow (>5
 第一行為標頭，之後每個伺服器的每個指標各一列：
 
 ```
-REGION  ROLE  SERVER         METRIC     KEY     COUNT  AVG_SEC  PCT
-taipei  api   10.22.63.37    SUMMARY    TOTAL   483    -        100.0
-taipei  api   10.22.63.37    SUMMARY    5XX     0      -        0.0
-taipei  api   10.22.63.37    STATUS     200     480    -        99.4
-taipei  api   10.22.63.37    ENDPOINT   /health 472    0.06     97.7
-taipei  api   10.22.63.37    CLIENT_IP  192.168.139.28  472  -  97.7
+REGION  ROLE  SERVER         METRIC     KEY                      COUNT  AVG_SEC  PCT
+taipei  api   10.22.63.37    SUMMARY    TOTAL                    5      -        100.0
+taipei  api   10.22.63.37    SUMMARY    SLOW                     0      -        0.0
+taipei  api   10.22.63.37    SUMMARY    UNIQUE_IPS               1      -        0.0
+taipei  api   10.22.63.37    STATUS     200                      5      -        100.0
+taipei  api   10.22.63.37    ENDPOINT   /api/GetLungCancerReportURL  5  0.02     100.0
+taipei  api   10.22.63.37    CLIENT_IP  10.22.63.37              5      -        100.0
 ```
 
-`METRIC` 可能值：`SUMMARY`（總量）、`STATUS`（各 HTTP 狀態碼）、
-`ENDPOINT`（各 URI，受 `--top` 限制）、`CLIENT_IP`（各 IP，受 `--top` 限制）。
+`METRIC` 可能值：`SUMMARY`（總量：`TOTAL`、`SLOW`、`UNIQUE_IPS`）、
+`STATUS`（各 HTTP 狀態碼）、`ENDPOINT`（各 URI，受 `--top` 限制）、
+`CLIENT_IP`（各 IP，受 `--top` 限制）。`/health` 列不會出現在輸出中。
 summary 視圖永遠為文字，與 `--format` 無關（summary 檔案永遠為 `.txt`）。
 
 > 範例：[`../examples/sample-outputs/iis_detail_all_2026-05-21.tsv`](../examples/sample-outputs/iis_detail_all_2026-05-21.tsv) · [`../examples/sample-outputs/iis_detail_all_2026-05-21.csv`](../examples/sample-outputs/iis_detail_all_2026-05-21.csv)
@@ -571,6 +635,7 @@ bash bin/analyze_errors.sh --log-dir "$LOG_DIR" \
 | `--slow-api-ms N` | uint ms | `2000` | 否 | 轉發給 overview 與 iis；適用於 API 角色伺服器。 |
 | `--slow-app-ms N` | uint ms | `5000` | 否 | 轉發給 overview 與 iis；適用於 APP 角色伺服器。 |
 | `--merge` | flag | 關閉 | 否 | 轉發給 access 與 iis。**需要 `--region all`**。 |
+| `--test-hosts exclude\|only\|all` | enum | `exclude` | 否 | 轉發給 overview、iis 與 access。**不**轉發給 errors（`analyze_errors` 不接受此旗標——直接傳入為致命錯誤）。詳見[測試主機過濾](#測試主機過濾)。 |
 | `--output-dir DIR` | path | `""` | 否 | 持久化目錄。解析順序：旗標 > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`。透過 `$LOG_PARSE_OUTPUT_DIR` 由子模組共用；`--output-dir` 旗標**不**轉發給子模組。 |
 | `--conf FILE` | path | `conf/regions.conf` | 否 | 覆寫區域對應表，明確指定時才轉發給所有模組。 |
 | `-v`, `--verbose` | flag | 關閉 | 否 | 把 `--verbose` 一併轉發給所有子模組。 |
@@ -586,6 +651,7 @@ bash bin/analyze_errors.sh --log-dir "$LOG_DIR" \
 | `--top` | — | F | — | F |
 | `--slow-api-ms`、`--slow-app-ms` | F | F | — | — |
 | `--merge` | — | F | F | — |
+| `--test-hosts` | F | F | F | — |
 | `--output-dir`、`--modules` | 自身 | 自身 | 自身 | 自身 |
 
 F = 轉發並由子模組執行。`--output-dir` 由 log_report 解析一次後透過
@@ -734,6 +800,33 @@ bash bin/analyze_overview.sh \
     --output-dir ./reports
 ```
 
+### 5.9 測試主機稽核（非健康探針之內部 QA 客戶端流量）
+
+使用 `--test-hosts only` 僅查看 `conf/test_hosts.conf` 中測試主機 IP 的
+IIS 與存取活動（排除 `/health` 後）。適用於稽核內部 QA 工具行為，
+而非查看健康探針流量（任何模式下健康探針都不可見）。
+
+```bash
+# 僅限測試主機客戶端 IP 的 IIS 報告（/health 已排除）
+bash bin/analyze_iis.sh \
+    --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --date 2026-05-21 --test-hosts only --view summary
+
+# 僅限測試主機客戶端 IP 的存取關聯
+bash bin/analyze_access.sh \
+    --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --date 2026-05-21 --test-hosts only --view summary
+
+# 完整報告，不過濾測試主機（all 模式）
+bash bin/log_report.sh \
+    --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --date 2026-05-21 --test-hosts all \
+    --output-dir ./reports
+```
+
+`--test-hosts only` 範例請見 [`../examples/sample-outputs/iis_only_2026-05-21.txt`](../examples/sample-outputs/iis_only_2026-05-21.txt)。
+`--test-hosts all` 範例請見 [`../examples/sample-outputs/iis_allmode_2026-05-21.txt`](../examples/sample-outputs/iis_allmode_2026-05-21.txt)。
+
 ---
 
 ## 6. 退出碼
@@ -741,7 +834,7 @@ bash bin/analyze_overview.sh \
 | 代碼 | 意義 |
 |------|------|
 | 0 | 成功（即使所請求之期間無資料）。 |
-| 1 | 用法 / 驗證錯誤：缺 `--log-dir`、旗標值非法、未知區域或模組、設定檔不存在、`--merge` 未搭配 `--region all`、提供超過一個區間選擇器。 |
+| 1 | 用法 / 驗證錯誤：缺 `--log-dir`、旗標值非法、未知區域或模組、設定檔不存在（`regions.conf` 或 `test_hosts.conf`）、`--merge` 未搭配 `--region all`、提供超過一個區間選擇器，或將 `--test-hosts` 傳入 `analyze_errors`。 |
 
 ---
 

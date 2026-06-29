@@ -66,6 +66,8 @@ samples-regen: ## Regenerate examples/sample-outputs/ (pins TS+NO_COLOR for dete
 	_t=$$(mktemp -d); bash $(BIN)/analyze_iis.sh --log-dir $$SLOG --date $$D --merge         --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/iis_detail_$(SAMPLE_TS).txt   $$SOUT/iis_all_merged_2026-05-21.txt;         rm -rf $$_t; \
 	_t=$$(mktemp -d); bash $(BIN)/analyze_iis.sh --log-dir $$SLOG --date $$D --format tsv    --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/iis_detail_$(SAMPLE_TS).tsv   $$SOUT/iis_detail_all_2026-05-21.tsv;         rm -rf $$_t; \
 	_t=$$(mktemp -d); bash $(BIN)/analyze_iis.sh --log-dir $$SLOG --date $$D --format csv    --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/iis_detail_$(SAMPLE_TS).csv   $$SOUT/iis_detail_all_2026-05-21.csv;         rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_iis.sh --log-dir $$SLOG --date $$D --test-hosts only --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/iis_detail_$(SAMPLE_TS).txt   $$SOUT/iis_only_2026-05-21.txt;              rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_iis.sh --log-dir $$SLOG --date $$D --test-hosts all  --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/iis_detail_$(SAMPLE_TS).txt   $$SOUT/iis_allmode_2026-05-21.txt;           rm -rf $$_t; \
 	\
 	# Access \
 	_t=$$(mktemp -d); bash $(BIN)/analyze_access.sh --log-dir $$SLOG --date $$D              --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/access_detail_$(SAMPLE_TS).txt  $$SOUT/access_detail_all_2026-05-21.txt;   cp -f $$_t/access_summary_$(SAMPLE_TS).txt $$SOUT/access_summary_all_2026-05-21.txt; rm -rf $$_t; \

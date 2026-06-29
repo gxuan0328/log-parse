@@ -4,7 +4,7 @@
 > Correlates access tokens, surfaces IIS anomalies, and tracks application
 > lifecycle events across paired API / APP servers.
 
-[![Tests](https://img.shields.io/badge/tests-215%2F215-brightgreen)](tests/run_tests.sh)
+[![Tests](https://img.shields.io/badge/tests-232%2F232-brightgreen)](tests/run_tests.sh)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bash 4+](https://img.shields.io/badge/bash-4%2B-lightgrey)](https://www.gnu.org/software/bash/)
 
@@ -21,9 +21,11 @@ geographic regions (Taipei / Taichung) and produces correlated reports:
 |----------------------|-----------------------------------------------|---------------------------------------------------------------------------------------|
 | `analyze_overview`   | IIS + Access stats via `--emit-stats`         | Management overview: 總體概況 / 分區別 / 服務別; summary-only, text-only              |
 | `analyze_access`     | API + APP access CSVs                         | Token-issuance ↔ verification flows, orphan / unverified usage; `--view summary|detail` |
-| `analyze_iis`        | IIS W3C extended logs                         | 5xx error spikes, slow requests, health-check 503 anomalies; `--view summary|detail`  |
+| `analyze_iis`        | IIS W3C extended logs                         | Business-only request metrics: slow requests, endpoint breakdown, status distribution; `--view summary|detail` |
 | `analyze_errors`     | `app-all` / `app-error` / `app-lifetime`      | OracleDB outages, top error patterns, restart downtime                                |
 | `log_report`         | All of the above                              | Orchestrator; default modules: `overview,iis,access`; errors opt-in via `--modules`   |
+
+All reports default to **business traffic only**: `/health` is excluded unconditionally from all IIS aggregation, and internal test-host IPs listed in `conf/test_hosts.conf` are pre-filtered by `--test-hosts exclude|only|all` (default: `exclude`). `Total requests` / `IIS 總請求數` therefore reflect real external user traffic only.
 
 Every run automatically persists reports to `./log-parse/` under the current working
 directory (override with `--output-dir DIR` or `$LOG_PARSE_OUTPUT_DIR`). Files are named
@@ -96,13 +98,14 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── output_utils.sh      Always-on report persistence (persist_init/persist_views)
 │   └── aggregate_utils.sh   Shared metric computation & CSV quoter (AGG_IIS_AWK)
 ├── conf/
-│   └── regions.conf         Region ↔ server mapping
+│   ├── regions.conf         Region ↔ server mapping
+│   └── test_hosts.conf      QA / health-probe client IPs (filter with --test-hosts)
 ├── docs/
 │   ├── design.md            Architecture & data-flow specification
 │   └── usage.md             Full CLI reference & worked examples
 ├── examples/                Sample outputs & scripted scenarios
 ├── tests/
-│   └── run_tests.sh         215-test functional suite
+│   └── run_tests.sh         232-test functional suite
 ├── .claude/
 │   ├── CLAUDE.md            Core conventions (auto-loaded every session)
 │   ├── rules/               Path-scoped detailed conventions (loaded on demand)

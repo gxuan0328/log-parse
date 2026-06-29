@@ -22,7 +22,7 @@
 # Numeric placement (C5):
 #   Grand totals  → 總體概況 only.
 #   Region shares → 分區別 (distinct decomposition; no grand totals).
-#   Role signals  → 服務別 only (5XX/SLOW/503/ORPHAN/UNVERIFIED literals here).
+#   Role signals  → 服務別 only (SLOW/ORPHAN/UNVERIFIED literals here).
 #   Verdict line  → numeric-free (words only).
 #
 # See docs/design.md §3.0 for full specification.
@@ -51,6 +51,7 @@ OPT_TODAY=0
 OPT_DAYS_SET=0
 OPT_SLOW_API_MS=2000
 OPT_SLOW_APP_MS=5000
+OPT_TEST_HOSTS="exclude"
 
 # ---------------------------------------------------------------------------
 # Renderer context globals (set in main, read by overview_render)
@@ -69,13 +70,13 @@ OVERVIEW_AWK='
 # ----------------------------------------------------------------------------
 # Purpose : Bucket IIS + ACCESS emit-stats rows into grand totals, per-region
 #           counts, and per-role IIS counts for the three-cut overview render.
+#           IIS rows are already business-only (iis child filtered /health and
+#           test-hosts before emitting); no re-filter needed here.
 # Input   : iis_stats.tsv then acc_stats.tsv (per FILENAME == iis_file guard).
 # Vars    : iis_file — path to IIS stats (for two-file join per awk.md).
 # Output  : TAB-delimited structured rows for bash to parse:
 #             IIS_TOTAL      <n>
 #             IIS_UNIQUE_IPS <n>
-#             IIS_API_5XX    <n>  (API-role 5XX only)
-#             IIS_503        <n>  (503_HEALTH grand total — APP health checks)
 #             IIS_API_TOTAL  <n>
 #             IIS_APP_TOTAL  <n>
 #             IIS_API_SLOW   <n>
@@ -92,8 +93,6 @@ OVERVIEW_AWK='
 FILENAME == iis_file {
     region=$2; role=$3; tag=$5; val=$6+0
     if (tag == "TOTAL")      { iis_tot += val; iis_reg[region] += val; iis_role[role] += val }
-    if (tag == "5XX")        { iis_5xx_role[role] += val }
-    if (tag == "503_HEALTH") { iis_503 += val }
     if (tag == "SLOW")       { iis_slow_role[role] += val }
     if (tag == "UNIQUE_IPS") { iis_uniq += val }
     next
@@ -109,8 +108,6 @@ FILENAME == iis_file {
 END {
     printf "IIS_TOTAL\t%d\n",     iis_tot+0
     printf "IIS_UNIQUE_IPS\t%d\n",iis_uniq+0
-    printf "IIS_API_5XX\t%d\n",   iis_5xx_role["api"]+0
-    printf "IIS_503\t%d\n",       iis_503+0
     printf "IIS_API_TOTAL\t%d\n", iis_role["api"]+0
     printf "IIS_APP_TOTAL\t%d\n", iis_role["app"]+0
     printf "IIS_API_SLOW\t%d\n",  iis_slow_role["api"]+0
@@ -181,6 +178,7 @@ parse_args() {
             --region)       OPT_REGION="$2";                   shift 2 ;;
             --slow-api-ms)  OPT_SLOW_API_MS="$2";             shift 2 ;;
             --slow-app-ms)  OPT_SLOW_APP_MS="$2";             shift 2 ;;
+            --test-hosts)   OPT_TEST_HOSTS="$2";               shift 2 ;;
             --output-dir)   OPT_OUTPUT_DIR="$2";               shift 2 ;;
             --conf)         REGIONS_CONF="$2";                 shift 2 ;;
             -v|--verbose)   LOG_LEVEL=DEBUG;                   shift ;;
@@ -195,6 +193,7 @@ parse_args() {
     if [[ ! -f "$REGIONS_CONF" ]]; then die "conf file not found: $REGIONS_CONF"; fi
     assert_uint "--slow-api-ms" "$OPT_SLOW_API_MS"
     assert_uint "--slow-app-ms" "$OPT_SLOW_APP_MS"
+    assert_enum "--test-hosts"  "$OPT_TEST_HOSTS" exclude only all
 }
 
 # ---------------------------------------------------------------------------
@@ -225,7 +224,7 @@ load_regions() {
 #   Errors / Notes : Gracefully handles empty stats (zeros/N/A, no divide-by-zero).
 #             CJK labels use fmt_kv under LC_ALL=C (never raw printf "%-Ns" on CJK).
 #             Numeric placement (C5): grand totals only in 總體; role signals
-#             (5XX/SLOW/503/ORPHAN/UNVERIFIED) only in 服務別; verdict numeric-free.
+#             (SLOW/ORPHAN/UNVERIFIED) only in 服務別; verdict numeric-free.
 overview_render() {
     local iis_stats="${WORK_TMPDIR}/iis_stats.tsv"
     local acc_stats="${WORK_TMPDIR}/acc_stats.tsv"
@@ -236,14 +235,12 @@ overview_render() {
         "$OVERVIEW_AWK" "$iis_stats" "$acc_stats")
 
     # ── Parse scalar aggregates ───────────────────────────────────────────────
-    local iis_total iis_unique_ips iis_api_5xx iis_503
+    local iis_total iis_unique_ips
     local iis_api_total iis_app_total iis_api_slow iis_app_slow
     local acc_total acc_normal acc_orphan acc_unver acc_dc acc_ds
 
     iis_total=$(     printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="IIS_TOTAL"     {print $2; exit}')
     iis_unique_ips=$(printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="IIS_UNIQUE_IPS"{print $2; exit}')
-    iis_api_5xx=$(   printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="IIS_API_5XX"   {print $2; exit}')
-    iis_503=$(       printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="IIS_503"       {print $2; exit}')
     iis_api_total=$( printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="IIS_API_TOTAL" {print $2; exit}')
     iis_app_total=$( printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="IIS_APP_TOTAL" {print $2; exit}')
     iis_api_slow=$(  printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="IIS_API_SLOW"  {print $2; exit}')
@@ -257,7 +254,6 @@ overview_render() {
 
     # Safe defaults for empty windows (empty stats → all zeros → no divide-by-zero)
     iis_total="${iis_total:-0}";         iis_unique_ips="${iis_unique_ips:-0}"
-    iis_api_5xx="${iis_api_5xx:-0}";     iis_503="${iis_503:-0}"
     iis_api_total="${iis_api_total:-0}"; iis_app_total="${iis_app_total:-0}"
     iis_api_slow="${iis_api_slow:-0}";   iis_app_slow="${iis_app_slow:-0}"
     acc_total="${acc_total:-0}";         acc_normal="${acc_normal:-0}"
@@ -366,24 +362,24 @@ overview_render() {
 
     # ═════════════════════════════════════════════════════════════════════════
     # 服務別 (By Service Role) — role decomposition
-    # 5XX/SLOW/503/ORPHAN/UNVERIFIED literals ONLY here (C5).
-    # UNVERIFIED in API sub-slice; ORPHAN/503 in APP sub-slice.
+    # SLOW/ORPHAN/UNVERIFIED literals ONLY here (C5).
+    # UNVERIFIED in API sub-slice; ORPHAN in APP sub-slice.
     # ═════════════════════════════════════════════════════════════════════════
     fmt_h2 "服務別 (By Service Role)"
 
-    # ── API sub-slice (UNVERIFIED signal; ORPHAN/503 excluded here) ──────────
+    # ── API sub-slice (UNVERIFIED signal) ────────────────────────────────────
+    # Numeric placement (C5): role signals (SLOW/ORPHAN/UNVERIFIED) only here.
     fmt_h3 "API 伺服器 (${n_api_srv} 台 · 簽發 Token)"
-    fmt_kv "IIS 請求數 (佔比)"          "${iis_api_total} (${pct_api_share})"
-    fmt_kv "5XX 錯誤"                   "$iis_api_5xx"
+    fmt_kv "IIS 請求數 (佔比)"              "${iis_api_total} (${pct_api_share})"
     fmt_kv "慢速率 (>${OPT_SLOW_API_MS}ms)" "$pct_api_slow"
-    fmt_kv "UNVERIFIED (簽發未使用)"    "$acc_unver"
+    fmt_kv "UNVERIFIED (簽發未使用)"        "$acc_unver"
 
-    # ── APP sub-slice (ORPHAN/503 signals; UNVERIFIED excluded here) ─────────
+    # ── APP sub-slice (ORPHAN signal) ────────────────────────────────────────
+    # Dependency-health / Oracle-outage detection now lives only in analyze_errors.
     fmt_h3 "APP 伺服器 (${n_app_srv} 台 · 驗證 Token / DICOM)"
-    fmt_kv "IIS 請求數 (佔比)"          "${iis_app_total} (${pct_app_share})"
-    fmt_kv "健康檢查 503 (Oracle 相依)" "$iis_503"
+    fmt_kv "IIS 請求數 (佔比)"              "${iis_app_total} (${pct_app_share})"
     fmt_kv "慢速率 (>${OPT_SLOW_APP_MS}ms)" "$pct_app_slow"
-    fmt_kv "ORPHAN (無對應簽發)"        "$acc_orphan"
+    fmt_kv "ORPHAN (無對應簽發)"            "$acc_orphan"
 }
 
 # ---------------------------------------------------------------------------
@@ -416,6 +412,7 @@ main() {
     # ACCESS_ARGS: BASE_ARGS only (access dies on unknown --slow-*-ms — fail-fast)
     local -a BASE_ARGS=(--log-dir "$OPT_LOG_DIR" --region "$OPT_REGION")
     BASE_ARGS+=("${INTERVAL_ARGS[@]}")
+    BASE_ARGS+=(--test-hosts "$OPT_TEST_HOSTS")
     if [[ -n "${REGIONS_CONF:-}" ]]; then BASE_ARGS+=(--conf "$REGIONS_CONF"); fi
     if [[ "$LOG_LEVEL" == "DEBUG" ]]; then BASE_ARGS+=(--verbose); fi
 

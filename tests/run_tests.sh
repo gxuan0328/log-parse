@@ -5,8 +5,9 @@
 # and error handling. Baselines are derived from the examples/sample-logs/LUNG-CANCER-REPORT-LOG
 # sample data included in the project (dates 2026-05-18 ~ 2026-05-25).
 #
-# Total: 215 tests across nine sections (A access · B iis · C errors · D log_report ·
-#        E validation · F user scenarios · G CJK alignment · H overview · I persistence).
+# Total: 232 tests across ten sections (A access · B iis · C errors · D log_report ·
+#        E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
+#        J test-host/health).
 #
 # Usage:  bash tests/run_tests.sh
 # Exit:   0 = all passed,  1 = one or more failures
@@ -156,10 +157,10 @@ done
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section A — analyze_access.sh  存取日誌交叉比對
-# Baselines (fixed dates):
-#   taipei  2026-05-21 : Total=6   NORMAL=1  ORPHAN=5  UNVERIFIED=0
-#   taipei  2026-05-25 : Total=2   NORMAL=1  ORPHAN=1  UNVERIFIED=0
-#   taipei  range 21~25: Total=8   NORMAL=2  ORPHAN=6
+# Baselines (fixed dates, --test-hosts exclude default):
+#   taipei  2026-05-21 : Total=3   NORMAL=0  ORPHAN=3  UNVERIFIED=0
+#   taipei  2026-05-25 : Total=0   (全為測試主機 .110/.79，已排除)
+#   taipei  range 21~25: Total=3   NORMAL=0  ORPHAN=3
 #   taichung 2026-05-21: Total=6   NORMAL=6  ORPHAN=0  UNVERIFIED=0
 #   taichung 2026-05-25: (無 CSV — 乾淨空輸出)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -169,10 +170,10 @@ section "A  analyze_access.sh — 存取日誌交叉比對"
 # A1: taipei 2026-05-21 基準值
 out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/null); rc=$?
 _ok  A01 "taipei 2026-05-21 執行成功"  "$rc"
-_eq  A02 "taipei 2026-05-21  NORMAL=1"      "$(_pick "$out" "NORMAL  (")"       "1"
-_eq  A03 "taipei 2026-05-21  ORPHAN=5"      "$(_pick "$out" "ORPHAN  (")"       "5"
+_eq  A02 "taipei 2026-05-21  NORMAL=0"      "$(_pick "$out" "NORMAL  (")"       "0"
+_eq  A03 "taipei 2026-05-21  ORPHAN=3"      "$(_pick "$out" "ORPHAN  (")"       "3"
 _eq  A04 "taipei 2026-05-21  UNVERIFIED=0"  "$(_pick "$out" "UNVERIFIED (")"    "0"
-_eq  A05 "taipei 2026-05-21  Total=6"       "$(_pick "$out" "Total correlation")" "6"
+_eq  A05 "taipei 2026-05-21  Total=3"       "$(_pick "$out" "Total correlation")" "3"
 
 # A2: NORMAL 欄位標頭包含 HOSP_ID / CLIENT_IP 獨立欄位 (新格式；舊 HOSP:/CLIENT: 前綴已移除)
 _has A06 "NORMAL 欄位標頭含 HOSP_ID"   "$out" "HOSP_ID"
@@ -190,23 +191,24 @@ out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all 2>/dev/
 _ok  A12 "all 2026-05-21 執行成功"  "$rc"
 _has A13 "all regions 包含台北區域"   "$out" "台北"
 _has A14 "all regions 包含台中區域"   "$out" "台中"
-# Both region NORMAL totals: 1+6=7
+# Both region NORMAL totals: 0+6=6 (taipei .110 records excluded, taichung unaffected)
 total_normal=$(_sum "$out" "NORMAL  (")
-_eq  A15 "all regions 兩區域 NORMAL 合計=7"  "$total_normal"  "7"
+_eq  A15 "all regions 兩區域 NORMAL 合計=6"  "$total_normal"  "6"
 
 # A5: taipei 日期範圍 2026-05-21 ~ 2026-05-25 (累計)
 out=$(bash "$ACCESS" --log-dir "$LOG_DIR" \
     --from 2026-05-21 --to 2026-05-25 --region taipei 2>/dev/null); rc=$?
 _ok  A16 "taipei --from 2026-05-21 --to 2026-05-25 執行成功"  "$rc"
-_eq  A17 "taipei 5日範圍  NORMAL=2"   "$(_pick "$out" "NORMAL  (")"       "2"
-_eq  A18 "taipei 5日範圍  ORPHAN=6"   "$(_pick "$out" "ORPHAN  (")"       "6"
-_eq  A19 "taipei 5日範圍  Total=8"    "$(_pick "$out" "Total correlation")" "8"
+_eq  A17 "taipei 5日範圍  NORMAL=0"   "$(_pick "$out" "NORMAL  (")"       "0"
+_eq  A18 "taipei 5日範圍  ORPHAN=3"   "$(_pick "$out" "ORPHAN  (")"       "3"
+_eq  A19 "taipei 5日範圍  Total=3"    "$(_pick "$out" "Total correlation")" "3"
 
-# A6: taipei 2026-05-25 單日
+# A6: taipei 2026-05-25 單日 (under exclude: both .110 NORMAL + .79 ORPHAN are test hosts → Total=0)
 out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-25 --region taipei 2>/dev/null); rc=$?
 _ok  A20 "taipei 2026-05-25 執行成功"  "$rc"
-_eq  A21 "taipei 2026-05-25  NORMAL=1" "$(_pick "$out" "NORMAL  (")"  "1"
-_eq  A22 "taipei 2026-05-25  ORPHAN=1" "$(_pick "$out" "ORPHAN  (")"  "1"
+total="$(_pick "$out" "Total correlation")"; total="${total:-0}"
+_eq  A21 "taipei 2026-05-25  Total=0 (全業務記錄為測試主機)"  "$total"  "0"
+_lacks A22 "taipei 2026-05-25 業務輸出不含 .110 測試主機 IP"  "$out"  "192.168.139.110"
 
 # A7: taichung 2026-05-25 無 CSV 資料 — 乾淨結束，Total=0
 out=$(bash "$ACCESS" --log-dir "$LOG_DIR" \
@@ -234,12 +236,11 @@ rm -rf "$TMPD_A26"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section A (continued) — A28–A34  新增行為回歸
-# Baselines (fixed dates):
-#   taipei week NORMAL[0].API_TIME = 2026-05-21 10:48:18.802 (t1)
-#   taipei week NORMAL[1].API_TIME = 2026-05-25 10:02:35.254 (t2; t1 <= t2 → sorted ASC)
-#   PATIENT_ID_AES sample = EBD71A864A0F7E6A355827754B89259E (full, no truncation)
+# Baselines (fixed dates, --test-hosts exclude default):
+#   taipei week NORMAL = 0 (全為測試主機 .110，已排除); ORPHAN = 3
+#   PATIENT_ID_AES: taichung week B67EDA342C22CD73F88571E0E54CFE81 (NORMAL record)
 #   week tsv/csv header: REQUEST_ID (merged); no API_REQUEST_ID / APP_REQUEST_ID
-#   --merge week: merged NORMAL=8, sum per-region NORMAL=2+6=8 → _gte 8
+#   --merge week: merged NORMAL=6 (taipei=0, taichung=6)
 # ─────────────────────────────────────────────────────────────────────────────
 
 # A10: 遞增排序 (ASC sort by API_TIME)
@@ -251,8 +252,10 @@ t2=$(printf '%s\n' "$out" | gawk '/■ 正常流程/{p=1;next} p && /^    [0-9]{
 sorted_first=$(printf '%s\n' "$t1" "$t2" | sort | head -1)
 _eq A28 "NORMAL 記錄以 API_TIME 遞增排序 (t1≤t2)" "$t1" "$sorted_first"
 
-# A11: 完整 PATIENT_ID_AES，無截斷
-_has A29 "NORMAL 記錄含完整 PATIENT_ID_AES (32 hex，無截斷)" "$out" "EBD71A864A0F7E6A355827754B89259E"
+# A11: 完整 PATIENT_ID_AES，無截斷 (repointed to taichung week: 排除後仍有 NORMAL 記錄)
+out29=$(bash "$ACCESS" --log-dir "$LOG_DIR" \
+    --from 2026-05-18 --to 2026-05-25 --region taichung 2>/dev/null)
+_has A29 "NORMAL 記錄含完整 PATIENT_ID_AES (32 hex，無截斷)" "$out29" "B67EDA342C22CD73F88571E0E54CFE81"
 
 # A12: per-category 欄位標頭含 PRSN_ID
 out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/null)
@@ -269,11 +272,11 @@ out=$(bash "$ACCESS" --log-dir "$LOG_DIR" \
 _has A32 "--format csv 標頭含 'REGION,STATUS,API_TIME'" "$out" "REGION,STATUS,API_TIME"
 
 # A15: --merge 合區塊 (merged NORMAL >= Σ per-region NORMAL)
-# Baselines: per-region taipei-week=2, taichung-week=6, sum=8; merged-week NORMAL=8
+# Baselines: per-region taipei-week=0, taichung-week=6, sum=6; merged-week NORMAL=6
 out=$(bash "$ACCESS" --log-dir "$LOG_DIR" \
     --from 2026-05-18 --to 2026-05-25 --merge 2>/dev/null)
 merged_normal=$(printf '%s\n' "$out" | grep "NORMAL  (" | awk '{print $NF}' | head -1)
-_gte A33 "--merge NORMAL 數量 >= Σ per-region (taipei=2 taichung=6 sum=8)" "${merged_normal:-0}" "8"
+_gte A33 "--merge NORMAL 數量 >= Σ per-region (taipei=0 taichung=6 sum=6)" "${merged_normal:-0}" "6"
 
 # A16: --merge 無資料日期 — 乾淨結束
 bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-20 --merge >/dev/null 2>&1; rc=$?
@@ -281,58 +284,49 @@ _ok A34 "--merge 無資料日期 (2026-05-20) 乾淨結束" "$rc"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section B — analyze_iis.sh  IIS W3C 存取日誌分析
-# Baselines (2026-05-21):
-#   taipei  10.22.63.37 (API): Total=483  5xx=0  503=0  slow(>2000ms)=0
-#   taipei  10.21.3.35  (APP): Total=741  5xx=0  503=0  302=3  slow(>5000ms)=0
-#   taipei  10.21.3.36  (APP): Total=730  5xx=0  503=0  302=3  slow(>5000ms)=0
-#   taichung 10.1.73.37 (API): Total=478  5xx=17  503=17  slow(>2000ms)=0
-#   taichung 10.1.72.35 (APP): Total=533  5xx=17  503=17  slow(>5000ms)=1
-#   taichung 10.1.72.36 (APP): Total=769  5xx=16  503=16  slow(>5000ms)=1
-#   taipei --top 0 (2026-05-21): 42 total endpoint rows (10.22.63.37=2, .35=22, .36=18)
-#   taipei --top 10 (default):   22 total endpoint rows (2+10+10)
+# Baselines (2026-05-21, business-only: /health excluded, --test-hosts exclude):
+#   taipei  10.22.63.37 (API): Total=5    slow(>2000ms)=0
+#   taipei  10.21.3.35  (APP): Total=117  slow(>5000ms)=0
+#   taipei  10.21.3.36  (APP): Total=209  slow(>5000ms)=0
+#   taichung 10.1.73.37 (API): Total=6    slow(>2000ms)=0
+#   taichung 10.1.72.35 (APP): Total=88   slow(>5000ms)=0
+#   taichung 10.1.72.36 (APP): Total=298  slow(>5000ms)=1
+#   taipei --top 0 (2026-05-21): 32 total endpoint rows (10.22.63.37=1, .35=16, .36=15)
+#   taipei --top 10 (default):   21 total endpoint rows (1+10+10)
 # ─────────────────────────────────────────────────────────────────────────────
 
 section "B  analyze_iis.sh — IIS W3C 日誌分析"
 
-# B1: taipei 2026-05-21 各伺服器請求總數
+# B1: taipei 2026-05-21 各伺服器業務請求總數 (business-only: /health excluded, --test-hosts exclude)
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/null); rc=$?
 _ok  B01 "taipei 2026-05-21 執行成功"  "$rc"
-# First server block: 10.22.63.37 = 483
+# First server block: 10.22.63.37 = 5 (business requests only)
 first_total=$(printf '%s\n' "$out" | grep "Total requests" | awk '{print $NF}' | head -1)
-_eq  B02 "taipei 10.22.63.37 Total requests=483"  "$first_total"  "483"
-# Sum across all 3 servers: 483+741+730=1954
+_eq  B02 "taipei 10.22.63.37 Total requests=5"  "$first_total"  "5"
+# Sum across all 3 servers: 5+117+209=331
 sum_total=$(_sum "$out" "Total requests")
-_eq  B03 "taipei 三伺服器 Total requests 合計=1954"  "$sum_total"  "1954"
+_eq  B03 "taipei 三伺服器 Total requests 合計=331"  "$sum_total"  "331"
 
-# B2: taipei 無 5xx errors
-sum_5xx=$(_sum "$out" "5xx errors")
-_eq  B04 "taipei 2026-05-21 5xx errors=0"  "$sum_5xx"  "0"
-
-# B3: taichung 2026-05-21 health 503 故障偵測
+# B3: taichung 2026-05-21 基準 (5xx/503 KPI 已移除; business-only)
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung 2>/dev/null); rc=$?
 _ok  B05 "taichung 2026-05-21 執行成功"  "$rc"
-# Sum Health 503: 17+17+16=50
-sum_503=$(_sum "$out" "Health 503")
-_eq  B06 "taichung Health 503 合計=50"  "$sum_503"  "50"
-sum_5xx=$(_sum "$out" "5xx errors")
-_gte B07 "taichung 5xx errors >= 1"  "$sum_5xx"  "1"
 
-# B4: all 2026-05-21 兩區域合併輸出
+# B4: all 2026-05-21 兩區域合併輸出 (business-only)
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all 2>/dev/null); rc=$?
 _ok  B08 "all regions 2026-05-21 執行成功"  "$rc"
-# Total across all 6 servers: 1954+478+533+769=3734
+# Total across all 6 servers: 5+117+209+6+88+298=723
 sum_all=$(_sum "$out" "Total requests")
-_eq  B09 "all regions Total requests 合計=3734"  "$sum_all"  "3734"
+_eq  B09 "all regions Total requests 合計=723"  "$sum_all"  "723"
 
-# B5: STATUS 表格依 count 降序排序 — 200 (最高量) 應排在 503 之前
-# Verify for taichung where both 200 and 503 appear
+# B5: STATUS 表格依 count 降序排序 — 200 (最高量) 應排在 302 之前
+# Verify for taichung 10.1.72.36 where both 200 and 302 appear (503 removed with /health)
 out_tc=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung 2>/dev/null)
 line_200=$(printf '%s\n' "$out_tc" | grep -n "^    200 " | head -1 | cut -d: -f1)
-line_503=$(printf '%s\n' "$out_tc" | grep -n "^    503 " | head -1 | cut -d: -f1)
-if [[ -n "$line_200" && -n "$line_503" && "$line_200" -lt "$line_503" ]]; then
-    _pass "B10  STATUS 表格 200 (高 count) 排在 503 之前"
+line_302=$(printf '%s\n' "$out_tc" | grep -n "^    302 " | head -1 | cut -d: -f1)
+if [[ -n "$line_200" && -n "$line_302" && "$line_200" -lt "$line_302" ]]; then
+    _pass "B10  STATUS 表格 200 (高 count) 排在 302 之前"
 else
-    _fail "B10  STATUS 表格排序錯誤 (200 應在 503 前: line_200=${line_200} line_503=${line_503})"
+    _fail "B10  STATUS 表格排序錯誤 (200 應在 302 前: line_200=${line_200} line_302=${line_302})"
 fi
 
 # B6: --slow-api-ms 自訂 API 門檻 (1ms 應偵測到大量慢請求)
@@ -347,7 +341,7 @@ out_range=$(bash "$IIS" --log-dir "$LOG_DIR" \
     --from 2026-05-21 --to 2026-05-22 --region taipei 2>/dev/null); rc=$?
 _ok  B13 "taipei --from --to 日期範圍執行成功"  "$rc"
 range_sum=$(_sum "$out_range" "Total requests")
-_gte B14 "兩日累計 Total requests >= 單日 1954"  "$range_sum"  "1954"
+_gte B14 "兩日累計 Total requests >= 單日 331"  "$range_sum"  "331"
 
 # B8: Client IP 清單區段（新格式：IP 優先，舊 'Count  Client IP' 已改為 'Client IP  Count  % of total'）
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/null); rc=$?
@@ -355,12 +349,12 @@ out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/
 # 否則舊版 'Count  Client IP' 也含子字串 'Client IP' 會誤判通過。
 _hasre B15 "Client IP 表頭為 IP-first (Client IP→Count→% of total)" "$out" "Client IP +Count +% of total"
 _has B16 "Client IP 清單含 % of total 欄位"  "$out" "% of total"
-# 台北 10.22.63.37 主要客戶端 192.168.139.28 應占多數請求（> 95%）
-_has B17 "Client IP 清單列出主要客戶端"  "$out" "192.168.139.28"
+# 台北 10.21.3.35/.36 主要客戶端 192.168.139.119 (real gateway; .28 is test host, excluded)
+_has B17 "Client IP 清單列出主要客戶端"  "$out" "192.168.139.119"
 # 計數列至少 9 行（taipei 3 台伺服器各列出多個 IP）。IP-first 列以點分四段
 # IP 開頭，與 Status 列（純數字）/Endpoint 列（/ 開頭）區隔，避免誤計。
 ip_lines=$(printf '%s\n' "$out" | gawk '/^    [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+  +[0-9]/{c++} END{print c+0}')
-_gte B18 "Client IP 計數列數 >= 9 (三台伺服器各列出多 IP)"  "$ip_lines"  "9"
+_eq B18 "Client IP 計數列數 == 3 (taipei 排除測試主機後每台伺服器各 1 IP)"  "$ip_lines"  "3"
 
 # B9: Client IP 區段在台中 OracleDB 中斷日仍正確呈現 (IP-first 新格式)
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung 2>/dev/null); rc=$?
@@ -372,12 +366,12 @@ _hasre B19 "taichung Client IP 表頭為 IP-first"  "$out" "Client IP +Count +% 
 #   10.21.3.35  series   : count=146  avg=1.03s   (慢速 DICOM 影像端點)
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/null)
 _has B20 "Endpoint 表含 Avg(s) 平均回應時間欄位表頭"  "$out" "Avg(s)"
-# 慢速 DICOM series 端點：新格式 $1=endpoint $2=avg $3=count $4=%
+# 慢速 DICOM series 端點：business-only avg (test hosts excluded) = 1.87s
 series_avg=$(printf '%s\n' "$out" | gawk '/series\/\{uid\}\/\.\.\./ {print $2; exit}')
-_eq  B21 "DICOM series 端點平均回應時間=1.03s"  "$series_avg"  "1.03"
-# 次秒級端點 /health 仍以兩位小數呈現（邊界：avg < 1s 不退化為整數/空白）
-health_avg=$(printf '%s\n' "$out" | gawk '$1=="/health" {print $2; exit}')
-_eq  B22 "/health 端點平均回應時間=0.06s (兩位小數)"  "$health_avg"  "0.06"
+_eq  B21 "DICOM series 端點平均回應時間=1.87s (業務請求 business-only)"  "$series_avg"  "1.87"
+# 次秒級業務端點 /api/GetLungCancerReportURL 在 10.22.63.37 仍以兩位小數呈現
+api_avg=$(printf '%s\n' "$out" | gawk '$1=="/api/GetLungCancerReportURL" {print $2; exit}')
+_eq  B22 "/api/GetLungCancerReportURL 端點平均回應時間=0.02s (業務端點兩位小數)"  "$api_avg"  "0.02"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section B (continued) — B23–B31  新增行為回歸
@@ -410,7 +404,7 @@ _eq B26 "--top 3 每伺服器端點列數上限=3" "$max_ep3" "3"
 #           taipei 2026-05-21 default  → 22 endpoint rows (2+10+10)
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei --top 0 2>/dev/null)
 ep0=$(printf '%s\n' "$out" | grep -c "^    /" || true)
-_eq B27 "--top 0 顯示所有端點 (taipei 2026-05-21 = 42 rows)" "$ep0" "42"
+_eq B27 "--top 0 顯示所有端點 (taipei 2026-05-21 = 32 rows, business-only)" "$ep0" "32"
 
 # B16: --slow-api-ms 自訂 API 門檻標籤
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
@@ -1057,7 +1051,7 @@ _aligncols() {
 }
 
 # A35: access 摘要 KV 區塊數值欄對齊
-# Baseline: taipei 2026-05-21 Total=6 NORMAL=1 ORPHAN=5 UNVERIFIED=0 -> 4 KV rows.
+# Baseline: taipei 2026-05-21 Total=3 NORMAL=0 ORPHAN=3 UNVERIFIED=0 -> 4 KV rows.
 # The grep pattern also matches the h3 header lines "■ 正常流程 (NORMAL)…" and
 # "■ 非正常流程 (ORPHAN)…"; exclude them with | grep -v '■' (critique fix HIGH).
 out=$(NO_COLOR=1 bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei)
@@ -1067,9 +1061,10 @@ _eq A35 "access 摘要 KV 區塊數值欄對齊 (display-col 一致)" \
     "$(printf '%s' "$block" | _aligncols)" "1"
 
 # A36: access delta-stats 區塊數值欄對齊
-# Baseline: taipei 2026-05-21 has 1 NORMAL record -> delta-stats block renders (4 rows).
-# Values are single-token integers or floats — safe for _aligncols.
-block=$(printf '%s\n' "$out" | grep -E '驗證筆數|平均 API|最短時間差|最長時間差')
+# Baseline: taichung 2026-05-21 has 6 NORMAL records -> delta-stats block renders (4 rows).
+# (taipei 0521 NORMAL=0 under exclude; switch to taichung for non-vacuous alignment test.)
+out36=$(NO_COLOR=1 bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung)
+block=$(printf '%s\n' "$out36" | grep -E '驗證筆數|平均 API|最短時間差|最長時間差')
 _eq A36 "access delta-stats 區塊數值欄對齊 (display-col 一致)" \
     "$(printf '%s' "$block" | _aligncols)" "1"
 
@@ -1085,17 +1080,17 @@ out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
     --view summary 2>/dev/null)
 _hasre A37 "access --view summary 含 NORMAL 標籤與百分比 (%)" "$out" "NORMAL.*%"
 
-# A18: --view detail text 與基準線一致 (NORMAL 段落標頭仍存在)
-out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
+# A18: --view detail text 含 NORMAL 段落標頭 (使用 taichung: NORMAL=6 > 0)
+out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung \
     --view detail 2>/dev/null)
 _has A38 "access --view detail 含 NORMAL 段落標頭 (輸出與基準線一致)" "$out" "正常流程 (NORMAL)"
 
-# A19: --view detail --format csv 列數 == 既有 csv 基準線 (taipei 2026-05-21 = 7)
-# 1 header row + 6 data records (1 NORMAL + 5 ORPHAN + 0 UNVERIFIED)
+# A19: --view detail --format csv 列數 == 既有 csv 基準線 (taipei 2026-05-21 = 4)
+# 1 header row + 3 data records (0 NORMAL + 3 ORPHAN + 0 UNVERIFIED; --test-hosts exclude)
 out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
     --view detail --format csv 2>/dev/null)
 csv_rows=$(printf '%s\n' "$out" | wc -l | tr -d ' ')
-_eq A39 "access --view detail --format csv 列數=7 (1 header+6 records)" "$csv_rows" "7"
+_eq A39 "access --view detail --format csv 列數=4 (1 header+3 records)" "$csv_rows" "4"
 
 # A20: --view summary 不含 per-record PATIENT_ID_AES (管理摘要應省略個別記錄欄位)
 out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
@@ -1136,18 +1131,18 @@ _g01_block=$(printf '%s\n' "$out_g" | sed -n '/▶ 總體概況/,/▶ 分區別/
 _eq G01 "overview 總體概況 KV 數值欄對齊 (display-col 一致)" \
     "$(printf '%s' "$_g01_block" | _aligncols)" "1"
 
-# G02: iis summary KV 區塊數值欄對齊 (單一 token 值列)
-# Baseline: 總請求數 / 不重複用戶端 IP / 其中 健康檢查 503 / 302 轉址率
+# G02: iis summary KV 區塊數值欄對齊 (業務模式: 5XX/503/302 KPI 已移除)
+# Baseline: 總請求數 / 不重複用戶端 IP (503/302 KPI lines removed from business-only summary)
 out_g2=$(NO_COLOR=1 bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all \
     --view summary 2>/dev/null)
-_g02_block=$(printf '%s\n' "$out_g2" | grep -E '總請求數|用戶端 IP|其中.*503|302' | grep -v '■')
+_g02_block=$(printf '%s\n' "$out_g2" | grep -E '總請求數|用戶端 IP' | grep -v '■')
 _eq G02 "iis summary KV 數值欄對齊 (display-col 一致)" \
     "$(printf '%s' "$_g02_block" | _aligncols)" "1"
 
-# G03: overview 服務別 API 子區塊數值欄對齊 (單一 token 值列)
-# Baseline: 5XX 錯誤 / 慢速率 (>2000ms) / UNVERIFIED (簽發未使用)
+# G03: overview 服務別 API 子區塊數值欄對齊 (5XX 已從 overview 移除; 只含 慢速率/UNVERIFIED)
+# Baseline: 慢速率 (>2000ms) / UNVERIFIED (簽發未使用) — 5XX KPI removed in business-only mode
 _g03_block=$(printf '%s\n' "$out_g" | sed -n '/■ API 伺服器/,/■ APP 伺服器/p' \
-    | grep -E '5XX|慢速率|UNVERIFIED')
+    | grep -E '慢速率|UNVERIFIED')
 _eq G03 "overview 服務別 API 子區塊數值欄對齊 (display-col 一致)" \
     "$(printf '%s' "$_g03_block" | _aligncols)" "1"
 
@@ -1206,14 +1201,12 @@ share_sum=$(printf '%s\n' "$out" | grep -oE 'IIS 佔比 [0-9]+\.[0-9]+%' | \
     grep -oE '[0-9]+\.[0-9]+' | gawk '{s+=$1} END{printf "%d", s+0.5}')
 _gte H05 "各區域 IIS 佔比之和 >= 99" "${share_sum:-0}" "99"
 
-# H06: 5XX/SLOW/503 literals ONLY 在 服務別; ORPHAN 不出現於 API sub-slice (C5 line-range scoped)
-region_block=$(printf '%s\n' "$out" | sed -n '/▶ 分區別/,/▶ 服務別/p')
+# H06: ORPHAN 不出現於 API sub-slice (C5 line-range scoped); 5XX/503 KPI 已從 overview 移除
 api_slice=$(printf '%s\n' "$out" | sed -n '/■ API 伺服器/,/■ APP 伺服器/p')
-if ! printf '%s\n' "$region_block" | grep -qF "5XX" && \
-   ! printf '%s\n' "$api_slice"    | grep -qF "ORPHAN"; then
-    _pass "H06  5XX 不在 分區別; ORPHAN 不在 API sub-slice (C5)"
+if ! printf '%s\n' "$api_slice" | grep -qF "ORPHAN"; then
+    _pass "H06  ORPHAN 不在 API sub-slice (C5)"
 else
-    _fail "H06  5XX 不在 分區別; ORPHAN 不在 API sub-slice (C5)"
+    _fail "H06  ORPHAN 不在 API sub-slice (C5)"
 fi
 
 # H07: overview IIS 總請求數 == analyze_iis --emit-stats TOTAL 之和 (DRY 內部一致性)
@@ -1255,23 +1248,23 @@ _ok  H12a "overview --today exit 0" "$rc12"
 _has H12  "overview --today 期間含 '(1 天)'" "$out12" "(1 天)"
 
 # H13: EXTERNAL anchor — IIS 總請求數 == raw grep count (2026-05-21, 獨立驗算)
-# Independent baseline: count non-comment IIS lines (NF>=17) per server,
-# without using aggregate_utils.sh or any overview code path.
+# Independent baseline: count non-comment IIS business lines (NF>=17, exclude /health and
+# test-host IPs .79/.110/.28), without using aggregate_utils.sh or any overview code path.
 _h13_total=0
 for _h13_srv in 10.1.72.35 10.1.72.36 10.1.73.37 10.21.3.35 10.21.3.36 10.22.63.37; do
     _h13_f="${LOG_DIR}/${_h13_srv}/iis/u_ex260521.log"
     if [[ -f "$_h13_f" ]]; then
-        _h13_n=$(gawk 'NF>=17 && !/^#/ {c++} END{print c+0}' "$_h13_f")
+        _h13_n=$(gawk 'NF>=17 && !/^#/ && $5!="/health" && $9!="192.168.139.79" && $9!="192.168.139.110" && $9!="192.168.139.28" {c++} END{print c+0}' "$_h13_f")
         _h13_total=$(( _h13_total + _h13_n ))
     fi
 done
 h13_ovw=$(_pick "$out" "IIS 總請求數")
 _eq H13 "overview IIS 總請求數 == 獨立 grep 基準 (${_h13_total})" "$h13_ovw" "$_h13_total"
 
-# H14: EXTERNAL anchor — NORMAL 正常流程率 == 獨立計算基準 (7/12 = 58.3%)
-# Independent baseline from known sample-data counts (verified by H07/H08 chains
-# via A02/A05/A09 which are themselves anchored to sample logs).
-_h14_expected=$(gawk 'BEGIN{printf "%.1f%%", 7/12*100}')
+# H14: EXTERNAL anchor — NORMAL 正常流程率 == 獨立計算基準 (6/9 = 66.7%)
+# Independent baseline from filtered sample-data counts (--test-hosts exclude default):
+# taipei 0521: NORMAL=0, ORPHAN=3; taichung 0521: NORMAL=6, ORPHAN=0 → total=9, NORMAL=6
+_h14_expected=$(gawk 'BEGIN{printf "%.1f%%", 6/9*100}')
 h14_ovw=$(_pick "$out" "NORMAL 正常流程率")
 _eq H14 "overview NORMAL 正常流程率 == 獨立基準 (${_h14_expected})" "$h14_ovw" "$_h14_expected"
 
@@ -1441,6 +1434,148 @@ else
     _fail "I12  log_report 預設模組 5 個檔案共享同一 RUN_TS 且落入 --output-dir (C1) [files=$_i12_cnt ts_uniq=$_i12_ts_uniq]"
 fi
 rm -rf "$TMPD_I12"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section J — test-host filter + /health exclusion (J01–J20)
+# All tests use --date 2026-05-21.  External anchors (spec 7a):
+#   IIS all regions: exclude=723, only=209, all=932
+#   access all regions: NORMAL under exclude=6; .110/.79/.28 absent under exclude
+# ─────────────────────────────────────────────────────────────────────────────
+
+section "J  test-host filter + /health exclusion"
+
+# J01: iis 預設 (no --test-hosts flag = exclude) all regions Total = 723
+j01_out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all 2>/dev/null)
+j01_sum=$(_sum "$j01_out" "Total requests")
+_eq J01 "iis 預設 (no flag = exclude) all Total = 723" "$j01_sum" "723"
+
+# J02: iis --test-hosts exclude == J01 (idempotent, explicit flag yields same result)
+j02_out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all --test-hosts exclude 2>/dev/null)
+j02_sum=$(_sum "$j02_out" "Total requests")
+_eq J02 "iis --test-hosts exclude all Total = 723 (idempotent)" "$j02_sum" "723"
+
+# J03: iis --test-hosts only all Total = 209
+j03_out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all --test-hosts only 2>/dev/null)
+j03_sum=$(_sum "$j03_out" "Total requests")
+_eq J03 "iis --test-hosts only all Total = 209" "$j03_sum" "209"
+
+# J04: iis --test-hosts all all Total = 932 (test hosts included; /health still excluded)
+j04_out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all --test-hosts all 2>/dev/null)
+j04_sum=$(_sum "$j04_out" "Total requests")
+_eq J04 "iis --test-hosts all all Total = 932" "$j04_sum" "932"
+
+# J05: iis --test-hosts bogus → non-zero exit (assert_enum)
+bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --test-hosts bogus >/dev/null 2>&1; rc_j05=$?
+_err J05 "iis --test-hosts bogus → non-zero exit (assert_enum)" "$rc_j05"
+
+# J06: iis exclude: no /health endpoint row (unconditional /health exclusion proof)
+# Note: "/health" may appear in the scope banner text; check for endpoint-row format ^    /health
+if ! printf '%s\n' "$j01_out" | grep -qE "^    /health" 2>/dev/null; then
+    _pass "J06  iis exclude: /health 端點列不出現於 Endpoint 表格 (^    /health)"
+else
+    _fail "J06  iis exclude: /health 端點列不出現於 Endpoint 表格 (^    /health)"
+fi
+
+# J07: iis only: no /health endpoint row (proves /health drops in all test-host modes)
+if ! printf '%s\n' "$j03_out" | grep -qE "^    /health" 2>/dev/null; then
+    _pass "J07  iis only: /health 端點列不出現 (all-mode 均無條件排除)"
+else
+    _fail "J07  iis only: /health 端點列不出現 (all-mode 均無條件排除)"
+fi
+
+# J08: iis all: no /health endpoint row; all Total 932 == raw NF>=17 !/^#/ !=/health grep
+_j08_raw=0
+for _j08_srv in 10.1.72.35 10.1.72.36 10.1.73.37 10.21.3.35 10.21.3.36 10.22.63.37; do
+    _j08_f="${LOG_DIR}/${_j08_srv}/iis/u_ex260521.log"
+    if [[ -f "$_j08_f" ]]; then
+        _j08_n=$(gawk 'NF>=17 && !/^#/ && $5!="/health" {c++} END{print c+0}' "$_j08_f")
+        _j08_raw=$(( _j08_raw + _j08_n ))
+    fi
+done
+if ! printf '%s\n' "$j04_out" | grep -qE "^    /health" 2>/dev/null && \
+   [[ "$j04_sum" -eq "$_j08_raw" ]]; then
+    _pass "J08  iis all: /health 端點列不出現; Total (${j04_sum}) == raw grep (${_j08_raw})"
+else
+    _fail "J08  iis all: /health 端點列不出現 OR Total (${j04_sum}) != raw grep (${_j08_raw})"
+fi
+
+# J09: iis exclude: .119 in client IP table; .28/.110/.79 absent (test hosts excluded)
+j09_out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei 2>/dev/null)
+if printf '%s\n' "$j09_out" | grep -qF "192.168.139.119" 2>/dev/null && \
+   ! printf '%s\n' "$j09_out" | grep -qF "192.168.139.28" 2>/dev/null && \
+   ! printf '%s\n' "$j09_out" | grep -qF "192.168.139.110" 2>/dev/null && \
+   ! printf '%s\n' "$j09_out" | grep -qF "192.168.139.79" 2>/dev/null; then
+    _pass "J09  iis exclude: .119 在 Client IP 表; .28/.110/.79 已排除"
+else
+    _fail "J09  iis exclude: .119 在 Client IP 表; .28/.110/.79 已排除"
+fi
+
+# J10: iis only: .110 in client IP table; .119 absent (real gateway excluded in only mode)
+j10_out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei --test-hosts only 2>/dev/null)
+if printf '%s\n' "$j10_out" | grep -qF "192.168.139.110" 2>/dev/null && \
+   ! printf '%s\n' "$j10_out" | grep -qF "192.168.139.119" 2>/dev/null; then
+    _pass "J10  iis only: .110 在 Client IP 表; .119 (real gateway) 已排除"
+else
+    _fail "J10  iis only: .110 在 Client IP 表; .119 (real gateway) 已排除"
+fi
+
+# J11: iis all taichung 10.1.73.37 Total = 6 (/health identity: .73.37 has no test-host clients)
+j11_out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung --test-hosts all 2>/dev/null)
+j11_first=$(printf '%s\n' "$j11_out" | grep "Total requests" | awk '{print $NF}' | head -1)
+_eq J11 "iis all taichung 10.1.73.37 Total = 6 (no test-host clients)" "$j11_first" "6"
+
+# J12: access default exclude: .110 and .79 absent from output
+j12_out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all 2>/dev/null)
+if ! printf '%s\n' "$j12_out" | grep -qF "192.168.139.110" 2>/dev/null && \
+   ! printf '%s\n' "$j12_out" | grep -qF "192.168.139.79" 2>/dev/null; then
+    _pass "J12  access exclude: .110 和 .79 測試主機 IP 不出現於輸出"
+else
+    _fail "J12  access exclude: .110 和 .79 測試主機 IP 不出現於輸出"
+fi
+
+# J13: access --test-hosts only: .110 present in output
+j13_out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all --test-hosts only 2>/dev/null)
+_has J13 "access --test-hosts only: .110 測試主機 IP 出現於輸出" "$j13_out" "192.168.139.110"
+
+# J14: access --test-hosts all: .110 present; NORMAL count >= exclude (all >= exclude)
+j14_out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all --test-hosts all 2>/dev/null)
+j14_norm=$(_sum "$j14_out" "NORMAL  (")
+j12_norm=$(_sum "$j12_out" "NORMAL  (")
+if printf '%s\n' "$j14_out" | grep -qF "192.168.139.110" 2>/dev/null && \
+   (( j14_norm >= j12_norm )); then
+    _pass "J14  access all: .110 出現; NORMAL (${j14_norm}) >= exclude (${j12_norm})"
+else
+    _fail "J14  access all: .110 出現 OR NORMAL (${j14_norm}) < exclude (${j12_norm})"
+fi
+
+# J15: access --test-hosts bogus → non-zero exit (assert_enum)
+bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --test-hosts bogus >/dev/null 2>&1; rc_j15=$?
+_err J15 "access --test-hosts bogus → non-zero exit (assert_enum)" "$rc_j15"
+
+# J16: load_test_hosts reads exactly 3 test-host IP tokens from conf/test_hosts.conf
+th_set=$(bash -c "source \"${PROJECT_DIR}/lib/common.sh\"; load_test_hosts \"${PROJECT_DIR}/conf/test_hosts.conf\"")
+th_count=$(printf '%s\n' "$th_set" | wc -w | tr -d ' ')
+_eq J16 "load_test_hosts 返回恰好 3 個測試主機 IP tokens" "$th_count" "3"
+
+# J17: analyze_errors --test-hosts only → non-zero exit (Unknown option; no flag support)
+bash "$ERRORS" --log-dir "$LOG_DIR" --date 2026-05-21 --test-hosts only >/dev/null 2>&1; rc_j17=$?
+_err J17 "analyze_errors --test-hosts only → non-zero exit (Unknown option)" "$rc_j17"
+
+# J18: log_report --test-hosts only: errors module OracleDB count == baseline (no-op on errors)
+j18_out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung \
+    --modules errors --test-hosts only 2>/dev/null)
+j18_oracle=$(_sum "$j18_out" "OracleDB health failures")
+_eq J18 "log_report --test-hosts only: errors OracleDB 計數 == 基準值 44 (no-op on errors)" "$j18_oracle" "44"
+
+# J19: overview --test-hosts only: IIS 總請求數 == 209
+j19_out=$(bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 --test-hosts only 2>/dev/null)
+j19_total=$(_pick "$j19_out" "IIS 總請求數")
+_eq J19 "overview --test-hosts only: IIS 總請求數 == 209" "$j19_total" "209"
+
+# J20: overview 預設 (exclude): IIS 總請求數 == 723
+j20_out=$(bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null)
+j20_total=$(_pick "$j20_out" "IIS 總請求數")
+_eq J20 "overview 預設 (exclude): IIS 總請求數 == 723" "$j20_total" "723"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Summary

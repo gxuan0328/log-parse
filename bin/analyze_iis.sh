@@ -2,14 +2,15 @@
 # bin/analyze_iis.sh
 # ----------------------------------------------------------------------------
 # IIS W3C log analyser — surfaces HTTP-level signals per server, per region.
+# Reports business-only traffic: /health excluded unconditionally; test-host
+# client IPs filtered per --test-hosts mode (default: exclude).
 #
 # Inputs : <log_dir>/<server>/iis/u_exYYMMDD.log  (W3C extended, space-delim)
-# Metrics:
-#   - Total requests, unique client IPs, 302 redirect count.
-#   - 5xx errors and the Health-503 subset (status==503 && uri==/health).
-#   - Slow requests where time-taken >= role-resolved threshold AND uri != /health.
+# Metrics (business requests only):
+#   - Total requests, unique client IPs.
+#   - Slow requests where time-taken >= role-resolved threshold.
 #     API servers use --slow-api-ms; APP servers use --slow-app-ms.
-#   - Status code distribution.
+#   - Status code distribution (Top-N, business-only).
 #   - Top-N endpoints (--top, default 10, 0=all), with DICOM study/series UIDs
 #     collapsed into templates so cardinality stays manageable.
 #   - Top-N client IPs (--top, default 10, 0=all).
@@ -34,6 +35,9 @@ source "${SCRIPT_DIR}/../lib/aggregate_utils.sh"
 source "${SCRIPT_DIR}/../lib/output_utils.sh"
 
 REGIONS_CONF="${SCRIPT_DIR}/../conf/regions.conf"
+TEST_HOSTS_CONF="${SCRIPT_DIR}/../conf/test_hosts.conf"
+OPT_TEST_HOSTS="exclude"
+TEST_HOST_SET=""
 
 OPT_LOG_DIR=""
 OPT_DAYS=7
@@ -64,25 +68,31 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Analyze IIS W3C access logs: request counts, status codes, slow requests,
-health-check 503 events, and per-endpoint breakdowns.
+Analyze IIS W3C access logs: business-only request counts, status codes,
+slow requests, and per-endpoint breakdowns.
+/health is excluded unconditionally. Test-host client IPs are filtered
+per --test-hosts mode (default: exclude).
 
 Options:
-  --log-dir PATH     [required] root log directory
-  --region REGION    taipei | taichung | all       (default: all)
-  --today            alias for --date \$(today); sets single-day window
-  --days N           integer >= 1                  (default: 7)   [implicit fallback]
-  --from / --to DATE YYYY-MM-DD inclusive range    (use together)
-  --date DATE        YYYY-MM-DD single day
-  --view V           summary | detail              (default: detail)
-  --format FMT       text | tsv | csv              (default: text)
-  --top N            integer >= 0, 0 = ALL         (default: 10)
-  --slow-api-ms N    integer ms                    (default: 2000)
-  --slow-app-ms N    integer ms                    (default: 5000)
-  --merge            REQUIRES --region all; merges hosts, splits API vs APP
-  --emit-stats       print iis_stats.tsv to stdout; no persistence, no banner
-  --output-dir DIR   persistence dir               (default: env > ./log-parse)
-  --conf FILE        regions config                (default: conf/regions.conf)
+  --log-dir PATH       [required] root log directory
+  --region REGION      taipei | taichung | all       (default: all)
+  --today              alias for --date \$(today); sets single-day window
+  --days N             integer >= 1                  (default: 7)   [implicit fallback]
+  --from / --to DATE   YYYY-MM-DD inclusive range    (use together)
+  --date DATE          YYYY-MM-DD single day
+  --view V             summary | detail              (default: detail)
+  --format FMT         text | tsv | csv              (default: text)
+  --top N              integer >= 0, 0 = ALL         (default: 10)
+  --slow-api-ms N      integer ms                    (default: 2000)
+  --slow-app-ms N      integer ms                    (default: 5000)
+  --merge              REQUIRES --region all; merges hosts, splits API vs APP
+  --emit-stats         print iis_stats.tsv to stdout; no persistence, no banner
+  --test-hosts MODE    exclude | only | all          (default: exclude)
+                       exclude = drop test-host IPs (business-only)
+                       only    = keep ONLY test-host IPs (QA audit)
+                       all     = keep all IPs (no test-host filter)
+  --output-dir DIR     persistence dir               (default: env > ./log-parse)
+  --conf FILE          regions config                (default: conf/regions.conf)
   -v, --verbose / -h, --help
 
 Interval flags are mutually exclusive: choose ONE of
@@ -122,6 +132,7 @@ parse_args() {
             --slow-app-ms)  OPT_SLOW_APP_MS="$2";              shift 2 ;;
             --merge)        OPT_MERGE=1;                        shift ;;
             --emit-stats)   OPT_EMIT_STATS=1;                  shift ;;
+            --test-hosts)   OPT_TEST_HOSTS="$2";               shift 2 ;;
             --output-dir)   OPT_OUTPUT_DIR="$2";               shift 2 ;;
             --conf)         REGIONS_CONF="$2";                  shift 2 ;;
             -v|--verbose)   LOG_LEVEL=DEBUG;                    shift ;;
@@ -132,8 +143,9 @@ parse_args() {
     if [[ -z "$OPT_LOG_DIR" ]]; then die "--log-dir is required"; fi
     if [[ ! -d "$OPT_LOG_DIR" ]]; then die "Log directory not found: $OPT_LOG_DIR"; fi
     if [[ ! -f "$REGIONS_CONF" ]]; then die "conf file not found: $REGIONS_CONF"; fi
-    assert_enum "--format" "$OPT_FORMAT" text tsv csv
-    assert_enum "--view"   "$OPT_VIEW"   summary detail
+    assert_enum "--format"     "$OPT_FORMAT"     text tsv csv
+    assert_enum "--view"       "$OPT_VIEW"       summary detail
+    assert_enum "--test-hosts" "$OPT_TEST_HOSTS" exclude only all
     assert_uint "--top" "$OPT_TOP"
     assert_uint "--slow-api-ms" "$OPT_SLOW_API_MS"
     assert_uint "--slow-app-ms" "$OPT_SLOW_APP_MS"
@@ -194,7 +206,7 @@ iis_corpus_stats() {
     local key="${region}|${role}|${server}"
     _IIS_SERVER_KEYS+=("$key")
     _IIS_THRESHOLD["$key"]="$threshold"
-    agg_iis_rows "$combined" "$threshold" "$OPT_TOP" \
+    agg_iis_rows "$combined" "$threshold" "$OPT_TOP" "$OPT_TEST_HOSTS" "$TEST_HOST_SET" \
         | gawk -F'\t' -v region="$region" -v role="$role" -v server="$server" \
           'BEGIN{OFS="\t"} {print "IIS", region, role, server, $0}' \
         >> "${WORK_TMPDIR}/iis_stats.tsv"
@@ -227,23 +239,18 @@ iis_render_summary() {
     fmt_kv "Period" "${_IIS_DATE_START}  →  ${_IIS_DATE_END}  (${_IIS_N_DATES} days)"
 
     # Single-pass aggregation across all servers
+    # (re-aggregates iis_stats.tsv which is already business-filtered by agg_iis_rows)
     local agg_out
     agg_out=$(gawk -F'\t' -v top="$OPT_TOP" '
         $1=="IIS" && $5=="TOTAL"      { tot     += $6+0 }
-        $1=="IIS" && $5=="5XX"        { five_xx += $6+0 }
-        $1=="IIS" && $5=="503_HEALTH" { h503    += $6+0 }
         $1=="IIS" && $5=="SLOW"       { slow    += $6+0 }
-        $1=="IIS" && $5=="REDIRECT"   { redirect+= $6+0 }
         $1=="IIS" && $5=="UNIQUE_IPS" { uniq_ip += $6+0 }
         $1=="IIS" && $5=="ENDPOINT"   { ep[$6]  += $7+0 }
         $1=="IIS" && $5=="STATUS"     { st[$6]  += $7+0 }
         $1=="IIS" && $5=="CLIENT_IP"  { ip[$6]  += $7+0 }
         END {
             printf "TOTAL\t%d\n",      tot
-            printf "5XX\t%d\n",        five_xx
-            printf "503_HEALTH\t%d\n", h503
             printf "SLOW\t%d\n",       slow
-            printf "REDIRECT\t%d\n",   redirect
             printf "UNIQUE_IPS\t%d\n", uniq_ip
             n = asorti(ep, ep_sorted, "@val_num_desc")
             lim = (top==0) ? n : (n < top ? n : top)
@@ -269,25 +276,18 @@ iis_render_summary() {
         }
     ' "$stats_file")
 
-    local total five_xx h503 slow redirect unique_ips
+    local total slow unique_ips
     total=$(     printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="TOTAL"     {print $2}')
-    five_xx=$(   printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="5XX"       {print $2}')
-    h503=$(      printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="503_HEALTH"{print $2}')
     slow=$(      printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="SLOW"      {print $2}')
-    redirect=$(  printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="REDIRECT"  {print $2}')
     unique_ips=$(printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="UNIQUE_IPS"{print $2}')
 
-    local pct_5xx pct_slow pct_redir
-    pct_5xx=$(fmt_pct   "${five_xx:-0}" "${total:-0}")
-    pct_slow=$(fmt_pct  "${slow:-0}"    "${total:-0}")
-    pct_redir=$(fmt_pct "${redirect:-0}" "${total:-0}")
+    local pct_slow
+    pct_slow=$(fmt_pct "${slow:-0}" "${total:-0}")
 
+    fmt_kv "資料範圍"        "業務請求 (排除 /health；測試主機=${OPT_TEST_HOSTS})"
     fmt_kv "總請求數"          "${total:-0}"
     fmt_kv "不重複用戶端 IP"   "${unique_ips:-0}"
-    fmt_kv "5xx 錯誤率"        "${pct_5xx}  (${five_xx:-0})"
-    fmt_kv "  其中 健康檢查 503" "${h503:-0}"
     fmt_kv "慢速率"            "${pct_slow}  (${slow:-0})"
-    fmt_kv "302 轉址率"        "${pct_redir}"
 
     # Top-N endpoints (numbered list)
     fmt_h3 "Top 端點 (佔比)"
@@ -392,27 +392,19 @@ _iis_render_server_text() {
     scalars=$(gawk -F'\t' -v r="$region" -v ro="$role" -v s="$server" '
         $1=="IIS" && $2==r && $3==ro && $4==s {
             if ($5=="TOTAL")      printf "TOTAL\t%s\n",      $6
-            if ($5=="5XX")        printf "5XX\t%s\n",        $6
-            if ($5=="503_HEALTH") printf "503_HEALTH\t%s\n", $6
             if ($5=="SLOW")       printf "SLOW\t%s\n",       $6
-            if ($5=="REDIRECT")   printf "REDIRECT\t%s\n",   $6
             if ($5=="UNIQUE_IPS") printf "UNIQUE_IPS\t%s\n", $6
         }
     ' "$stats_file")
 
-    local total error5xx h503 slow redir unique_ips
+    local total slow unique_ips
     total=$(     printf '%s\n' "$scalars" | gawk -F'\t' '$1=="TOTAL"     {print $2}')
-    error5xx=$(  printf '%s\n' "$scalars" | gawk -F'\t' '$1=="5XX"       {print $2}')
-    h503=$(      printf '%s\n' "$scalars" | gawk -F'\t' '$1=="503_HEALTH"{print $2}')
     slow=$(      printf '%s\n' "$scalars" | gawk -F'\t' '$1=="SLOW"      {print $2}')
-    redir=$(     printf '%s\n' "$scalars" | gawk -F'\t' '$1=="REDIRECT"  {print $2}')
     unique_ips=$(printf '%s\n' "$scalars" | gawk -F'\t' '$1=="UNIQUE_IPS"{print $2}')
 
+    fmt_kv "Scope"                        "business requests (excl. /health; test-hosts=${OPT_TEST_HOSTS})"
     fmt_kv "Total requests"               "${total:-0}"
     fmt_kv "Unique client IPs"            "${unique_ips:-0}"
-    fmt_kv "302 Redirects"                "${redir:-0}"
-    fmt_kv_color "5xx errors"             "${error5xx:-0}"  "$C_RED"
-    fmt_kv_color "  Health 503"           "${h503:-0}"      "$C_YELLOW"
     fmt_kv_color "Slow (>${threshold}ms)" "${slow:-0}"      "$C_YELLOW"
 
     # HTTP Status table: [Status, Count, % of total], count-desc sort in-gawk.
@@ -498,10 +490,7 @@ function row(r, ro, s, metric, key, count, avgsec, pct) {
 $1=="IIS" && $2==srv_r && $3==srv_ro && $4==srv_s {
     tag = $5
     if (tag=="TOTAL")      total  = $6+0
-    if (tag=="5XX")        fivexx = $6+0
-    if (tag=="503_HEALTH") h503   = $6+0
     if (tag=="SLOW")       slow   = $6+0
-    if (tag=="REDIRECT")   redir  = $6+0
     if (tag=="UNIQUE_IPS") uniq   = $6+0
     if (tag=="STATUS")     { st_c[$6]  = $7+0 }
     if (tag=="ENDPOINT")   { ep_c[$6]  = $7+0; ep_a[$6] = $8+0 }
@@ -510,14 +499,8 @@ $1=="IIS" && $2==srv_r && $3==srv_ro && $4==srv_s {
 END {
     tot = total+0
     row(srv_r, srv_ro, srv_s, "SUMMARY", "TOTAL",      tot,       "-", sprintf("%.1f", (tot>0)?100.0:0))
-    pct = (tot>0) ? fivexx/tot*100 : 0
-    row(srv_r, srv_ro, srv_s, "SUMMARY", "5XX",        fivexx+0,  "-", sprintf("%.1f", pct))
-    pct = (tot>0) ? h503/tot*100 : 0
-    row(srv_r, srv_ro, srv_s, "SUMMARY", "503_HEALTH", h503+0,    "-", sprintf("%.1f", pct))
     pct = (tot>0) ? slow/tot*100 : 0
     row(srv_r, srv_ro, srv_s, "SUMMARY", "SLOW",       slow+0,    "-", sprintf("%.1f", pct))
-    pct = (tot>0) ? redir/tot*100 : 0
-    row(srv_r, srv_ro, srv_s, "SUMMARY", "REDIRECT",   redir+0,   "-", sprintf("%.1f", pct))
     row(srv_r, srv_ro, srv_s, "SUMMARY", "UNIQUE_IPS", uniq+0,    "-", "0.0")
     for (code in st_c) {
         pct = (tot>0) ? st_c[code]/tot*100 : 0
@@ -555,6 +538,7 @@ main() {
     parse_args "$@"
     init_tmpdir
     load_regions
+    TEST_HOST_SET="$(load_test_hosts "$TEST_HOSTS_CONF")"
 
     # Resolve interval (mutex: die on >1 selector)
     resolve_interval \

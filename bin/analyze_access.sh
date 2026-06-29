@@ -42,6 +42,9 @@ source "${SCRIPT_DIR}/../lib/aggregate_utils.sh"
 source "${SCRIPT_DIR}/../lib/output_utils.sh"
 
 REGIONS_CONF="${SCRIPT_DIR}/../conf/regions.conf"
+TEST_HOSTS_CONF="${SCRIPT_DIR}/../conf/test_hosts.conf"
+OPT_TEST_HOSTS="exclude"
+TEST_HOST_SET=""
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -141,6 +144,7 @@ parse_args() {
             --format)     OPT_FORMAT="$2";                 shift 2 ;;
             --emit-stats) OPT_EMIT_STATS=1;               shift ;;
             --merge)      OPT_MERGE=1;                     shift ;;
+            --test-hosts) OPT_TEST_HOSTS="$2";             shift 2 ;;
             --conf)       REGIONS_CONF="$2";               shift 2 ;;
             -v|--verbose) LOG_LEVEL=DEBUG;                 shift ;;
             -h|--help)    usage; exit 0 ;;
@@ -157,8 +161,9 @@ parse_args() {
     if [[ ! -f "$REGIONS_CONF" ]]; then
         die "Regions config not found: $REGIONS_CONF"
     fi
-    assert_enum "--format" "$OPT_FORMAT" text tsv csv
-    assert_enum "--view"   "$OPT_VIEW"   summary detail
+    assert_enum "--format"     "$OPT_FORMAT"     text tsv csv
+    assert_enum "--view"       "$OPT_VIEW"       summary detail
+    assert_enum "--test-hosts" "$OPT_TEST_HOSTS" exclude only all
     if [[ "$OPT_MERGE" -eq 1 && "$OPT_REGION" != "all" ]]; then
         die "--merge requires --region all (got: '$OPT_REGION')"
     fi
@@ -725,7 +730,7 @@ correlate_region() {
     for srv in "${api_servers[@]}"; do
         while IFS= read -r csv_file; do
             log_debug "  API CSV: $csv_file"
-            extract_api_records "$csv_file" >> "$api_tsv"
+            extract_api_records "$csv_file" "$OPT_TEST_HOSTS" "$TEST_HOST_SET" >> "$api_tsv"
         done < <(collect_access_csvs "$srv" "$date_list_file")
     done
 
@@ -734,7 +739,7 @@ correlate_region() {
     for srv in "${app_servers[@]}"; do
         while IFS= read -r csv_file; do
             log_debug "  APP CSV: $csv_file"
-            extract_app_records "$csv_file" >> "$app_tsv"
+            extract_app_records "$csv_file" "$OPT_TEST_HOSTS" "$TEST_HOST_SET" >> "$app_tsv"
         done < <(collect_access_csvs "$srv" "$date_list_file")
     done
 
@@ -801,14 +806,14 @@ correlate_merged() {
         for srv in "${api_servers[@]}"; do
             while IFS= read -r csv_file; do
                 log_debug "  Merged API CSV: $csv_file"
-                extract_api_records "$csv_file" >> "$api_tsv"
+                extract_api_records "$csv_file" "$OPT_TEST_HOSTS" "$TEST_HOST_SET" >> "$api_tsv"
             done < <(collect_access_csvs "$srv" "$date_list_file")
         done
 
         for srv in "${app_servers[@]}"; do
             while IFS= read -r csv_file; do
                 log_debug "  Merged APP CSV: $csv_file"
-                extract_app_records "$csv_file" >> "$app_tsv"
+                extract_app_records "$csv_file" "$OPT_TEST_HOSTS" "$TEST_HOST_SET" >> "$app_tsv"
             done < <(collect_access_csvs "$srv" "$date_list_file")
         done
     done
@@ -844,6 +849,7 @@ main() {
     parse_args "$@"
     init_tmpdir
     load_regions
+    TEST_HOST_SET="$(load_test_hosts "$TEST_HOSTS_CONF")"
 
     # Resolve interval (mutex: die on >1 selector; L2 die message cites priority)
     resolve_interval \
