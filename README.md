@@ -4,7 +4,7 @@
 > Correlates access tokens, surfaces IIS anomalies, and tracks application
 > lifecycle events across paired API / APP servers.
 
-[![Tests](https://img.shields.io/badge/tests-103%2F103-brightgreen)](tests/run_tests.sh)
+[![Tests](https://img.shields.io/badge/tests-215%2F215-brightgreen)](tests/run_tests.sh)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bash 4+](https://img.shields.io/badge/bash-4%2B-lightgrey)](https://www.gnu.org/software/bash/)
 
@@ -15,14 +15,20 @@
 ## What it does
 
 The toolkit consumes raw daily logs from six servers organised into two
-geographic regions (Taipei / Taichung) and produces three correlated reports:
+geographic regions (Taipei / Taichung) and produces correlated reports:
 
-| Module          | Inputs                                  | Detects                                                        |
-|-----------------|-----------------------------------------|----------------------------------------------------------------|
-| `analyze_access`| API + APP access CSVs                   | Token-issuance ↔ verification flows, orphan / unverified usage |
-| `analyze_iis`   | IIS W3C extended logs                   | 5xx error spikes, slow requests, health-check 503 anomalies    |
-| `analyze_errors`| `app-all` / `app-error` / `app-lifetime`| OracleDB outages, top error patterns, restart downtime         |
-| `log_report`    | All of the above                        | Combined orchestrator with single-file or per-module output    |
+| Module               | Inputs                                        | Produces                                                                              |
+|----------------------|-----------------------------------------------|---------------------------------------------------------------------------------------|
+| `analyze_overview`   | IIS + Access stats via `--emit-stats`         | Management overview: 總體概況 / 分區別 / 服務別; summary-only, text-only              |
+| `analyze_access`     | API + APP access CSVs                         | Token-issuance ↔ verification flows, orphan / unverified usage; `--view summary|detail` |
+| `analyze_iis`        | IIS W3C extended logs                         | 5xx error spikes, slow requests, health-check 503 anomalies; `--view summary|detail`  |
+| `analyze_errors`     | `app-all` / `app-error` / `app-lifetime`      | OracleDB outages, top error patterns, restart downtime                                |
+| `log_report`         | All of the above                              | Orchestrator; default modules: `overview,iis,access`; errors opt-in via `--modules`   |
+
+Every run automatically persists reports to `./log-parse/` under the current working
+directory (override with `--output-dir DIR` or `$LOG_PARSE_OUTPUT_DIR`). Files are named
+`<module>_<kind>_<YYYYMMDD_HHMMSS>.<ext>` and are always color-free; stdout is a clean
+pipeable mirror of the selected view (`--view summary|detail`).
 
 See [`docs/design.md`](docs/design.md) for the full data-flow and field
 semantics, and [`docs/usage.md`](docs/usage.md) for every CLI flag.
@@ -46,24 +52,28 @@ bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-L
 ### Common scenarios
 
 ```bash
-# Daily ops snapshot for a specific date
+# Management overview — all regions, last 7 days (三視角: 總體概況/分區別/服務別)
+bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG
+
+# Daily ops snapshot for a specific date (default modules: overview→iis→access)
 bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --date 2026-05-21
 
 # Security investigation — orphan tokens for Taipei
 bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
     --region taipei --days 7
 
-# DB troubleshooting — top error patterns for Taichung
+# DB troubleshooting — top error patterns for Taichung (opt-in via --modules)
 bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
     --region taichung --top 20
 
-# Weekly digest written to per-module files
+# Weekly digest with errors; reports written to ./reports/
 bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --from 2026-05-18 --to 2026-05-25 --output-dir ./reports
+    --from 2026-05-18 --to 2026-05-25 --modules overview,iis,access,errors \
+    --output-dir ./reports
 
-# Performance audit — slow IIS requests (API >3s, APP >3s)
+# Performance audit — IIS detail export as CSV (API >3s, APP >3s)
 bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --slow-api-ms 3000 --slow-app-ms 3000
+    --slow-api-ms 3000 --slow-app-ms 3000 --format csv --view detail
 ```
 
 ---
@@ -72,31 +82,34 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 
 ```
 .
-├── bin/                  Executable CLI entry points
-│   ├── analyze_access.sh API/APP token cross-correlation
-│   ├── analyze_iis.sh    IIS W3C log analysis
-│   ├── analyze_errors.sh Application error & lifecycle analysis
-│   └── log_report.sh     Master orchestrator
-├── lib/                  Reusable shell modules
-│   ├── common.sh         Logging, tmpdir, dependency checks
-│   ├── date_utils.sh     Date range generation & filename mapping
-│   ├── csv_utils.sh      Access / IIS / app-log field extraction
-│   └── fmt_utils.sh      Report formatting helpers
+├── bin/                     Executable CLI entry points
+│   ├── analyze_access.sh    API/APP token cross-correlation
+│   ├── analyze_iis.sh       IIS W3C log analysis
+│   ├── analyze_errors.sh    Application error & lifecycle analysis
+│   ├── analyze_overview.sh  Management overview (三視角: 總體概況/分區別/服務別)
+│   └── log_report.sh        Master orchestrator (default: overview→iis→access)
+├── lib/                     Reusable shell modules (sourced-only)
+│   ├── common.sh            Logging, tmpdir, dependency checks, color state
+│   ├── date_utils.sh        Date range generation, interval-mutex validator
+│   ├── csv_utils.sh         Access / IIS / app-log field extraction
+│   ├── fmt_utils.sh         Report formatting helpers
+│   ├── output_utils.sh      Always-on report persistence (persist_init/persist_views)
+│   └── aggregate_utils.sh   Shared metric computation & CSV quoter (AGG_IIS_AWK)
 ├── conf/
-│   └── regions.conf      Region ↔ server mapping
+│   └── regions.conf         Region ↔ server mapping
 ├── docs/
-│   ├── design.md         Architecture & data-flow specification
-│   └── usage.md          Full CLI reference & worked examples
-├── examples/             Sample outputs & scripted scenarios
+│   ├── design.md            Architecture & data-flow specification
+│   └── usage.md             Full CLI reference & worked examples
+├── examples/                Sample outputs & scripted scenarios
 ├── tests/
-│   └── run_tests.sh      103-test functional suite
+│   └── run_tests.sh         215-test functional suite
 ├── .claude/
-│   ├── CLAUDE.md         Core conventions (auto-loaded every session)
-│   ├── rules/            Path-scoped detailed conventions (loaded on demand)
-│   └── skills/           Project automation skills (e.g. feature-workflow)
-├── CHANGELOG.md          Release history
-├── LICENSE               MIT
-└── Makefile              Convenience targets (test / lint / report)
+│   ├── CLAUDE.md            Core conventions (auto-loaded every session)
+│   ├── rules/               Path-scoped detailed conventions (loaded on demand)
+│   └── skills/              Project automation skills (e.g. feature-workflow)
+├── CHANGELOG.md             Release history
+├── LICENSE                  MIT
+└── Makefile                 Convenience targets (test / lint / report)
 ```
 
 ---
@@ -133,9 +146,10 @@ Override at runtime with `--conf /path/to/custom.conf`.
 make test            # runs tests/run_tests.sh
 ```
 
-The suite covers all four scripts, both regions, every parameter combination,
-validation paths, and six end-user scenario simulations. Baselines are derived
-from the bundled `examples/sample-logs/LUNG-CANCER-REPORT-LOG/` sample data.
+The suite covers all five scripts, both regions, every parameter combination,
+validation paths, interval-mutex checks, persistence assertions, and scenario
+simulations. Baselines are derived from the bundled
+`examples/sample-logs/LUNG-CANCER-REPORT-LOG/` sample data.
 
 ---
 

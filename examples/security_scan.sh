@@ -18,14 +18,16 @@ STAMP="$(date '+%Y%m%d_%H%M%S')"
 
 mkdir -p "$REPORT_DIR"
 
-# Human-readable report
+# Human-readable text report (detail view); persisted under REPORT_DIR
 bash "${PROJECT_DIR}/bin/analyze_access.sh" \
     --log-dir "$LOG_DIR" --region "$REGION" --days 7 \
-    --output "${REPORT_DIR}/access_${REGION}_${STAMP}.txt"
+    --view detail \
+    --output-dir "${REPORT_DIR}/access_${REGION}_${STAMP}"
 
-# Machine-readable TSV — filter ORPHAN rows for ingestion
+# Machine-readable TSV — filter ORPHAN rows for ingestion (stdout pipeline)
 bash "${PROJECT_DIR}/bin/analyze_access.sh" \
     --log-dir "$LOG_DIR" --region "$REGION" --days 7 --format tsv \
+    --output-dir "${REPORT_DIR}/access_tsv_${STAMP}" \
 | awk -F'\t' 'NR == 1 || $2 == "ORPHAN"' \
 > "${REPORT_DIR}/orphans_${REGION}_${STAMP}.tsv"
 
@@ -35,10 +37,11 @@ bash "${PROJECT_DIR}/bin/analyze_access.sh" \
 # ORPHAN/UNVERIFIED and are written to a dedicated TSV for SIEM ingestion.
 bash "${PROJECT_DIR}/bin/analyze_access.sh" \
     --log-dir "$LOG_DIR" --region all --days 7 --format tsv --merge \
-| awk -F'\t' 'NR == 1 || $1 == "ORPHAN"' \
+    --output-dir "${REPORT_DIR}/access_merged_${STAMP}" \
+| awk -F'\t' 'NR == 1 || $2 == "ORPHAN"' \
 > "${REPORT_DIR}/orphans_merged_${STAMP}.tsv"
 
 echo "[OK] Security scan written to ${REPORT_DIR}"
-echo "      Text : access_${REGION}_${STAMP}.txt"
-echo "      TSV  : orphans_${REGION}_${STAMP}.tsv"
-echo "      TSV  : orphans_merged_${STAMP}.tsv  (merged, all regions)"
+echo "      Persisted : access_${REGION}_${STAMP}/"
+echo "      TSV       : orphans_${REGION}_${STAMP}.tsv"
+echo "      TSV       : orphans_merged_${STAMP}.tsv  (merged, all regions)"

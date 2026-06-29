@@ -1,0 +1,31 @@
+
+========================================================================
+  Error Analysis Summary
+========================================================================
+  Period                                  2026-05-21  →  2026-05-21  (1 days)
+
+▶ Region: 台北
+------------------------------------------------------------------------
+
+    ■ Server: 10.22.63.37
+  Total ERROR                             0
+  OracleDB health failures                0
+  Restart count                           0
+  Unmatched SHUTDOWN                      0
+
+    ■ Server: 10.21.3.35
+  Total ERROR                             60
+  OracleDB health failures                0
+  Restart count                           2
+  Unmatched SHUTDOWN                      0
+
+    ■ Server: 10.21.3.36
+  Total ERROR                             80
+  OracleDB health failures                0
+  Restart count                           3
+  Unmatched SHUTDOWN                      0
+
+========================================================================
+  Generated: 2026-05-21 00:00:00
+========================================================================
+

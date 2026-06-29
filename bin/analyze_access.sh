@@ -16,6 +16,12 @@
 #   UNVERIFIED -- API issued a token that APP never received.
 #                  -> user abandoned the session, or network failure.
 #
+# Views: --view detail (default) = per-record tables; --view summary = KPI text.
+# Formats: --format text (default) | tsv | csv (governs detail file/view; C10).
+# Persistence: always-on via output_utils (persist_init + persist_views).
+# Emit-stats: --emit-stats prints access_stats.tsv verbatim; short-circuits before
+#   persist_init (no files, no banner). Accepts interval/region/conf/verbose only.
+#
 # See docs/design.md §3.1 for the full specification.
 # ----------------------------------------------------------------------------
 
@@ -30,6 +36,10 @@ source "${SCRIPT_DIR}/../lib/date_utils.sh"
 source "${SCRIPT_DIR}/../lib/csv_utils.sh"
 # shellcheck source=../lib/fmt_utils.sh
 source "${SCRIPT_DIR}/../lib/fmt_utils.sh"
+# shellcheck source=../lib/aggregate_utils.sh
+source "${SCRIPT_DIR}/../lib/aggregate_utils.sh"
+# shellcheck source=../lib/output_utils.sh
+source "${SCRIPT_DIR}/../lib/output_utils.sh"
 
 REGIONS_CONF="${SCRIPT_DIR}/../conf/regions.conf"
 
@@ -40,9 +50,26 @@ OPT_LOG_DIR=""
 OPT_DAYS=7
 OPT_FROM="" OPT_TO="" OPT_DATE=""
 OPT_REGION="all"
-OPT_OUTPUT=""
+OPT_OUTPUT_DIR=""    # always-on persistence directory (C1: default empty)
+OPT_TODAY=0
+OPT_DAYS_SET=0
 OPT_FORMAT="text"
+OPT_VIEW="detail"    # detail (default, standalone) | summary
 OPT_MERGE=0
+OPT_EMIT_STATS=0
+
+# ---------------------------------------------------------------------------
+# Renderer context globals (set in main, read by access_render_* functions)
+# ---------------------------------------------------------------------------
+_ACC_DATE_START=""
+_ACC_DATE_END=""
+_ACC_N_DATES=0
+_ACC_REGION="all"
+
+# Corpus tracking arrays (populated by correlate_region / correlate_merged)
+declare -a _ACC_LABELS=()   # text labels for fmt_h2 headers in render_text_block
+declare -a _ACC_SORTED=()   # result_sorted file paths
+declare -a _ACC_RNAMES=()   # region names for tsv/csv REGION column
 
 # ---------------------------------------------------------------------------
 # Usage
@@ -57,30 +84,38 @@ across all regions with --merge).  Identifies normal flows and abnormal accesses
 Options:
   --log-dir PATH     [required] root log directory
   --region REGION    taipei | taichung | all   (default: all)
-  --days N           integer >= 1              (default: 7)   [ignored if --date/--from set]
+  --today            alias for --date \$(today); sets single-day window
+  --days N           integer >= 1              (default: 7)   [implicit fallback]
   --from YYYY-MM-DD  start date, inclusive     [use together with --to]
   --to   YYYY-MM-DD  end date, inclusive       [use together with --from]
-  --date YYYY-MM-DD  single day                [overrides --days/--from/--to]
+  --date YYYY-MM-DD  single day
+  --view V           summary | detail          (default: detail)
+  --format FMT       text | tsv | csv          (default: text)
   --merge            flag: merge all regions into one correlation pass
                      [requires --region all (default)]
-  --format FMT       text | tsv | csv          (default: text)
-  --output FILE      write report to FILE      (default: stdout)
+  --emit-stats       print access_stats.tsv to stdout; no persistence, no banner
+                     Accepts: interval/region/conf/verbose subset only (C2).
+  --output-dir DIR   persistence dir           (default: env > ./log-parse)
   --conf FILE        regions config file       (default: conf/regions.conf)
   -v, --verbose      enable debug logging
   -h, --help         show this help
+
+Interval flags are mutually exclusive: choose ONE of
+  --today | --date | --from/--to | --days (explicit)
+  If multiple are supplied the script aborts (fail-fast per project rule #1).
 
 Common scenarios (runnable against the bundled dataset):
 
   # 1. Default: last 7 days, all regions, text report
   bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG
 
-  # 2. Single date, taipei region, text report
+  # 2. Single date, taipei region, management summary
   bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \\
-       --date 2026-05-21 --region taipei
+       --date 2026-05-21 --region taipei --view summary
 
-  # 3. Week range, CSV output to file
+  # 3. Week range, CSV detail output
   bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \\
-       --from 2026-05-18 --to 2026-05-25 --format csv --output access_report.csv
+       --from 2026-05-18 --to 2026-05-25 --format csv --view detail
 
   # 4. Host-agnostic merged view (tokens across regions correlate as NORMAL)
   bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \\
@@ -94,17 +129,20 @@ EOF
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --log-dir)    OPT_LOG_DIR="$2";  shift 2 ;;
-            --days)       OPT_DAYS="$2";     shift 2 ;;
-            --from)       OPT_FROM="$2";     shift 2 ;;
-            --to)         OPT_TO="$2";       shift 2 ;;
-            --date)       OPT_DATE="$2";     shift 2 ;;
-            --region)     OPT_REGION="$2";   shift 2 ;;
-            --output)     OPT_OUTPUT="$2";   shift 2 ;;
-            --format)     OPT_FORMAT="$2";   shift 2 ;;
-            --merge)      OPT_MERGE=1;       shift ;;
-            --conf)       REGIONS_CONF="$2"; shift 2 ;;
-            -v|--verbose) LOG_LEVEL=DEBUG;   shift ;;
+            --log-dir)    OPT_LOG_DIR="$2";               shift 2 ;;
+            --days)       OPT_DAYS="$2"; OPT_DAYS_SET=1;  shift 2 ;;
+            --from)       OPT_FROM="$2";                   shift 2 ;;
+            --to)         OPT_TO="$2";                     shift 2 ;;
+            --date)       OPT_DATE="$2";                   shift 2 ;;
+            --today)      OPT_TODAY=1;                     shift ;;
+            --region)     OPT_REGION="$2";                 shift 2 ;;
+            --output-dir) OPT_OUTPUT_DIR="$2";             shift 2 ;;
+            --view)       OPT_VIEW="$2";                   shift 2 ;;
+            --format)     OPT_FORMAT="$2";                 shift 2 ;;
+            --emit-stats) OPT_EMIT_STATS=1;               shift ;;
+            --merge)      OPT_MERGE=1;                     shift ;;
+            --conf)       REGIONS_CONF="$2";               shift 2 ;;
+            -v|--verbose) LOG_LEVEL=DEBUG;                 shift ;;
             -h|--help)    usage; exit 0 ;;
             *) die "Unknown option: $1" ;;
         esac
@@ -120,6 +158,7 @@ parse_args() {
         die "Regions config not found: $REGIONS_CONF"
     fi
     assert_enum "--format" "$OPT_FORMAT" text tsv csv
+    assert_enum "--view"   "$OPT_VIEW"   summary detail
     if [[ "$OPT_MERGE" -eq 1 && "$OPT_REGION" != "all" ]]; then
         die "--merge requires --region all (got: '$OPT_REGION')"
     fi
@@ -290,6 +329,8 @@ END { n = asorti(buf, idx, "@ind_str_asc"); for (i = 1; i <= n; i++) print buf[i
 #             RESULT_TSV    -- destination for raw correlation output.
 #             RESULT_SORTED -- destination for sorted correlation output.
 #   Output  : nothing on stdout; files written under WORK_TMPDIR.
+#   Returns / Side effects : none.
+#   Errors / Notes : none; empty inputs produce empty outputs cleanly.
 _run_correlate() {
     local api_tsv="$1" app_tsv="$2" result_tsv="$3" result_sorted="$4"
     gawk -F'\t' -v OFS='\t' -v api_file="$api_tsv" "$CORRELATE_AWK" \
@@ -298,14 +339,16 @@ _run_correlate() {
 }
 
 # ---------------------------------------------------------------------------
-# Renderers
+# Renderers (detail view; called by access_render_detail)
 # ---------------------------------------------------------------------------
 
 # render_tsv REGION_NAME RESULT_SORTED
 #   Purpose : Emit TAB-delimited rows with REGION column prepended.
 #   Args    : REGION_NAME   -- value for the REGION column.
 #             RESULT_SORTED -- sorted correlation output.
-#   Output  : TSV data rows on stdout (header emitted once by main).
+#   Output  : TSV data rows on stdout (header emitted once by access_render_detail).
+#   Returns / Side effects : none.
+#   Errors / Notes : none; empty RESULT_SORTED produces no rows.
 render_tsv() {
     local region_name="$1" result_sorted="$2"
     gawk -F'\t' -v region="$region_name" \
@@ -316,18 +359,14 @@ render_tsv() {
 #   Purpose : Emit RFC-4180 CSV rows with REGION column prepended.
 #   Args    : REGION_NAME   -- value for the REGION column.
 #             RESULT_SORTED -- sorted correlation output.
-#   Output  : CSV data rows on stdout (header emitted once by main).
-#   Notes   : Fields are quoted conditionally: only when the value contains
-#             a double-quote, comma, or newline.
+#   Output  : CSV data rows on stdout (header emitted once by access_render_detail).
+#   Returns / Side effects : none.
+#   Errors / Notes : Uses AGG_CSV_FUNC (q()) from aggregate_utils — single source C7.
 render_csv() {
     local region_name="$1" result_sorted="$2"
-    gawk -F'\t' -v region="$region_name" '
-        function q(s) {
-            if (s ~ /[",\n]/) { gsub(/"/, "\"\"", s); return "\"" s "\"" }
-            return s
-        }
-        { out = q(region); for (i = 1; i <= NF; i++) out = out "," q($i); print out }
-    ' "$result_sorted"
+    gawk -F'\t' -v region="$region_name" \
+        "$AGG_CSV_FUNC"'{ out = q(region); for (i = 1; i <= NF; i++) out = out "," q($i); print out }' \
+        "$result_sorted"
 }
 
 # render_text_block REGION_LABEL RESULT_SORTED
@@ -335,12 +374,16 @@ render_csv() {
 #   Args    : REGION_LABEL  -- label for the fmt_h2 section header.
 #             RESULT_SORTED -- sorted 12-field correlation output.
 #   Output  : Human-readable text on stdout; progress on stderr.
+#   Returns / Side effects : none.
+#   Errors / Notes : C_GREY/C_RESET passed via -v; blanked by fmt_set_color_state
+#             under NO_COLOR=1 so persisted files contain no ANSI (C3/I08).
 render_text_block() {
     local region_label="$1" result_sorted="$2"
 
     fmt_h2 "$region_label"
 
-    # Summary stats
+    # Summary stats (three passes; counts backed by access_stats.tsv in summary view;
+    # detail text re-reads result_sorted directly to stay output-identical — A baselines).
     local n_normal n_orphan n_unverified
     n_normal=$(     gawk -F'\t' '$1=="NORMAL"     {c++} END{print c+0}' "$result_sorted")
     n_orphan=$(     gawk -F'\t' '$1=="ORPHAN"     {c++} END{print c+0}' "$result_sorted")
@@ -457,16 +500,213 @@ render_text_block() {
 }
 
 # ---------------------------------------------------------------------------
+# access_region_stats — aggregate correlation results into access_stats.tsv
+# ---------------------------------------------------------------------------
+
+# access_region_stats REGION RESULT_SORTED
+#   Purpose : Run agg_access_rows once on RESULT_SORTED and append the
+#             dimensioned rows (ACCESS<TAB>REGION<TAB>TAG<TAB>value) to
+#             ${WORK_TMPDIR}/access_stats.tsv. Called once per corpus after
+#             correlation + sort pre-pass complete. No second correlation.
+#   Args    : REGION        -- region id (or "merged") for the stats prefix.
+#             RESULT_SORTED -- path to the sorted 12-field correlation TSV.
+#   Output  : nothing on stdout; appends to ${WORK_TMPDIR}/access_stats.tsv.
+#   Returns / Side effects : appends to access_stats.tsv.
+#   Errors / Notes : agg_access_rows handles empty RESULT_SORTED gracefully.
+access_region_stats() {
+    local region="$1" result_sorted="$2"
+    agg_access_rows "$result_sorted" \
+        | gawk -F'\t' -v region="$region" \
+          'BEGIN{OFS="\t"} {print "ACCESS", region, $1, $2}' \
+        >> "${WORK_TMPDIR}/access_stats.tsv"
+}
+
+# ---------------------------------------------------------------------------
+# access_render_summary — management summary view (format-independent, always text)
+# ---------------------------------------------------------------------------
+
+# access_render_summary
+#   Purpose : Aggregate stats across all corpora in access_stats.tsv and render
+#             a concise management-level summary: KPIs + percentages + ORPHAN
+#             verification result + delta timing + per-region breakdown.
+#             Format-independent (always text) per C10.
+#   Args    : none (uses globals: _ACC_DATE_*, _ACC_REGION, OPT_MERGE,
+#             REGION_IDS, REGION_NAMES, WORK_TMPDIR).
+#   Output  : summary block on stdout.
+#   Returns / Side effects : none.
+#   Errors / Notes : gracefully handles empty stats (all zeros/N/A).
+access_render_summary() {
+    local stats_file="${WORK_TMPDIR}/access_stats.tsv"
+
+    printf "%b============ Access Cross-Correlation Summary ============%b\n" \
+        "$C_BOLD" "$C_RESET"
+    fmt_kv "Period" "${_ACC_DATE_START}  →  ${_ACC_DATE_END}  (${_ACC_N_DATES} days)"
+    fmt_kv "Region filter" "$_ACC_REGION"
+
+    # Single-pass aggregation: totals + per-region arrays + delta min/max
+    local agg_out
+    agg_out=$(LC_ALL=C gawk -F'\t' '
+        $1=="ACCESS" {
+            r = $2; tag = $3; val = $4+0
+            if (tag == "NORMAL")      { norm[r]  = val; tot_normal   += val }
+            if (tag == "ORPHAN")      { orph[r]  = val; tot_orphan   += val }
+            if (tag == "UNVERIFIED")  { unvr[r]  = val; tot_unver    += val }
+            if (tag == "ORPHAN_OK")   tot_ok     += val
+            if (tag == "ORPHAN_FAIL") tot_fail   += val
+            if (tag == "DELTA_COUNT") { dc[r]    = val; tot_dc       += val }
+            if (tag == "DELTA_SUM")   { ds[r]    = val; tot_ds       += val }
+            if (tag == "DELTA_MIN")   dm[r]      = val
+            if (tag == "DELTA_MAX")   dmx[r]     = val
+        }
+        END {
+            total = tot_normal + tot_orphan + tot_unver
+            gmin = ""; gmx = 0
+            for (r in dc) {
+                if (dc[r] > 0) {
+                    if (gmin == "" || dm[r] < gmin) gmin = dm[r]
+                    if (dmx[r] > gmx) gmx = dmx[r]
+                }
+            }
+            printf "TOTAL\t%d\n",      total
+            printf "NORMAL\t%d\n",     tot_normal
+            printf "ORPHAN\t%d\n",     tot_orphan
+            printf "UNVERIFIED\t%d\n", tot_unver
+            printf "ORPHAN_OK\t%d\n",  tot_ok
+            printf "ORPHAN_FAIL\t%d\n",tot_fail
+            printf "DELTA_COUNT\t%d\n",tot_dc
+            printf "DELTA_SUM\t%g\n",  tot_ds
+            printf "DELTA_MIN\t%g\n",  (gmin == "" ? 0 : gmin+0)
+            printf "DELTA_MAX\t%g\n",  gmx+0
+            # Per-region lines: REGION <TAB> region_id <TAB> normal <TAB> orphan <TAB> unver
+            n = asorti(norm, rkeys, "@ind_str_asc")
+            for (i = 1; i <= n; i++) {
+                rk = rkeys[i]
+                printf "REGION\t%s\t%d\t%d\t%d\n", rk, norm[rk]+0, orph[rk]+0, unvr[rk]+0
+            }
+        }
+    ' "$stats_file")
+
+    local total normal orphan unverified orphan_ok orphan_fail
+    local delta_count delta_sum delta_min delta_max
+    total=$(       printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="TOTAL"      {print $2}')
+    normal=$(      printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="NORMAL"     {print $2}')
+    orphan=$(      printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ORPHAN"     {print $2}')
+    unverified=$(  printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="UNVERIFIED" {print $2}')
+    orphan_ok=$(   printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ORPHAN_OK"  {print $2}')
+    orphan_fail=$( printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="ORPHAN_FAIL"{print $2}')
+    delta_count=$( printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="DELTA_COUNT"{print $2}')
+    delta_sum=$(   printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="DELTA_SUM"  {print $2}')
+    delta_min=$(   printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="DELTA_MIN"  {print $2}')
+    delta_max=$(   printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="DELTA_MAX"  {print $2}')
+
+    local pct_normal pct_orphan pct_unverified
+    pct_normal=$(     fmt_pct "${normal:-0}"     "${total:-0}")
+    pct_orphan=$(     fmt_pct "${orphan:-0}"     "${total:-0}")
+    pct_unverified=$( fmt_pct "${unverified:-0}" "${total:-0}")
+
+    fmt_kv "關聯總數" "${total:-0}"
+    fmt_kv_color "  NORMAL  (正常流程)"        "${normal:-0}  (${pct_normal})"        "$C_GREEN"
+    fmt_kv_color "  ORPHAN  (APP無對應API)"    "${orphan:-0}  (${pct_orphan})"        "$C_YELLOW"
+    fmt_kv_color "  UNVERIFIED (API未被使用)"  "${unverified:-0}  (${pct_unverified})" "$C_GREY"
+    fmt_kv "ORPHAN 驗證結果" "${orphan_ok:-0} (成功) / ${orphan_fail:-0} (失敗)"
+
+    if (( ${delta_count:-0} > 0 )); then
+        local avg_delta
+        avg_delta=$(gawk -v s="${delta_sum:-0}" -v c="${delta_count:-1}" \
+                    'BEGIN{printf "%.1f", (c>0 ? s/c : 0)}')
+        fmt_kv "延遲 API→APP" "平均 ${avg_delta}s · 最短 ${delta_min:-0}s · 最長 ${delta_max:-0}s"
+    fi
+
+    # Per-region breakdown (not for merged runs — merged has no individual region rows)
+    if [[ "$OPT_MERGE" -eq 0 ]]; then
+        local has_multi=0
+        local rid
+        for rid in "${REGION_IDS[@]}"; do
+            if [[ "$OPT_REGION" == "all" || "$OPT_REGION" == "$rid" ]]; then
+                has_multi=$((has_multi + 1))
+            fi
+        done
+        if (( has_multi > 1 )); then
+            fmt_h3 "分區別 (% within region)"
+            for rid in "${REGION_IDS[@]}"; do
+                if [[ "$OPT_REGION" != "all" && "$OPT_REGION" != "$rid" ]]; then continue; fi
+                local rname="${REGION_NAMES[$rid]}"
+                local r_line r_normal r_orphan r_unver r_total
+                r_line=$(printf '%s\n' "$agg_out" | gawk -F'\t' -v r="$rid" \
+                    '$1=="REGION" && $2==r {print $3, $4, $5; exit}')
+                if [[ -z "$r_line" ]]; then continue; fi
+                r_normal=$(  printf '%s\n' "$r_line" | awk '{print $1}')
+                r_orphan=$(  printf '%s\n' "$r_line" | awk '{print $2}')
+                r_unver=$(   printf '%s\n' "$r_line" | awk '{print $3}')
+                r_total=$(( ${r_normal:-0} + ${r_orphan:-0} + ${r_unver:-0} ))
+                local rp_normal rp_orphan rp_unver
+                rp_normal=$(  fmt_pct "${r_normal:-0}" "$r_total")
+                rp_orphan=$(  fmt_pct "${r_orphan:-0}" "$r_total")
+                rp_unver=$(   fmt_pct "${r_unver:-0}"  "$r_total")
+                printf "    %-8s  NORMAL %-8s  ORPHAN %-8s  UNVERIFIED %s\n" \
+                    "$rname" "$rp_normal" "$rp_orphan" "$rp_unver"
+            done
+        fi
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# access_render_detail — detail view dispatcher (text | tsv | csv)
+# ---------------------------------------------------------------------------
+
+# access_render_detail
+#   Purpose : Render the full detail view, routing to text or structured
+#             format based on OPT_FORMAT.  Iterates the corpus tracking arrays
+#             (_ACC_LABELS, _ACC_SORTED, _ACC_RNAMES) populated by the
+#             correlate_* functions.
+#   Args    : none (uses globals: OPT_FORMAT, _ACC_*, WORK_TMPDIR).
+#   Output  : detail content on stdout (header + all corpora + optional footer).
+#   Returns / Side effects : none.
+#   Errors / Notes : text format is output-identical to the pre-refactor inline
+#             rendering (guards A-section baselines). tsv/csv produce one header
+#             row then data rows from each corpus via render_tsv/render_csv.
+#             C_GREY/C_RESET passed by render_text_block are blanked by
+#             fmt_set_color_state under NO_COLOR=1 in persist_views (C3/I08).
+access_render_detail() {
+    local i
+    case "$OPT_FORMAT" in
+        tsv)
+            printf 'REGION\tSTATUS\tAPI_TIME\tAPP_TIME\tDELTA_SEC\tVERIFY_STATUS\tREQUEST_ID\tAPI_SERVER\tAPP_SERVER\tHOSP_ID\tPRSN_ID\tCLIENT_IP\tPATIENT_ID_AES\n'
+            for i in "${!_ACC_SORTED[@]}"; do
+                render_tsv "${_ACC_RNAMES[$i]}" "${_ACC_SORTED[$i]}"
+            done
+            ;;
+        csv)
+            printf 'REGION,STATUS,API_TIME,APP_TIME,DELTA_SEC,VERIFY_STATUS,REQUEST_ID,API_SERVER,APP_SERVER,HOSP_ID,PRSN_ID,CLIENT_IP,PATIENT_ID_AES\n'
+            for i in "${!_ACC_SORTED[@]}"; do
+                render_csv "${_ACC_RNAMES[$i]}" "${_ACC_SORTED[$i]}"
+            done
+            ;;
+        *)  # text
+            fmt_h1 "Access Log Cross-Correlation Report"
+            fmt_kv "Period" "${_ACC_DATE_START}  →  ${_ACC_DATE_END}  (${_ACC_N_DATES} days)"
+            fmt_kv "Region filter" "$_ACC_REGION"
+            for i in "${!_ACC_SORTED[@]}"; do
+                render_text_block "${_ACC_LABELS[$i]}" "${_ACC_SORTED[$i]}"
+            done
+            fmt_footer
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
 # Run correlation for a single region
 # ---------------------------------------------------------------------------
 
 # correlate_region REGION_ID DATE_LIST_FILE
-#   Purpose : Run the full extract -> join -> sort -> render pipeline for one region.
+#   Purpose : Run the full extract -> join -> sort pipeline for one region;
+#             collect stats into access_stats.tsv; register corpus for rendering.
 #   Steps   : (1) Collect API records across every configured API server.
 #             (2) Collect APP records across every configured APP server.
 #             (3) Invoke CORRELATE_AWK with both intermediates.
 #             (4) Run sort pre-pass (once; feeds all renderers).
-#             (5) Dispatch to renderer (text, tsv, or csv).
+#             (5) Call access_region_stats to append dimensioned rows.
+#             (6) Register result_sorted and label for access_render_detail.
 #   Notes   : An empty region (no records on either side) logs a warning and
 #             returns cleanly so other regions still process.
 correlate_region() {
@@ -481,6 +721,7 @@ correlate_region() {
 
     # Extract API records
     : > "$api_tsv"
+    local srv
     for srv in "${api_servers[@]}"; do
         while IFS= read -r csv_file; do
             log_debug "  API CSV: $csv_file"
@@ -518,16 +759,15 @@ correlate_region() {
     local result_sorted="${WORK_TMPDIR}/sorted_${region_id}.tsv"
     _run_correlate "$api_tsv" "$app_tsv" "$result_tsv" "$result_sorted"
 
-    # Dispatch to renderer
+    # Aggregate stats into access_stats.tsv (single-pass via agg_access_rows)
+    access_region_stats "$region_id" "$result_sorted"
+
+    # Register corpus for access_render_detail
     local rname="${REGION_NAMES[$region_id]}"
-    case "$OPT_FORMAT" in
-        tsv) render_tsv "$rname" "$result_sorted" ;;
-        csv) render_csv "$rname" "$result_sorted" ;;
-        *)
-            local label="Region: ${rname}  (${REGION_APIS[$region_id]} → ${REGION_APPS[$region_id]})"
-            render_text_block "$label" "$result_sorted"
-            ;;
-    esac
+    local label="Region: ${rname}  (${REGION_APIS[$region_id]} → ${REGION_APPS[$region_id]})"
+    _ACC_LABELS+=("$label")
+    _ACC_SORTED+=("$result_sorted")
+    _ACC_RNAMES+=("$rname")
 }
 
 # ---------------------------------------------------------------------------
@@ -536,9 +776,10 @@ correlate_region() {
 
 # correlate_merged DATE_LIST_FILE
 #   Purpose : Concatenate all regions' API and APP extracts, run CORRELATE_AWK
-#             once (host-agnostic), apply the sort pre-pass, and render one block.
+#             once (host-agnostic), apply the sort pre-pass, collect stats, and
+#             register the merged corpus for rendering.
 #   Args    : DATE_LIST_FILE -- file listing YYYY-MM-DD dates (one per line).
-#   Output  : Single merged block on stdout.
+#   Output  : nothing on stdout; access_stats.tsv and _ACC_* updated.
 #   Notes   : Cross-region token pairs that cannot be correlated per-region
 #             (an API issuance in region X verified by region Y's APP) will
 #             classify as NORMAL in the merged pass (intended semantic).
@@ -587,12 +828,13 @@ correlate_merged() {
     local result_sorted="${WORK_TMPDIR}/sorted_merged.tsv"
     _run_correlate "$api_tsv" "$app_tsv" "$result_tsv" "$result_sorted"
 
-    # Dispatch to renderer
-    case "$OPT_FORMAT" in
-        tsv) render_tsv "merged" "$result_sorted" ;;
-        csv) render_csv "merged" "$result_sorted" ;;
-        *)   render_text_block "Region: all (merged)" "$result_sorted" ;;
-    esac
+    # Aggregate stats into access_stats.tsv
+    access_region_stats "merged" "$result_sorted"
+
+    # Register corpus for access_render_detail
+    _ACC_LABELS+=("Region: all (merged)")
+    _ACC_SORTED+=("$result_sorted")
+    _ACC_RNAMES+=("merged")
 }
 
 # ---------------------------------------------------------------------------
@@ -603,56 +845,54 @@ main() {
     init_tmpdir
     load_regions
 
-    # Build date list
+    # Resolve interval (mutex: die on >1 selector; L2 die message cites priority)
+    resolve_interval \
+        --today "$OPT_TODAY" --date "$OPT_DATE" \
+        --from  "$OPT_FROM"  --to   "$OPT_TO" \
+        --days-set "$OPT_DAYS_SET" --days "$OPT_DAYS"
+
     local date_list_file="${WORK_TMPDIR}/dates.txt"
-    build_date_list \
-        ${OPT_DATE:+--date "$OPT_DATE"} \
-        ${OPT_FROM:+--from "$OPT_FROM"} \
-        ${OPT_TO:+--to "$OPT_TO"} \
-        ${OPT_DAYS:+--days "$OPT_DAYS"} \
-        > "$date_list_file"
+    build_date_list "${INTERVAL_ARGS[@]}" > "$date_list_file"
 
-    local date_start date_end n_dates
-    date_start=$(head -1 "$date_list_file")
-    date_end=$(tail -1 "$date_list_file")
-    n_dates=$(count_lines "$date_list_file")
+    _ACC_DATE_START=$(head -1 "$date_list_file")
+    _ACC_DATE_END=$(tail -1 "$date_list_file")
+    _ACC_N_DATES=$(count_lines "$date_list_file")
+    _ACC_REGION="$OPT_REGION"
 
-    log_info "Period: $date_start → $date_end ($n_dates days)"
+    log_info "Period: ${_ACC_DATE_START} → ${_ACC_DATE_END} (${_ACC_N_DATES} days)"
     log_info "Region: $OPT_REGION"
 
-    {
-        if [[ "$OPT_FORMAT" == "text" ]]; then
-            fmt_h1 "Access Log Cross-Correlation Report"
-            fmt_kv "Period" "${date_start}  →  ${date_end}  (${n_dates} days)"
-            fmt_kv "Region filter" "$OPT_REGION"
-        elif [[ "$OPT_FORMAT" == "tsv" ]]; then
-            printf 'REGION\tSTATUS\tAPI_TIME\tAPP_TIME\tDELTA_SEC\tVERIFY_STATUS\tREQUEST_ID\tAPI_SERVER\tAPP_SERVER\tHOSP_ID\tPRSN_ID\tCLIENT_IP\tPATIENT_ID_AES\n'
-        elif [[ "$OPT_FORMAT" == "csv" ]]; then
-            printf 'REGION,STATUS,API_TIME,APP_TIME,DELTA_SEC,VERIFY_STATUS,REQUEST_ID,API_SERVER,APP_SERVER,HOSP_ID,PRSN_ID,CLIENT_IP,PATIENT_ID_AES\n'
-        fi
+    # Initialise the stats file (one append target for all corpora)
+    local stats_file="${WORK_TMPDIR}/access_stats.tsv"
+    : > "$stats_file"
 
-        if (( OPT_MERGE )); then
-            correlate_merged "$date_list_file"
-        elif [[ "$OPT_REGION" == "all" ]]; then
-            for rid in "${REGION_IDS[@]}"; do
+    # Run correlations: each call appends to access_stats.tsv and _ACC_* arrays
+    if (( OPT_MERGE )); then
+        correlate_merged "$date_list_file"
+    elif [[ "$OPT_REGION" == "all" ]]; then
+        local rid
+        for rid in "${REGION_IDS[@]}"; do
+            correlate_region "$rid" "$date_list_file"
+        done
+    else
+        local rid
+        for rid in "${REGION_IDS[@]}"; do
+            if [[ "$OPT_REGION" == "$rid" ]]; then
                 correlate_region "$rid" "$date_list_file"
-            done
-        else
-            for rid in "${REGION_IDS[@]}"; do
-                if [[ "$OPT_REGION" == "$rid" ]]; then
-                    correlate_region "$rid" "$date_list_file"
-                fi
-            done
-        fi
-
-        if [[ "$OPT_FORMAT" == "text" ]]; then
-            fmt_footer
-        fi
-    } | if [[ -n "$OPT_OUTPUT" ]]; then tee "$OPT_OUTPUT"; else cat; fi
-
-    if [[ -n "$OPT_OUTPUT" ]]; then
-        log_info "Report written to: $OPT_OUTPUT"
+            fi
+        done
     fi
+
+    # --emit-stats: short-circuit BEFORE persist_init (no files, no banner)
+    if [[ "$OPT_EMIT_STATS" -eq 1 ]]; then
+        cat "$stats_file"
+        return
+    fi
+
+    persist_init "$OPT_OUTPUT_DIR"
+
+    persist_views access "$OPT_VIEW" "$OPT_FORMAT" \
+        access_render_summary access_render_detail
 }
 
 main "$@"

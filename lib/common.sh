@@ -46,17 +46,28 @@ require_cmds gawk sort date
 # Colour codes (auto-disabled when stdout is not a TTY or NO_COLOR is set)
 # ---------------------------------------------------------------------------
 # References the standard NO_COLOR convention (https://no-color.org/).
-if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
-    C_RESET='\033[0m'
-    C_BOLD='\033[1m'
-    C_RED='\033[0;31m'
-    C_YELLOW='\033[0;33m'
-    C_GREEN='\033[0;32m'
-    C_CYAN='\033[0;36m'
-    C_GREY='\033[0;90m'
-else
-    C_RESET='' C_BOLD='' C_RED='' C_YELLOW='' C_GREEN='' C_CYAN='' C_GREY=''
-fi
+
+# fmt_set_color_state
+#   Purpose : (Re)derive every C_* global from the CURRENT NO_COLOR + TTY state.
+#             Lets persist_views blank color for file writes and restore it for
+#             the console mirror without rewriting individual helpers.
+#   Args    : none.
+#   Output  : none.
+#   Returns / Side effects : assigns C_RESET C_BOLD C_RED C_YELLOW C_GREEN
+#             C_CYAN C_GREY from the live environment.
+#   Errors / Notes : pure assignment; never fails.
+fmt_set_color_state() {
+    if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+        C_RESET='\033[0m';    C_BOLD='\033[1m'
+        C_RED='\033[0;31m';   C_YELLOW='\033[0;33m'
+        C_GREEN='\033[0;32m'; C_CYAN='\033[0;36m';  C_GREY='\033[0;90m'
+    else
+        C_RESET='' C_BOLD='' C_RED='' C_YELLOW='' C_GREEN='' C_CYAN='' C_GREY=''
+    fi
+}
+
+# Initialise color globals once at source time; re-callable by persist_views.
+fmt_set_color_state
 
 # ---------------------------------------------------------------------------
 # Logging

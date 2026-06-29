@@ -8,10 +8,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `bin/analyze_overview.sh` — New management overview module. Sources metric
+  data from `analyze_iis` and `analyze_access` via `--emit-stats` (zero
+  log-re-parse; DRY via `lib/aggregate_utils.sh`). Renders three-cut layout:
+  總體概況 (grand totals + health verdict), 分區別 (per-region request share +
+  NORMAL%), 服務別 (per-role volume + role-specific signals: UNVERIFIED for API
+  servers, ORPHAN/503/slow for APP servers). Summary-only, text-only.
+  Accepts `--log-dir`, `--region`, all interval flags, `--slow-api-ms`,
+  `--slow-app-ms`, `--output-dir`, `--conf`, `-v`. Persists a single
+  `overview_summary_<TS>.txt`; no detail file.
+- `lib/output_utils.sh` — Always-on report persistence. `persist_init` resolves
+  and creates the output directory (precedence: `--output-dir` flag >
+  `$LOG_PARSE_OUTPUT_DIR` env > `./log-parse/` default); `RUN_TS` is fixed once
+  per launch (or inherited via `$LOG_PARSE_RUN_TS` from `log_report`).
+  `persist_views` writes color-free summary + detail files and mirrors the
+  selected view to stdout. File naming: `<module>_<kind>_<YYYYMMDD_HHMMSS>.<ext>`.
+- `lib/aggregate_utils.sh` — Shared metric computation and CSV quoter.
+  `AGG_IIS_AWK` relocated verbatim from `bin/analyze_iis.sh:129`; `AGG_CSV_FUNC`
+  (shared gawk `q()` RFC-4180 quoter) relocated from `bin/analyze_access.sh:325`;
+  `agg_iis_rows` and `agg_access_rows` consolidate the three separate counting
+  passes in access; canonical `IIS_STAT_SCHEMA`/`ACCESS_STAT_SCHEMA` field-index
+  constants shared by analyzers and overview.
+- `--view summary|detail` on `analyze_iis` and `analyze_access`. Standalone
+  default: `detail` (preserves prior behavior). `log_report` default: `summary`.
+  Summary view is always text regardless of `--format` (format governs the detail
+  file/view only). `analyze_errors` and `analyze_overview` do not accept `--view`.
+- `--today` flag on all 5 CLIs: equivalent to `--date $(today)`. Sets
+  `OPT_TODAY=1`; routed through `resolve_interval`.
+- `--emit-stats` on `analyze_iis` and `analyze_access`: writes machine-readable
+  dimensioned stat rows to stdout, bypasses persistence and human rendering.
+  Used by `analyze_overview` for DRY data sourcing. Not accepted by
+  `analyze_errors`, `analyze_overview`, or `log_report`.
+- `resolve_interval` in `lib/date_utils.sh`: enforces interval-flag mutual
+  exclusion. `{--today, --date, --from/--to, explicit --days}` — at most ONE
+  explicit selector; `>1` ⇒ `die` citing the priority ranking
+  `--date > --from/--to > --today > --days`. Populates sanctioned global
+  `INTERVAL_ARGS[]`. All 5 CLIs gain `OPT_TODAY=0` and `OPT_DAYS_SET=0` and
+  route through `resolve_interval` before `build_date_list`.
+- `fmt_set_color_state` in `lib/common.sh` + `lib/fmt_utils.sh`: re-entrant
+  color-state toggle. Called once at startup (same behavior as before); called
+  again by `persist_views` to blank all `C_*` globals for color-free file writes
+  and restore them for the console mirror. Covers `fmt_h1/h2/h3`, `fmt_kv`,
+  `fmt_ok/warn/err`, `_log`, and the `-v C_*` gawk passes in renderers.
+- 67 new test IDs (+2 assertions added under rewritten existing IDs) → 215
+  total: H01–H15 (analyze_overview), I01–I12 (persistence), A37–A41
+  (access summary/--today), B32–B38 (iis summary/format/emit-stats), C23–C25
+  (errors interval + summary file), D27–D35 (log_report defaults/modules/view),
+  E19–E26 (interval mutex), F14–F18 (scenario simulations), G+3 (CJK alignment
+  in summary/overview tables). 18 existing `--output` references rewritten in
+  place; affected Section-D default-modules tests rewritten in place. 0 IDs
+  removed; base stays 146. Tests: 215/215.
 - `--format csv` output mode for `analyze_access` (extends existing `text|tsv`
   enum); `--format` promoted to shared global vocabulary accepted (as a no-op
-  with a `log_warn` notice) by `analyze_iis` and `analyze_errors`, and
-  forwarded by `log_report` to all child modules.
+  with a `log_warn` notice) by `analyze_errors`; accepted with real tsv/csv
+  detail output by `analyze_iis` (see Changed); forwarded by `log_report` to
+  child modules that accept it.
 - `--merge` flag for `analyze_access` and `analyze_iis`: concatenates all
   per-server corpora into a single cross-region analysis pass. Requires
   `--region all` (explicit or default); any other `--region` value causes an
@@ -45,6 +96,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a new `_hasre` regex helper. Total: 110 -> 143 distinct tests.
 
 ### Changed
+- `log_report` default modules changed from `access,iis,errors` to
+  `overview,iis,access` (executed in that order). `analyze_errors` is now
+  opt-in: pass `--modules ...,errors` to include it. BREAKING.
+- `analyze_iis` `--format tsv|csv` now produces real long-format detail tables
+  (REGION/ROLE/SERVER/METRIC/KEY/COUNT/AVG_SEC/PCT columns, one header,
+  `--top`-capped, RFC-4180 quoting for csv). The previous no-op + `log_warn`
+  behavior is removed. `--format` governs the detail file/view only; summary is
+  always text. BREAKING (callers relying on the warn path will no longer see it).
+- `--output-dir DIR` semantics redefined on all 5 CLIs: previously routed
+  combined `log_report` output to a single directory (single-file model); now
+  triggers always-on per-module summary + detail file persistence across all
+  modules. Default is the empty string in each CLI; the `./log-parse/` literal
+  lives only inside `persist_init` (precedence: flag > `$LOG_PARSE_OUTPUT_DIR`
+  env > `./log-parse/`). `log_report` propagates the resolved dir to children
+  via `$LOG_PARSE_OUTPUT_DIR` env (not via flag forwarding). BREAKING.
+- Interval flags are now mutually exclusive on all 5 CLIs: specifying more than
+  one of `--today`, `--date`, `--from/--to`, or an explicit `--days` aborts with
+  `die` citing the priority ranking `--date > --from/--to > --today > --days`.
+  `--days` remains the implicit fallback when no selector is given.
+- `log_report --view` (default `summary`) is now parsed and forwarded to
+  `analyze_iis` and `analyze_access`; `analyze_overview` and `analyze_errors`
+  receive neither `--view` nor `--format`.
+- `docs/usage.md`, `docs/usage.zh-TW.md`, `docs/design.md`,
+  `docs/design.zh-TW.md` updated to document all new and changed flags,
+  persistence model, interval-mutex table, summary/detail split, and
+  forwarding semantics. `examples/sample-outputs/README.md` and
+  `README.zh-TW.md` updated to index all new and regenerated fixtures.
+- `examples/sample-outputs/` extended with new fixtures: `overview_all_week.txt`,
+  `overview_taipei_week.txt`, `iis_summary_all_2026-05-21.txt`,
+  `iis_detail_all_2026-05-21.{tsv,csv}`, `access_summary_all_2026-05-21.txt`,
+  `access_detail_all_2026-05-21.txt`, `errors_summary_taipei_2026-05-21.txt`,
+  `errors_detail_taipei_2026-05-21.txt`; existing `log_report_*` fixtures
+  regenerated (new default modules/order/view).
 - `analyze_access` detail columns: `API_REQUEST_ID` and `APP_REQUEST_ID`
   merged into a single `REQUEST_ID` field; columns reordered; `PATIENT_ID_AES`
   now emits the full value (previously truncated). Text, tsv, and csv outputs
@@ -70,6 +154,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to use the new flag names.
 
 ### Removed
+- `--output FILE` from all 5 CLIs (breaking change). The single-file output
+  model is incompatible with the always-on two-files-per-module persistence
+  introduced in this release. Migration: remove `--output file.txt`; reports
+  are written automatically to `./log-parse/` (or `--output-dir DIR`).
 - `--slow-ms` flag from `analyze_iis`: replaced by `--slow-api-ms` and
   `--slow-app-ms` with role-aware defaults. No backward-compat alias provided
   (clean-break Decision A).

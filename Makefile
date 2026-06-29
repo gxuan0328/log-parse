@@ -13,9 +13,15 @@ LIB        := lib
 TESTS      := tests
 DOCS       := docs
 
-REPORT_DIR ?= ./reports
+REPORT_DIR  ?= ./reports
+SAMPLE_OUT  := ./examples/sample-outputs
+SAMPLE_LOGS := ./examples/sample-logs/LUNG-CANCER-REPORT-LOG
+SAMPLE_TS   := 20260521_000000
+SAMPLE_DATE := 2026-05-21
+SAMPLE_FROM := 2026-05-18
+SAMPLE_TO   := 2026-05-25
 
-.PHONY: help all test lint check report access iis errors clean install-deps
+.PHONY: help all test lint check report access iis errors samples-regen clean install-deps
 
 help:        ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make \033[36m<target>\033[0m\n\nTargets:\n"} \
@@ -46,6 +52,42 @@ iis:         ## Run IIS analysis only
 
 errors:      ## Run error analysis only
 	@bash $(BIN)/analyze_errors.sh --log-dir $(LOG_DIR) --region $(REGION) --days $(DAYS)
+
+samples-regen: ## Regenerate examples/sample-outputs/ (pins TS+NO_COLOR for determinism)
+	@echo "Regenerating sample outputs (TS=$(SAMPLE_TS), NO_COLOR=1)..."
+	@export NO_COLOR=1 LOG_PARSE_RUN_TS=$(SAMPLE_TS); \
+	SOUT=$(SAMPLE_OUT); SLOG=$(SAMPLE_LOGS); \
+	D=$(SAMPLE_DATE); F=$(SAMPLE_FROM); T=$(SAMPLE_TO); \
+	\
+	# IIS \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_iis.sh --log-dir $$SLOG --date $$D --view detail                --output-dir $$_t 2>/dev/null; cp -f $$_t/iis_detail_$(SAMPLE_TS).txt   $$SOUT/iis_all_2026-05-21.txt;               cp -f $$_t/iis_summary_$(SAMPLE_TS).txt $$SOUT/iis_summary_all_2026-05-21.txt;               rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_iis.sh --log-dir $$SLOG --date $$D --region taipei --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/iis_detail_$(SAMPLE_TS).txt   $$SOUT/iis_taipei_2026-05-21.txt;             rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_iis.sh --log-dir $$SLOG --date $$D --region taichung --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/iis_detail_$(SAMPLE_TS).txt $$SOUT/iis_taichung_2026-05-21.txt;           rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_iis.sh --log-dir $$SLOG --date $$D --merge         --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/iis_detail_$(SAMPLE_TS).txt   $$SOUT/iis_all_merged_2026-05-21.txt;         rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_iis.sh --log-dir $$SLOG --date $$D --format tsv    --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/iis_detail_$(SAMPLE_TS).tsv   $$SOUT/iis_detail_all_2026-05-21.tsv;         rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_iis.sh --log-dir $$SLOG --date $$D --format csv    --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/iis_detail_$(SAMPLE_TS).csv   $$SOUT/iis_detail_all_2026-05-21.csv;         rm -rf $$_t; \
+	\
+	# Access \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_access.sh --log-dir $$SLOG --date $$D              --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/access_detail_$(SAMPLE_TS).txt  $$SOUT/access_detail_all_2026-05-21.txt;   cp -f $$_t/access_summary_$(SAMPLE_TS).txt $$SOUT/access_summary_all_2026-05-21.txt; rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_access.sh --log-dir $$SLOG --date $$D --region taipei   --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/access_detail_$(SAMPLE_TS).txt $$SOUT/access_taipei_2026-05-21.txt;   rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_access.sh --log-dir $$SLOG --date $$D --region taichung --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/access_detail_$(SAMPLE_TS).txt $$SOUT/access_taichung_2026-05-21.txt; rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_access.sh --log-dir $$SLOG --date $$D --merge          --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/access_detail_$(SAMPLE_TS).txt $$SOUT/access_all_merged_2026-05-21.txt; rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_access.sh --log-dir $$SLOG --from $$F --to $$T --region taipei --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/access_detail_$(SAMPLE_TS).txt $$SOUT/access_taipei_week.txt; rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_access.sh --log-dir $$SLOG --from $$F --to $$T --format tsv --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/access_detail_$(SAMPLE_TS).tsv $$SOUT/access_all_week.tsv; rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_access.sh --log-dir $$SLOG --from $$F --to $$T --format csv --view detail --output-dir $$_t 2>/dev/null; cp -f $$_t/access_detail_$(SAMPLE_TS).csv $$SOUT/access_all_week.csv; rm -rf $$_t; \
+	\
+	# Errors \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_errors.sh --log-dir $$SLOG --date $$D --region taipei   --output-dir $$_t 2>/dev/null; cp -f $$_t/errors_detail_$(SAMPLE_TS).txt $$SOUT/errors_taipei_2026-05-21.txt; cp -f $$_t/errors_detail_$(SAMPLE_TS).txt $$SOUT/errors_detail_taipei_2026-05-21.txt; cp -f $$_t/errors_summary_$(SAMPLE_TS).txt $$SOUT/errors_summary_taipei_2026-05-21.txt; rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_errors.sh --log-dir $$SLOG --date $$D --region taichung --top 20 --output-dir $$_t 2>/dev/null; cp -f $$_t/errors_detail_$(SAMPLE_TS).txt $$SOUT/errors_taichung_top20_2026-05-21.txt; rm -rf $$_t; \
+	\
+	# Overview \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_overview.sh --log-dir $$SLOG --from $$F --to $$T           --output-dir $$_t 2>/dev/null; cp -f $$_t/overview_summary_$(SAMPLE_TS).txt $$SOUT/overview_all_week.txt;    rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/analyze_overview.sh --log-dir $$SLOG --from $$F --to $$T --region taipei --output-dir $$_t 2>/dev/null; cp -f $$_t/overview_summary_$(SAMPLE_TS).txt $$SOUT/overview_taipei_week.txt; rm -rf $$_t; \
+	\
+	# log_report (capture stdout = combined console mirror) \
+	_t=$$(mktemp -d); bash $(BIN)/log_report.sh --log-dir $$SLOG --date $$D                         --output-dir $$_t 2>/dev/null > $$SOUT/log_report_full_2026-05-21.txt;               rm -rf $$_t; \
+	_t=$$(mktemp -d); bash $(BIN)/log_report.sh --log-dir $$SLOG --date $$D --region taipei --modules iis,access --output-dir $$_t 2>/dev/null > $$SOUT/log_report_taipei_partial_2026-05-21.txt; rm -rf $$_t; \
+	echo "Sample outputs regenerated -> $(SAMPLE_OUT)/"
 
 clean:       ## Remove generated reports
 	@rm -rf $(REPORT_DIR)

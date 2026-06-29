@@ -8,9 +8,60 @@
 #   today                      — print today (YYYY-MM-DD)
 #   date_add BASE OFFSET       — add OFFSET days (may be negative)
 #   date_diff END START        — integer day count
+#   resolve_interval [flags]   — mutex interval validator; populates INTERVAL_ARGS
 #   build_date_list [flags]    — emit one date per line (the workhorse)
 #   date_to_iis_file DATE      — DATE → u_exYYMMDD.log
 #   date_to_app_dir DATE       — DATE → DATE (kept for API symmetry)
+
+# ---------------------------------------------------------------------------
+# Interval-mutex validator — cross-call global
+# ---------------------------------------------------------------------------
+
+# INTERVAL_ARGS — sanctioned cross-call global (documented like WORK_TMPDIR).
+# Populated by resolve_interval; consumed via "${INTERVAL_ARGS[@]}".
+INTERVAL_ARGS=()
+
+# resolve_interval --today T --date D --from F --to TO --days-set S --days N
+#   Purpose : Enforce interval-flag mutual exclusion (D3), pair --from/--to,
+#             map --today to a single --date, and emit the ONE canonical
+#             selector for build_date_list into global INTERVAL_ARGS.
+#   Args    : --today T (0|1)  --date D (YYYY-MM-DD|"")
+#             --from F (YYYY-MM-DD|"")  --to TO (YYYY-MM-DD|"")
+#             --days-set S (0|1 explicit --days sentinel)  --days N (int).
+#   Output  : nothing on stdout; mutates global INTERVAL_ARGS.
+#   Returns / Side effects : never returns on conflict — exits via die().
+#   Errors / Notes : --from/--to counted as ONE selector. --days fallback only
+#             when S=0. if/then/fi per bash.md; n=$((n+1)) per bash.md (no (( ++ ))).
+resolve_interval() {
+    local today_f=0 date_v="" from_v="" to_v="" days_set=0 days_v=7
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --today)    today_f="$2"; shift 2 ;;
+            --date)     date_v="$2";  shift 2 ;;
+            --from)     from_v="$2";  shift 2 ;;
+            --to)       to_v="$2";    shift 2 ;;
+            --days-set) days_set="$2";shift 2 ;;
+            --days)     days_v="$2";  shift 2 ;;
+            *) die "resolve_interval: unknown arg '$1'" ;;
+        esac
+    done
+    if [[ -n "$from_v" && -z "$to_v" ]]; then die "--from requires --to"; fi
+    if [[ -n "$to_v"   && -z "$from_v" ]]; then die "--to requires --from"; fi
+    local n=0
+    if (( today_f ));      then n=$((n+1)); fi
+    if [[ -n "$date_v" ]]; then n=$((n+1)); fi
+    if [[ -n "$from_v" ]]; then n=$((n+1)); fi
+    if (( days_set ));     then n=$((n+1)); fi
+    if (( n > 1 )); then
+        die "interval flags are mutually exclusive (priority --date > --from/--to > --today > --days): choose exactly ONE (got $n)"
+    fi
+    if (( today_f )); then date_v="$(today)"; fi
+    INTERVAL_ARGS=()
+    if   [[ -n "$date_v" ]]; then INTERVAL_ARGS=(--date "$date_v")
+    elif [[ -n "$from_v" ]]; then INTERVAL_ARGS=(--from "$from_v" --to "$to_v")
+    else                          INTERVAL_ARGS=(--days "$days_v")
+    fi
+}
 
 # ---------------------------------------------------------------------------
 # Validation

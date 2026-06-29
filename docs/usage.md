@@ -15,26 +15,171 @@
 - All scripts use exit code `0` for success, `1` for usage / validation
   failures.
 
-### Date selection priority
+### Interval selection — choose exactly one
 
-When multiple date flags are given, the precedence is **`--date` > `--from`/`--to` > `--days`**.
+All five CLIs enforce **mutual exclusion** on date selectors: supplying
+more than one explicit selector causes the script to abort with:
 
-| Flags supplied                      | Effective range                          |
-|-------------------------------------|------------------------------------------|
-| `--date 2026-05-21`                 | 2026-05-21 only                          |
-| `--from 2026-05-18 --to 2026-05-25` | 2026-05-18 → 2026-05-25 (8 days)        |
-| `--from 2026-05-20` (no `--to`)     | 2026-05-20 → today                       |
-| `--to 2026-05-22` (no `--from`)     | (today − default days) → 2026-05-22      |
-| `--days 3`                          | last 3 days ending today                 |
-| *(none)*                            | last 7 days ending today                 |
+```
+interval flags are mutually exclusive
+  (priority --date > --from/--to > --today > --days): choose exactly ONE (got N)
+```
 
-### Renamed and removed flags
+The priority ranking in the message shows the canonical order; the
+runtime behavior is always abort-on-conflict, not silent resolution.
 
-| Old flag | Status | Replacement | Notes |
-|---|---|---|---|
-| `--slow-ms N` (iis) | **Removed** | `--slow-api-ms N` · `--slow-app-ms N` | Split by server role. API default 2000 ms, APP default 5000 ms. Passing the old flag exits with `Unknown option`. |
-| `--format text\|tsv` (access) | **Extended** | `--format text\|tsv\|csv` | `csv` added (RFC-4180 conditional quoting). Now accepted by all four scripts; iis and errors always emit text and log a notice for non-`text` values. |
-| `--top N` (errors only) | **Unified** | `--top N` (iis + errors) | `0` now means ALL (endpoints, client IPs, error patterns). Previously `0` produced zero rows in errors. |
+| Flag(s) | Effective range |
+|---------|-----------------|
+| `--date 2026-05-21` | 2026-05-21 only |
+| `--today` | today only (alias for `--date <today>`) |
+| `--from 2026-05-18 --to 2026-05-25` | 2026-05-18 → 2026-05-25 (8 days) |
+| `--days 3` | last 3 days ending today |
+| *(none)* | last 7 days ending today (implicit `--days 7` fallback) |
+
+`--from` and `--to` must always be supplied as a pair; `--from` without
+`--to` (or vice versa) also aborts.
+
+### Always-on persistence
+
+Every run automatically writes report files to the **output directory**
+(not just to stdout). Default directory: `./log-parse` (created if
+absent). Override with `--output-dir DIR` or the `LOG_PARSE_OUTPUT_DIR`
+environment variable. Precedence: `--output-dir` flag > `$LOG_PARSE_OUTPUT_DIR`
+> `./log-parse`.
+
+File naming convention: `<module>_<kind>_<TS>.<ext>` where:
+- `<kind>` is `summary` or `detail`
+- `<TS>` is a shared `YYYYmmdd_HHMMSS` launch timestamp (all files of
+  one run share the same suffix)
+- `<ext>` is `txt` for summary (always) and `txt`/`tsv`/`csv` for
+  detail (follows `--format`)
+
+Persisted files are always color-free. The `--view` flag controls only
+the console mirror (which view streams to stdout); both files are always
+written. Add `/log-parse/` to `.gitignore` to avoid committing run
+artifacts.
+
+### Changed and removed flags
+
+| Flag | Status | Notes |
+|---|---|---|
+| `--output FILE` (all CLIs) | **Removed** | Superseded by always-on directory persistence. Use `--output-dir DIR` to redirect files. |
+| `--format text\|tsv` on iis | **Now real** | Previously accepted with a notice; tsv/csv now produce a proper long-format detail table. |
+| `--format text\|tsv\|csv` on errors | Accepted (warns) | errors is text-only; non-`text` values log a notice and continue. |
+| `--slow-ms N` (iis) | **Removed** | Replaced by `--slow-api-ms N` and `--slow-app-ms N`. |
+| `--top N` | **Unified** | Now accepted by iis (endpoints + client IPs) and errors (patterns). `0` = ALL. |
+| `--modules LIST` on log_report | **New default** | Default changed from `access,iis,errors` to `overview,iis,access`. errors is opt-in. |
+
+---
+
+## 0. `bin/analyze_overview.sh`
+
+Management overview combining IIS health and cross-correlation metrics
+into a single report with three cuts:
+
+- **總體概況 (Overall)** — system grand totals, headline rates, qualitative verdict.
+- **分區別 (By Region)** — per-region request share and NORMAL%.
+- **服務別 (By Service Role)** — API vs APP server breakdown with
+  role-specific problem signals.
+
+Overview is **summary-only** (no `--view`) and **text-only** (no
+`--format`). It sources metrics from `analyze_iis` and `analyze_access`
+via `--emit-stats` (DRY — zero re-parse, zero duplicated metric
+computation). Only the `overview_summary_<TS>.txt` file is written to
+the output directory (no detail file).
+
+### Options
+
+| Flag | Type | Default | Req? | Description |
+|---|---|---|:---:|---|
+| `--log-dir PATH` | path | — | **yes** | Root log directory. Directory must exist. |
+| `--region taipei\|taichung\|all` | enum | `all` | no | Region filter. |
+| `--today` | flag | off | no | Single-day run for today. Mutually exclusive with other interval selectors. |
+| `--date YYYY-MM-DD` | date | — | no | Single-day analysis. |
+| `--from YYYY-MM-DD` / `--to YYYY-MM-DD` | date pair | — | no | Inclusive date range. Both must be supplied. |
+| `--days N` | uint ≥ 1 | `7` | no | Last N days ending today. Implicit fallback only. |
+| `--slow-api-ms N` | uint ms | `2000` | no | Slow-request threshold for API-role servers. Forwarded to the iis spawn only (not to access). |
+| `--slow-app-ms N` | uint ms | `5000` | no | Slow-request threshold for APP-role servers. Forwarded to the iis spawn only. |
+| `--output-dir DIR` | path | `""` | no | Persistence directory. Resolved as: flag > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`. |
+| `--conf FILE` | path | `conf/regions.conf` | no | Override region mapping. File must exist. |
+| `-v`, `--verbose` | flag | off | no | Enable DEBUG-level logging. |
+| `-h`, `--help` | flag | — | — | Show help and exit 0. |
+
+Flags **not accepted**: `--view`, `--format`, `--merge`, `--top`, `--emit-stats`.
+
+### Examples
+
+```bash
+LOG_DIR=./examples/sample-logs/LUNG-CANCER-REPORT-LOG
+
+# 1. Daily management overview, all regions
+bash bin/analyze_overview.sh --log-dir "$LOG_DIR" --date 2026-05-21
+
+# 2. Today's quick overview
+bash bin/analyze_overview.sh --log-dir "$LOG_DIR" --today
+
+# 3. Weekly overview, all regions (default 7-day window)
+bash bin/analyze_overview.sh --log-dir "$LOG_DIR" \
+    --from 2026-05-18 --to 2026-05-25
+
+# 4. Taipei only, with tightened API SLA
+bash bin/analyze_overview.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --region taipei --slow-api-ms 1000
+
+# 5. Write to a custom directory (avoid CWD ./log-parse)
+bash bin/analyze_overview.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --output-dir ./reports
+```
+
+### Sample output
+
+```
+========================================================================
+  營運總覽報告 (Management Overview)
+========================================================================
+  分析期間                                2026-05-21  →  2026-05-21  (1 天)
+  涵蓋範圍                                2 區域 / 6 伺服器 (2 API · 4 APP)
+
+▶ 總體概況 (Overall)
+------------------------------------------------------------------------
+  IIS 總請求數                            3734
+  不重複用戶端 IP                         15
+  存取關聯總數                            12
+  NORMAL 正常流程率                       58.3%
+  平均 API→APP 延遲                       17.4s
+  整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
+
+▶ 分區別 (By Region)
+------------------------------------------------------------------------
+  [佔比；總量見總體概況]
+  台北                                    IIS 佔比 52.3%   NORMAL 16.7%   異常 5
+  台中                                    IIS 佔比 47.7%   NORMAL 100.0%   異常 0
+
+▶ 服務別 (By Service Role)
+------------------------------------------------------------------------
+
+    ■ API 伺服器 (2 台 · 簽發 Token)
+  IIS 請求數 (佔比)                       961 (25.7%)
+  5XX 錯誤                                17
+  慢速率 (>2000ms)                        0.0%
+  UNVERIFIED (簽發未使用)                 0
+
+    ■ APP 伺服器 (4 台 · 驗證 Token / DICOM)
+  IIS 請求數 (佔比)                       2773 (74.3%)
+  健康檢查 503 (Oracle 相依)              50
+  慢速率 (>5000ms)                        0.1%
+  ORPHAN (無對應簽發)                     5
+```
+
+Content rules enforced by the implementation:
+- Grand totals (`IIS 總請求數`, `存取關聯總數`) appear only in the 總體概況 block.
+- `5XX`, `SLOW`, `503`, `ORPHAN`, `UNVERIFIED` literals appear only inside the 服務別 block.
+- `UNVERIFIED` appears only in the API sub-slice; `ORPHAN` / `503` only in the APP sub-slice.
+- The verdict line is always numeric-free.
+- An empty analysis window (no data) yields zeros and `N/A` rates; exit code 0.
+
+> Full weekly sample: [`../examples/sample-outputs/overview_all_week.txt`](../examples/sample-outputs/overview_all_week.txt).
+> Single-region sample: [`../examples/sample-outputs/overview_taipei_week.txt`](../examples/sample-outputs/overview_taipei_week.txt).
 
 ---
 
@@ -48,96 +193,97 @@ UNVERIFIED tokens.
 | Flag | Type | Default | Req? | Description |
 |---|---|---|:---:|---|
 | `--log-dir PATH` | path | — | **yes** | Root log directory. Directory must exist. |
-| `--days N` | uint ≥ 1 | `7` | no | Last N days ending today. Ignored when `--date` or `--from` is set. |
-| `--from YYYY-MM-DD` | date | — | no | Start of inclusive range. Pair with `--to`. |
-| `--to YYYY-MM-DD` | date | — | no | End of inclusive range. Pair with `--from`. |
-| `--date YYYY-MM-DD` | date | — | no | Single-day analysis. Overrides `--days` and range. |
 | `--region taipei\|taichung\|all` | enum | `all` | no | Region filter. |
-| `--merge` | flag | off | no | Cross-region correlation in one combined block. **Requires `--region all`** (explicit or default); otherwise exits with an error. |
-| `--format text\|tsv\|csv` | enum | `text` | no | `text` = human-readable; `tsv` = tab-separated flat file; `csv` = RFC-4180 comma-separated. |
-| `--output FILE` | path | stdout | no | Write report to file. |
+| `--today` | flag | off | no | Single-day run for today. Mutually exclusive with other interval selectors. |
+| `--date YYYY-MM-DD` | date | — | no | Single-day analysis. |
+| `--from YYYY-MM-DD` / `--to YYYY-MM-DD` | date pair | — | no | Inclusive date range. Both must be supplied. |
+| `--days N` | uint ≥ 1 | `7` | no | Last N days ending today. Implicit fallback only. |
+| `--view summary\|detail` | enum | `detail` | no | Console view. `summary` = concise management text; `detail` = full per-record tables. Both files are always written regardless. |
+| `--format text\|tsv\|csv` | enum | `text` | no | Governs the **detail** file extension and the detail console mirror. Summary is always text. `tsv` = tab-separated; `csv` = RFC-4180. |
+| `--merge` | flag | off | no | Cross-region correlation in one combined block. **Requires `--region all`** (explicit or default). |
+| `--output-dir DIR` | path | `""` | no | Persistence directory. Resolved as: flag > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`. |
 | `--conf FILE` | path | `conf/regions.conf` | no | Override region mapping. File must exist. |
 | `-v`, `--verbose` | flag | off | no | Enable DEBUG-level logging. |
 | `-h`, `--help` | flag | — | — | Show help and exit 0. |
 
+`--emit-stats` is an internal flag (used by `analyze_overview`); it
+prints machine-readable `access_stats.tsv` rows to stdout with no
+persistence, no banner, and accepts only the interval / region / conf /
+verbose subset of flags.
+
 ### Examples
 
 ```bash
-# 1. Last 7 days, all regions, default text output
-bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG
+LOG_DIR=./examples/sample-logs/LUNG-CANCER-REPORT-LOG
 
-# 2. Single date, Taipei only
-bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --date 2026-05-21 --region taipei
+# 1. Last 7 days, all regions, default detail text output
+bash bin/analyze_access.sh --log-dir "$LOG_DIR"
 
-# 3. Week range, CSV output for downstream ingestion
-bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --from 2026-05-18 --to 2026-05-25 --format csv \
-    --output ./reports/access_w21.csv
+# 2. Single date, Taipei only, management summary view
+bash bin/analyze_access.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --region taipei --view summary
 
-# 4. TSV flat file output
-bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --from 2026-05-18 --to 2026-05-25 --format tsv \
-    --output ./reports/access_w21.tsv
+# 3. Week range, CSV detail for downstream ingestion
+bash bin/analyze_access.sh --log-dir "$LOG_DIR" \
+    --from 2026-05-18 --to 2026-05-25 --format csv --view detail \
+    --output-dir ./reports
+
+# 4. TSV flat-file detail
+bash bin/analyze_access.sh --log-dir "$LOG_DIR" \
+    --from 2026-05-18 --to 2026-05-25 --format tsv --view detail \
+    --output-dir ./reports
 
 # 5. Cross-region merged correlation (all servers in one pass)
-bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+bash bin/analyze_access.sh --log-dir "$LOG_DIR" \
     --date 2026-05-21 --merge
 
-# 6. Week range, Taichung only, write to file
-bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --from 2026-05-18 --to 2026-05-25 --region taichung \
-    --output ./reports/access_taichung_w21.txt
+# 6. Today's access summary
+bash bin/analyze_access.sh --log-dir "$LOG_DIR" --today --view summary
 
 # 7. Custom region mapping
-bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+bash bin/analyze_access.sh --log-dir "$LOG_DIR" \
     --conf ./conf/regions.staging.conf
 ```
 
-### Sample output (text)
+### Summary view
 
 ```
-========================================================================
-  Access Log Cross-Correlation Report
-========================================================================
+============ Access Cross-Correlation Summary ============
   Period                                  2026-05-21  →  2026-05-21  (1 days)
-  Region filter                           taipei
+  Region filter                           all
+  關聯總數                                12
+    NORMAL  (正常流程)                    7  (58.3%)
+    ORPHAN  (APP無對應API)                5  (41.7%)
+    UNVERIFIED (API未被使用)              0  (0.0%)
+  ORPHAN 驗證結果                         5 (成功) / 0 (失敗)
+  延遲 API→APP                            平均 17.4s · 最短 4.822s · 最長 37.554s
 
+    ■ 分區別 (% within region)
+    台北    NORMAL 16.7%     ORPHAN 83.3%     UNVERIFIED 0.0%
+    台中    NORMAL 100.0%    ORPHAN 0.0%      UNVERIFIED 0.0%
+```
+
+> Full summary sample: [`../examples/sample-outputs/access_summary_all_2026-05-21.txt`](../examples/sample-outputs/access_summary_all_2026-05-21.txt).
+
+### Detail view (text)
+
+The detail view shows per-record tables for each category (NORMAL,
+ORPHAN, UNVERIFIED). Each category shows only its relevant columns;
+`PATIENT_ID_AES` is always the trailing column and is never truncated.
+Records within each category are sorted chronologically ascending.
+
+```
 ▶ Region: 台北  (10.22.63.37 → 10.21.3.35,10.21.3.36)
 ------------------------------------------------------------------------
   Total correlation records               6
-    NORMAL  (正常流程)                1
-    ORPHAN  (APP無對應API)             5
-    UNVERIFIED (API未被使用)          0
-
-    ■ 正常流程 (NORMAL) — API 簽發後由 APP 驗證
-    API_TIME                 APP_TIME                 DELTA     VERIFY   REQUEST_ID     API_SRV          APP_SRV          HOSP_ID       PRSN_ID       CLIENT_IP         PATIENT_ID_AES
-    2026-05-21 10:48:18.802  2026-05-21 10:48:23.624  4.8s      OK       4000000a-0001-fb00-b63f-84710c7967bb  10.22.63.37      10.21.3.35       1234567890    Z123123123    192.168.139.110   EBD71A864A0F7E6A355827754B89259E
-
-    驗證筆數 (有效時間差)                            1
-    平均 API→APP 時間差                          4.8s
-    最短時間差                                   4.8s
-    最長時間差                                   4.8s
-
-
-    ■ 非正常流程 (ORPHAN) — APP 收到無對應 API 簽發的 Token
-    APP_TIME                 VERIFY   REQUEST_ID     APP_SRV          HOSP_ID       PRSN_ID       CLIENT_IP         PATIENT_ID_AES
-    2026-05-21 15:16:35.342  OK       40000336-0003-ff00-b63f-84710c7967bb  10.21.3.36       -             -             -                 2EDEBACB75D9FA547F2018E13E695AF1
-    2026-05-21 15:19:53.610  OK       400001ce-0007-fd00-b63f-84710c7967bb  10.21.3.35       -             -             -                 2EDEBACB75D9FA547F2018E13E695AF1
-    2026-05-21 15:28:17.947  OK       40000092-0005-fe00-b63f-84710c7967bb  10.21.3.36       -             -             -                 2EDEBACB75D9FA547F2018E13E695AF1
-    2026-05-21 17:12:53.004  OK       40000216-0001-fe00-b63f-84710c7967bb  10.21.3.35       1234567890    Z123123123    192.168.139.110   EBD71A864A0F7E6A355827754B89259E
-    2026-05-21 17:14:43.624  OK       400000a6-0005-fe00-b63f-84710c7967bb  10.21.3.36       1234567890    Z123123123    192.168.139.110   EBD71A864A0F7E6A355827754B89259E
-
-    ORPHAN 驗證結果                             5 (成功) / 0 (失敗)
-    >> [WARN] 存在可能來自其他區域或重播的有效 Token
+    NORMAL  (正常流程)                    1
+    ORPHAN  (APP無對應API)                5
+    UNVERIFIED (API未被使用)              0
+    ...
 ```
 
-Each category shows only its relevant columns; `PATIENT_ID_AES` is always the
-trailing column and is never truncated. Records within each category are sorted
-chronologically ascending by the category's leading time key (NORMAL and
-UNVERIFIED by `API_TIME`; ORPHAN by `APP_TIME`).
-
-> Full sample preserved in [`../examples/sample-outputs/access_taipei_2026-05-21.txt`](../examples/sample-outputs/access_taipei_2026-05-21.txt).
+> Full detail sample: [`../examples/sample-outputs/access_detail_all_2026-05-21.txt`](../examples/sample-outputs/access_detail_all_2026-05-21.txt).
+> Taipei detail: [`../examples/sample-outputs/access_taipei_2026-05-21.txt`](../examples/sample-outputs/access_taipei_2026-05-21.txt).
 
 ### Flat output (tsv / csv)
 
@@ -149,9 +295,10 @@ REGION  STATUS  API_TIME  APP_TIME  DELTA_SEC  VERIFY_STATUS  REQUEST_ID
 API_SERVER  APP_SERVER  HOSP_ID  PRSN_ID  CLIENT_IP  PATIENT_ID_AES
 ```
 
-`csv` uses RFC-4180 conditional quoting: only fields that contain `"`, `,`, or
+`csv` uses RFC-4180 conditional quoting: only fields containing `"`, `,`, or
 a newline are quoted; internal `"` characters are doubled. A header row is
-always the first line.
+always the first line. The summary file is always `.txt` regardless of
+`--format`; only the detail file uses the `.tsv` / `.csv` extension.
 
 > Samples: [`../examples/sample-outputs/access_all_week.tsv`](../examples/sample-outputs/access_all_week.tsv) · [`../examples/sample-outputs/access_all_week.csv`](../examples/sample-outputs/access_all_week.csv)
 
@@ -167,46 +314,91 @@ slow requests, and health-check 503 anomalies.
 | Flag | Type | Default | Req? | Description |
 |---|---|---|:---:|---|
 | `--log-dir PATH` | path | — | **yes** | Root log directory. Directory must exist. |
-| `--days N` | uint ≥ 1 | `7` | no | Last N days ending today. Ignored when `--date` or `--from` is set. |
-| `--from YYYY-MM-DD` | date | — | no | Start of inclusive range. Pair with `--to`. |
-| `--to YYYY-MM-DD` | date | — | no | End of inclusive range. Pair with `--from`. |
-| `--date YYYY-MM-DD` | date | — | no | Single-day analysis. Overrides `--days` and range. |
 | `--region taipei\|taichung\|all` | enum | `all` | no | Region filter. |
-| `--top N` | uint ≥ 0 | `10` | no | Rows shown in the Endpoint table **and** Client-IP table per server block. `0` = ALL. |
+| `--today` | flag | off | no | Single-day run for today. Mutually exclusive with other interval selectors. |
+| `--date YYYY-MM-DD` | date | — | no | Single-day analysis. |
+| `--from YYYY-MM-DD` / `--to YYYY-MM-DD` | date pair | — | no | Inclusive date range. Both must be supplied. |
+| `--days N` | uint ≥ 1 | `7` | no | Last N days ending today. Implicit fallback only. |
+| `--view summary\|detail` | enum | `detail` | no | Console view. `summary` = concise management text; `detail` = full per-server tables. Both files always written. |
+| `--format text\|tsv\|csv` | enum | `text` | no | Governs the **detail** file extension and the detail console mirror. Summary is always text. `tsv`/`csv` produce a standardized long-format table (see below). |
+| `--top N` | uint ≥ 0 | `10` | no | Rows in the Endpoint table and Client-IP table per server. `0` = ALL. Also caps the summary top-endpoint list. |
 | `--slow-api-ms N` | uint ms | `2000` | no | Slow-request threshold for API-role servers. |
 | `--slow-app-ms N` | uint ms | `5000` | no | Slow-request threshold for APP-role servers. |
 | `--merge` | flag | off | no | Cross-region host merge; renders one API-servers block and one APP-servers block. **Requires `--region all`**. |
-| `--format text\|tsv\|csv` | enum | `text` | no | Accepted by the parser; iis always emits text. A non-`text` value logs a notice and continues. |
-| `--output FILE` | path | stdout | no | Write report to file. |
+| `--output-dir DIR` | path | `""` | no | Persistence directory. Resolved as: flag > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`. |
 | `--conf FILE` | path | `conf/regions.conf` | no | Override region mapping. File must exist. |
 | `-v`, `--verbose` | flag | off | no | Enable DEBUG-level logging. |
 | `-h`, `--help` | flag | — | — | Show help and exit 0. |
 
+`--emit-stats` is an internal flag (used by `analyze_overview`).
+
 ### Examples
 
 ```bash
-# 1. Daily health check, all regions, default per-role slow thresholds
-bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --date 2026-05-21
+LOG_DIR=./examples/sample-logs/LUNG-CANCER-REPORT-LOG
 
-# 2. Weekly audit, tighten API SLA to 1 s, show ALL endpoints
-bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+# 1. Daily health check, all regions, default per-role slow thresholds
+bash bin/analyze_iis.sh --log-dir "$LOG_DIR" --date 2026-05-21
+
+# 2. Management summary, all regions, single date
+bash bin/analyze_iis.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --view summary
+
+# 3. Weekly audit, tighten API SLA to 1 s, show ALL endpoints
+bash bin/analyze_iis.sh --log-dir "$LOG_DIR" \
     --from 2026-05-18 --to 2026-05-25 --slow-api-ms 1000 --top 0
 
-# 3. Host-agnostic merged view (API vs APP buckets), all regions
-bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+# 4. Weekly detail export as CSV for record-keeping
+bash bin/analyze_iis.sh --log-dir "$LOG_DIR" \
+    --from 2026-05-18 --to 2026-05-25 --view detail --format csv \
+    --output-dir ./reports
+
+# 5. Host-agnostic merged view (API vs APP buckets), all regions
+bash bin/analyze_iis.sh --log-dir "$LOG_DIR" \
     --date 2026-05-21 --merge
 
-# 4. Taipei only, top 5 endpoints and client IPs
-bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --from 2026-05-18 --to 2026-05-25 --region taipei --top 5
+# 6. Taipei only, top 5 endpoints and client IPs, summary
+bash bin/analyze_iis.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --region taipei --top 5 --view summary
 
-# 5. Save full report
-bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --date 2026-05-21 --output ./reports/iis_2026-05-21.txt
+# 7. Today's quick IIS summary
+bash bin/analyze_iis.sh --log-dir "$LOG_DIR" --today --view summary
 ```
 
-### Sample output (text)
+### Summary view
+
+```
+============ IIS Summary — Region: all ============
+  Period                                  2026-05-21  →  2026-05-21  (1 days)
+  總請求數                                3734
+  不重複用戶端 IP                         15
+  5xx 錯誤率                              1.3%  (50)
+    其中 健康檢查 503                     50
+  慢速率                                  0.1%  (2)
+  302 轉址率                              0.3%
+
+    ■ Top 端點 (佔比)
+    1. /health                                               75.0%
+    2. /api/NhiPatientImage/studies/{uid}/series/{uid}/...   12.2%
+    3. /api/DigestSummary/hospital                           6.1%
+    ...
+
+    ■ 狀態碼分布 (Top 3)
+      200 95.7% · 404 1.9% · 503 1.3%
+
+    ■ Top 用戶端 IP
+      192.168.139.28 75.0% · 192.168.139.119 19.1% · 192.168.139.110 5.6%
+```
+
+> Full summary sample: [`../examples/sample-outputs/iis_summary_all_2026-05-21.txt`](../examples/sample-outputs/iis_summary_all_2026-05-21.txt).
+
+### Detail view (text)
+
+The detail view shows per-server KV blocks with Status, Endpoint, and
+Client-IP percentage tables. API-role servers show `Slow (>2000ms)`;
+APP-role servers show `Slow (>5000ms)` unless overridden with
+`--slow-api-ms` / `--slow-app-ms`. `/health` requests are always
+excluded from slow counts.
 
 ```
 ▶ IIS — 10.22.63.37
@@ -227,26 +419,34 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
     ---------------------------------------------------------------------------------------
     /health                                                  0.06      472        97.7%
     /api/GetLungCancerReportURL                              0.10      11          2.3%
-
-    Client IP           Count     % of total
-    ----------------------------------------
-    192.168.139.28      472        97.7%
-    192.168.139.110     6           1.2%
-    10.22.63.37         5           1.0%
 ```
 
-The **Endpoint** table columns are: Endpoint, Avg(s) (mean response time in
-seconds rounded to 2 decimals; IIS logs `time-taken` in milliseconds), Count,
-and % of total. The **Status** table adds `% of total` for each HTTP status
-code. Both tables are sorted count-descending. Rows in the Endpoint and
-Client-IP tables are capped by `--top` (default 10); `--top 0` shows all.
+> Full detail sample (all regions): [`../examples/sample-outputs/iis_all_2026-05-21.txt`](../examples/sample-outputs/iis_all_2026-05-21.txt).
+> Taipei: [`../examples/sample-outputs/iis_taipei_2026-05-21.txt`](../examples/sample-outputs/iis_taipei_2026-05-21.txt).
+> Taichung: [`../examples/sample-outputs/iis_taichung_2026-05-21.txt`](../examples/sample-outputs/iis_taichung_2026-05-21.txt)
+> (exhibits 50 Health-503 events from the simulated OracleDB outage).
 
-Each API-role server block labels its slow threshold `Slow (>2000ms)` and each
-APP-role server block labels its slow threshold `Slow (>5000ms)` unless
-overridden with `--slow-api-ms` / `--slow-app-ms`. `/health` requests are
-always excluded from the slow count.
+### Detail view (tsv / csv)
 
-> Full multi-server sample: [`../examples/sample-outputs/iis_taipei_2026-05-21.txt`](../examples/sample-outputs/iis_taipei_2026-05-21.txt) (Taipei) and [`../examples/sample-outputs/iis_taichung_2026-05-21.txt`](../examples/sample-outputs/iis_taichung_2026-05-21.txt) (Taichung — exhibits 50 Health-503 events from the simulated OracleDB outage).
+With `--format tsv` or `--format csv` the detail file/view is a
+standardized long-format table. One header line, then one data row per
+metric per server:
+
+```
+REGION  ROLE  SERVER         METRIC     KEY     COUNT  AVG_SEC  PCT
+taipei  api   10.22.63.37    SUMMARY    TOTAL   483    -        100.0
+taipei  api   10.22.63.37    SUMMARY    5XX     0      -        0.0
+taipei  api   10.22.63.37    STATUS     200     480    -        99.4
+taipei  api   10.22.63.37    ENDPOINT   /health 472    0.06     97.7
+taipei  api   10.22.63.37    CLIENT_IP  192.168.139.28  472  -  97.7
+```
+
+`METRIC` values: `SUMMARY` (totals), `STATUS` (per HTTP code),
+`ENDPOINT` (per URI, capped by `--top`), `CLIENT_IP` (per IP, capped by
+`--top`). The summary view is always text regardless of `--format` (the
+summary file is always `.txt`).
+
+> Samples: [`../examples/sample-outputs/iis_detail_all_2026-05-21.tsv`](../examples/sample-outputs/iis_detail_all_2026-05-21.tsv) · [`../examples/sample-outputs/iis_detail_all_2026-05-21.csv`](../examples/sample-outputs/iis_detail_all_2026-05-21.csv)
 
 ---
 
@@ -254,19 +454,24 @@ always excluded from the slow count.
 
 Analyse application error logs and lifecycle events.
 
+This module has **no `--view` flag**: the console always shows the detail
+view, and the summary is written to disk only
+(`errors_summary_<TS>.txt`). Both `errors_summary_<TS>.txt` and
+`errors_detail_<TS>.txt` are always written to the output directory.
+
 ### Options
 
 | Flag | Type | Default | Req? | Description |
 |---|---|---|:---:|---|
 | `--log-dir PATH` | path | — | **yes** | Root log directory. Directory must exist. |
-| `--days N` | uint ≥ 1 | `7` | no | Last N days ending today. Ignored when `--date` or `--from` is set. |
-| `--from YYYY-MM-DD` | date | — | no | Start of inclusive range. Pair with `--to`. |
-| `--to YYYY-MM-DD` | date | — | no | End of inclusive range. Pair with `--from`. |
-| `--date YYYY-MM-DD` | date | — | no | Single-day analysis. Overrides `--days` and range. |
 | `--region taipei\|taichung\|all` | enum | `all` | no | Region filter. |
+| `--today` | flag | off | no | Single-day run for today. Mutually exclusive with other interval selectors. |
+| `--date YYYY-MM-DD` | date | — | no | Single-day analysis. |
+| `--from YYYY-MM-DD` / `--to YYYY-MM-DD` | date pair | — | no | Inclusive date range. Both must be supplied. |
+| `--days N` | uint ≥ 1 | `7` | no | Last N days ending today. Implicit fallback only. |
 | `--top N` | uint ≥ 0 | `10` | no | Error pattern rows to show. `0` = ALL patterns. |
-| `--format text\|tsv\|csv` | enum | `text` | no | Accepted by the parser; errors always emits text. A non-`text` value logs a notice and continues. |
-| `--output FILE` | path | stdout | no | Write report to file. |
+| `--format text\|tsv\|csv` | enum | `text` | no | Accepted; errors always emits text. Non-`text` values log a notice and continue. |
+| `--output-dir DIR` | path | `""` | no | Persistence directory. Resolved as: flag > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`. |
 | `--conf FILE` | path | `conf/regions.conf` | no | Override region mapping. File must exist. |
 | `-v`, `--verbose` | flag | off | no | Enable DEBUG-level logging. |
 | `-h`, `--help` | flag | — | — | Show help and exit 0. |
@@ -274,27 +479,33 @@ Analyse application error logs and lifecycle events.
 ### Examples
 
 ```bash
+LOG_DIR=./examples/sample-logs/LUNG-CANCER-REPORT-LOG
+
 # 1. Default 7-day error rollup
-bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG
+bash bin/analyze_errors.sh --log-dir "$LOG_DIR"
 
 # 2. Taichung DB troubleshooting — show top 20 patterns
-bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+bash bin/analyze_errors.sh --log-dir "$LOG_DIR" \
     --region taichung --date 2026-05-21 --top 20
 
 # 3. Show ALL error patterns (no limit)
-bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+bash bin/analyze_errors.sh --log-dir "$LOG_DIR" \
     --date 2026-05-21 --top 0
 
 # 4. Restart audit for a date range
-bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+bash bin/analyze_errors.sh --log-dir "$LOG_DIR" \
     --from 2026-05-18 --to 2026-05-25 --region taipei
 
-# 5. Quick top-3 sanity check
-bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --date 2026-05-21 --top 3
+# 5. Today's errors, Taipei
+bash bin/analyze_errors.sh --log-dir "$LOG_DIR" \
+    --today --region taipei
+
+# 6. Quick top-3 sanity check, write to custom dir
+bash bin/analyze_errors.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --top 3 --output-dir ./reports
 ```
 
-### Sample output
+### Console output (detail — always shown)
 
 ```
 ▶ App Errors — Server: 10.1.72.35
@@ -320,152 +531,214 @@ bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-L
     2026-05-21 08:14:08.221       2026-05-21 08:15:01.992       53s
 ```
 
+### Summary file (disk only)
+
+The `errors_summary_<TS>.txt` file is written to the output directory
+but is not mirrored to the console. It contains compact per-server
+signal counts for each region:
+
+```
+  Error Analysis Summary
+...
+    ■ Server: 10.1.72.35
+  Total ERROR                             16
+  OracleDB health failures                15
+  Restart count                           4
+  Unmatched SHUTDOWN                      0
+```
+
 > Aggregated across all three Taichung servers, baseline figures are
 > ERROR=46, OracleDB=44, Restart=9 (verified by `tests/run_tests.sh`
-> sections C06/C07). Full sample in
+> sections C06/C07). Full detail sample in
 > [`../examples/sample-outputs/errors_taichung_top20_2026-05-21.txt`](../examples/sample-outputs/errors_taichung_top20_2026-05-21.txt).
+> Taipei summary sample: [`../examples/sample-outputs/errors_summary_taipei_2026-05-21.txt`](../examples/sample-outputs/errors_summary_taipei_2026-05-21.txt).
 
 ---
 
 ## 4. `bin/log_report.sh`
 
-Orchestrator that runs `analyze_access`, `analyze_iis`, and `analyze_errors`
-in sequence.
+Orchestrator that runs all enabled analysis modules in canonical order
+(`overview → iis → access → errors`) with per-module persistence.
+
+By default, `log_report` runs **overview, iis, and access** with the
+**summary** view. The `errors` module is opt-in (add it via
+`--modules`). Each module writes its own file pair to the shared output
+directory; all files share one launch timestamp.
+
+```
+[shared output directory]
+  overview_summary_<TS>.txt
+  iis_summary_<TS>.txt
+  iis_detail_<TS>.txt          (text by default; tsv/csv with --format)
+  access_summary_<TS>.txt
+  access_detail_<TS>.txt       (or .tsv / .csv with --format)
+  errors_summary_<TS>.txt      (only when errors is in --modules)
+  errors_detail_<TS>.txt       (only when errors is in --modules)
+```
 
 ### Options
 
 | Flag | Type | Default | Req? | Description |
 |---|---|---|:---:|---|
 | `--log-dir PATH` | path | — | **yes** | Root log directory. Directory must exist. |
-| `--days N` | uint ≥ 1 | `7` | no | Last N days ending today. Ignored when `--date` or `--from` is set. |
-| `--from YYYY-MM-DD` | date | — | no | Start of inclusive range. Pair with `--to`. |
-| `--to YYYY-MM-DD` | date | — | no | End of inclusive range. Pair with `--from`. |
-| `--date YYYY-MM-DD` | date | — | no | Single-day analysis. Overrides `--days` and range. |
-| `--region taipei\|taichung\|all` | enum | `all` | no | Region filter. Forwarded to all modules. |
-| `--modules LIST` | csv | `access,iis,errors` | no | Comma-separated subset of modules to run. |
-| `--top N` | uint ≥ 0 | `10` | no | Forwarded to iis (Endpoint + Client-IP cap) and errors (pattern cap). `0` = ALL. |
-| `--slow-api-ms N` | uint ms | `2000` | no | Forwarded to iis only; API-role slow threshold. |
-| `--slow-app-ms N` | uint ms | `5000` | no | Forwarded to iis only; APP-role slow threshold. |
+| `--region REGION` | enum | `all` | no | Region filter. Forwarded to all modules. |
+| `--today` | flag | off | no | Single-day run for today. Mutually exclusive with other interval selectors. |
+| `--date YYYY-MM-DD` | date | — | no | Single-day analysis. |
+| `--from YYYY-MM-DD` / `--to YYYY-MM-DD` | date pair | — | no | Inclusive date range. Both must be supplied. |
+| `--days N` | uint ≥ 1 | `7` | no | Last N days ending today. Implicit fallback only. |
+| `--modules LIST` | csv | `overview,iis,access` | no | Comma-separated modules. Valid values: `overview`, `iis`, `access`, `errors`. Errors is opt-in (OFF by default). Modules run in canonical order regardless of input order. Unknown module names abort. |
+| `--view summary\|detail` | enum | `summary` | no | Console view. Forwarded to iis and access only; overview and errors are unaffected. Summary is always text (format-independent). |
+| `--format text\|tsv\|csv` | enum | `text` | no | Governs the detail file extension and detail mirror. Forwarded to iis and access; ignored by overview and errors. |
+| `--top N` | uint ≥ 0 | `10` | no | Forwarded to iis (endpoints + client IPs) and errors (patterns). `0` = ALL. |
+| `--slow-api-ms N` | uint ms | `2000` | no | Forwarded to overview and iis; applies to API-role servers. |
+| `--slow-app-ms N` | uint ms | `5000` | no | Forwarded to overview and iis; applies to APP-role servers. |
 | `--merge` | flag | off | no | Forwarded to access and iis. **Requires `--region all`**. |
-| `--format text\|tsv\|csv` | enum | `text` | no | Forwarded to all modules. access renders tsv/csv; iis/errors always emit text and log a notice. |
-| `--output FILE` | path | stdout | no | Write combined report to a single file. |
-| `--output-dir DIR` | path | — | no | Write each module to its own timestamped file in DIR. |
-| `--conf FILE` | path | — | no | Override region mapping. Forwarded to all modules when supplied; validated only when explicitly set. |
+| `--output-dir DIR` | path | `""` | no | Persistence directory. Resolved as: flag > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`. Shared by all child modules via `$LOG_PARSE_OUTPUT_DIR`; `--output-dir` is NOT forwarded as a flag to children. |
+| `--conf FILE` | path | `conf/regions.conf` | no | Override region mapping. Forwarded to all modules when supplied. |
 | `-v`, `--verbose` | flag | off | no | Forwards `--verbose` to all child modules. |
 | `-h`, `--help` | flag | — | — | Show help and exit 0. |
 
 ### Flag forwarding matrix
 
-| Flag | access | iis | errors |
-|---|:---:|:---:|:---:|
-| `--log-dir`, `--region`, `--days`, `--from`, `--to`, `--date`, `--verbose`, `--conf` | F | F | F |
-| `--format` | F | F (no-op, notice) | F (no-op, notice) |
-| `--top` | — | F | F |
-| `--slow-api-ms` | — | F | — |
-| `--slow-app-ms` | — | F | — |
-| `--merge` | F | F | — |
-| `--output`, `--output-dir`, `--modules` | own | own | own |
+| Flag | overview | iis | access | errors |
+|---|:---:|:---:|:---:|:---:|
+| `--log-dir`, `--region`, interval flags, `--verbose`, `--conf` | F | F | F | F |
+| `--view` | — | F | F | — |
+| `--format` | — | F | F | — |
+| `--top` | — | F | — | F |
+| `--slow-api-ms`, `--slow-app-ms` | F | F | — | — |
+| `--merge` | — | F | F | — |
+| `--output-dir`, `--modules` | own | own | own | own |
 
-F = forwarded and acted upon by the child module (or accepted with a notice for iis/errors non-`text` format).
+F = forwarded. `--output-dir` is resolved once by log_report and shared
+via `$LOG_PARSE_OUTPUT_DIR`; it is NOT forwarded as a flag argument to
+child modules (prevents split-brain when a custom `--output-dir` is
+given).
 
 ### Examples
 
 ```bash
-# 1. Full daily report — all modules, all regions, single date
-bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --date 2026-05-21
+LOG_DIR=./examples/sample-logs/LUNG-CANCER-REPORT-LOG
 
-# 2. Access-only quick check for Taipei over 3 days
-bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --modules access --region taipei --days 3
+# 1. Default report — overview + iis + access, last 7 days, summary view
+bash bin/log_report.sh --log-dir "$LOG_DIR"
 
-# 3. Merged ops review — access + iis cross-region, top 5
-bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --date 2026-05-21 --merge --top 5
+# 2. Single-date summary, all regions
+bash bin/log_report.sh --log-dir "$LOG_DIR" --date 2026-05-21
 
-# 4. CSV export (access renders csv; iis + errors emit text with a notice)
-bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --from 2026-05-18 --to 2026-05-25 --format csv \
-    --output ./reports/week_access.csv
+# 3. Today's quick report
+bash bin/log_report.sh --log-dir "$LOG_DIR" --today
 
-# 5. Per-role slow audit — tighten API to 3 s, keep APP at default 5 s
-bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+# 4. Weekly audit including errors, custom output directory
+bash bin/log_report.sh --log-dir "$LOG_DIR" \
+    --from 2026-05-18 --to 2026-05-25 \
+    --modules overview,iis,access,errors \
+    --output-dir ./reports/weekly
+
+# 5. Detail view with CSV export (iis + access detail files become .csv)
+bash bin/log_report.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --view detail --format csv \
+    --output-dir ./reports
+
+# 6. Taipei only, errors included, top 5 patterns
+bash bin/log_report.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --region taipei \
+    --modules overview,iis,access,errors --top 5
+
+# 7. Tighten API SLA across overview and iis
+bash bin/log_report.sh --log-dir "$LOG_DIR" \
     --date 2026-05-21 --slow-api-ms 3000
 
-# 6. Combined report to a single file
-bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --date 2026-05-21 --output ./reports/daily_2026-05-21.txt
+# 8. Merged ops review — cross-region correlation + IIS two-bucket split
+bash bin/log_report.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --merge --top 5
 
-# 7. Weekly digest — each module in its own file with timestamp
-bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --from 2026-05-18 --to 2026-05-25 --output-dir ./reports/weekly
-
-# Produces (filenames include a fresh timestamp):
-#   ./reports/weekly/analyze_access_20260525_140312.txt
-#   ./reports/weekly/analyze_iis_20260525_140312.txt
-#   ./reports/weekly/analyze_errors_20260525_140312.txt
-
-# 8. Errors only, debug
-bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --modules errors --region taichung -v
-
-# 9. Invalid module is caught early
-bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --modules access,unknown
-#   → Unknown module: 'unknown' (valid: access iis errors)
-#     exits with code 1
+# 9. Unknown module is caught early and aborts
+bash bin/log_report.sh --log-dir "$LOG_DIR" --modules access,unknown
+#   exits with code 1
 ```
 
-> Full combined sample in [`../examples/sample-outputs/log_report_full_2026-05-21.txt`](../examples/sample-outputs/log_report_full_2026-05-21.txt).
+> Full combined sample: [`../examples/sample-outputs/log_report_full_2026-05-21.txt`](../examples/sample-outputs/log_report_full_2026-05-21.txt).
+> Partial (Taipei, overview+iis+access): [`../examples/sample-outputs/log_report_taipei_partial_2026-05-21.txt`](../examples/sample-outputs/log_report_taipei_partial_2026-05-21.txt).
 
 ---
 
 ## 5. Scenario playbook
 
-End-to-end commands matching the user scenarios in the test suite.
+End-to-end commands matching the scenarios in the test suite.
 
 ### 5.1 Daily ops snapshot
+
 ```bash
-bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --date $(date +%F)
+bash bin/log_report.sh \
+    --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --date "$(date +%F)" \
+    --output-dir ./reports/daily
 ```
 
 ### 5.2 Security investigation (orphan tokens, last week, Taipei)
+
 ```bash
-bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --region taipei --days 7 \
-    --output ./reports/security_$(date +%F).txt
+bash bin/analyze_access.sh \
+    --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --region taipei --days 7 --view detail \
+    --output-dir ./reports/security
 ```
 
 ### 5.3 DB outage triage (Taichung, last 24 h, top 20 patterns)
+
 ```bash
-bash bin/analyze_errors.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --region taichung --days 1 --top 20
+bash bin/analyze_errors.sh \
+    --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --region taichung --days 1 --top 20 \
+    --output-dir ./reports/triage
 ```
 
-### 5.4 Weekly digest (Mon–Sun) to disk
+### 5.4 Weekly digest (Mon–Sun) to disk with errors
+
 ```bash
 START=$(date -d 'last monday' +%F)
 END=$(date -d 'last sunday' +%F)
-bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --from "$START" --to "$END" --output-dir ./reports/weekly
+bash bin/log_report.sh \
+    --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --from "$START" --to "$END" \
+    --modules overview,iis,access,errors \
+    --output-dir ./reports/weekly
+# Produces (one shared timestamp T):
+#   ./reports/weekly/overview_summary_<T>.txt
+#   ./reports/weekly/iis_summary_<T>.txt
+#   ./reports/weekly/iis_detail_<T>.txt
+#   ./reports/weekly/access_summary_<T>.txt
+#   ./reports/weekly/access_detail_<T>.txt
+#   ./reports/weekly/errors_summary_<T>.txt
+#   ./reports/weekly/errors_detail_<T>.txt
 ```
 
 ### 5.5 Per-role slow audit (API ≤ 1 s, APP ≤ 3 s, all servers)
+
 ```bash
-bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --slow-api-ms 1000 --slow-app-ms 3000
+bash bin/analyze_iis.sh \
+    --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --slow-api-ms 1000 --slow-app-ms 3000 \
+    --output-dir ./reports
 ```
 
 ### 5.6 Merged ops review — cross-region correlation + IIS two-bucket split
+
 ```bash
-bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --date 2026-05-21 --merge --top 5
+bash bin/log_report.sh \
+    --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --date 2026-05-21 --merge --top 5 \
+    --output-dir ./reports
 ```
 
 ### 5.7 Machine-readable CSV pipeline (ORPHAN CLIENT_IP + PATIENT_ID_AES)
+
 ```bash
-bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
-    --from 2026-05-18 --to 2026-05-25 --format csv \
+bash bin/analyze_access.sh \
+    --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --from 2026-05-18 --to 2026-05-25 --format csv --view detail \
+    --output-dir ./reports \
 | awk -F',' '$2 == "ORPHAN" { print $12 "," $13 }' \
 | sort -u
 ```
@@ -475,21 +748,32 @@ TSV/CSV column reference (13 fields in order):
 `REQUEST_ID(7)` `API_SERVER(8)` `APP_SERVER(9)` `HOSP_ID(10)` `PRSN_ID(11)`
 `CLIENT_IP(12)` `PATIENT_ID_AES(13)`.
 
+### 5.8 Management overview (standalone, Taipei, daily)
+
+```bash
+bash bin/analyze_overview.sh \
+    --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --date 2026-05-21 --region taipei \
+    --output-dir ./reports
+```
+
 ---
 
 ## 6. Exit codes
 
-| Code | Meaning                                                        |
-|------|----------------------------------------------------------------|
-| 0    | Success (even when no data was found for the requested period). |
-| 1    | Usage / validation error (missing `--log-dir`, bad flag value, unknown region or module, missing region config file, `--merge` without `--region all`). |
+| Code | Meaning |
+|------|---------|
+| 0 | Success (even when no data was found for the requested period). |
+| 1 | Usage / validation error: missing `--log-dir`, bad flag value, unknown region or module, missing config file, `--merge` without `--region all`, more than one interval selector supplied. |
 
 ---
 
 ## 7. Environment variables
 
-| Variable    | Effect                                                          |
-|-------------|-----------------------------------------------------------------|
+| Variable | Effect |
+|---|---|
 | `LOG_LEVEL` | `DEBUG` / `INFO` (default) / `WARN` / `ERROR`. Overridden by `-v`. |
-| `NO_COLOR`  | When set, disables ANSI colour codes in all output.             |
-| `TMPDIR`    | Base directory for temp files (`mktemp -d`). Defaults to `/tmp`.|
+| `NO_COLOR` | When set, disables ANSI colour codes in all output. Persisted files are always color-free regardless of this variable. |
+| `TMPDIR` | Base directory for temp files (`mktemp -d`). Defaults to `/tmp`. |
+| `LOG_PARSE_OUTPUT_DIR` | Default output directory for persisted files. Overridden by `--output-dir DIR`. Superseded by the literal `./log-parse` when both this variable and the flag are unset. |
+| `LOG_PARSE_RUN_TS` | Shared launch timestamp in `YYYYmmdd_HHMMSS` format. Set by `log_report` and exported to child modules so all files of one run share the same suffix. Override with a fixed value in scripts or tests to produce deterministic file names. |

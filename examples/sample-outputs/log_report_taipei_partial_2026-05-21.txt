@@ -1,148 +1,35 @@
+============ IIS Summary — Region: 台北 ============
+  Period                                  2026-05-21  →  2026-05-21  (1 days)
+  總請求數                                1954
+  不重複用戶端 IP                         9
+  5xx 錯誤率                              0.0%  (0)
+    其中 健康檢查 503                     0
+  慢速率                                  0.0%  (0)
+  302 轉址率                              0.3%
 
-========================================================================
-  Access Log Cross-Correlation Report
-========================================================================
+    ■ Top 端點 (佔比)
+    1. /health                                               72.4%
+    2. /api/NhiPatientImage/studies/{uid}/series/{uid}/...   14.7%
+    3. /api/DigestSummary/hospital                           6.6%
+    4. /api/NhiPatientImage/studies/{uid}/series-uid         1.5%
+    5. /api/GetLungCancerReportURL                           0.6%
+    6. /api/DigestSummary/key-images                         0.6%
+    7. /api/registration/get-target-instance                 0.4%
+    8. /reports/view                                         0.3%
+    9. /assets/react-vendor-CWOlZk79.js                      0.3%
+    10. /assets/index-Cj5Ra9vo.css                            0.3%
+
+    ■ 狀態碼分布 (Top 3)
+      200 94.6% · 404 3.6% · 304 1.3%
+
+    ■ Top 用戶端 IP
+      192.168.139.28 72.4% · 192.168.139.119 16.7% · 192.168.139.110 10.7%
+============ Access Cross-Correlation Summary ============
   Period                                  2026-05-21  →  2026-05-21  (1 days)
   Region filter                           taipei
-
-▶ Region: 台北  (10.22.63.37 → 10.21.3.35,10.21.3.36)
-------------------------------------------------------------------------
-  Total correlation records               6
-    NORMAL  (正常流程)                    1
-    ORPHAN  (APP無對應API)                5
-    UNVERIFIED (API未被使用)              0
-
-    ■ 正常流程 (NORMAL) — API 簽發後由 APP 驗證
-    API_TIME                 APP_TIME                 DELTA     VERIFY   REQUEST_ID     API_SRV          APP_SRV          HOSP_ID       PRSN_ID       CLIENT_IP         PATIENT_ID_AES
-    2026-05-21 10:48:18.802  2026-05-21 10:48:23.624  4.8s      OK       4000000a-0001-fb00-b63f-84710c7967bb  10.22.63.37      10.21.3.35       1234567890    Z123123123    192.168.139.110   EBD71A864A0F7E6A355827754B89259E
-
-    驗證筆數 (有效時間差)                   1
-    平均 API→APP 時間差                     4.8s
-    最短時間差                              4.8s
-    最長時間差                              4.8s
-
-
-    ■ 非正常流程 (ORPHAN) — APP 收到無對應 API 簽發的 Token
-    APP_TIME                 VERIFY   REQUEST_ID     APP_SRV          HOSP_ID       PRSN_ID       CLIENT_IP         PATIENT_ID_AES
-    2026-05-21 15:16:35.342  OK       40000336-0003-ff00-b63f-84710c7967bb  10.21.3.36       -             -             -                 2EDEBACB75D9FA547F2018E13E695AF1
-    2026-05-21 15:19:53.610  OK       400001ce-0007-fd00-b63f-84710c7967bb  10.21.3.35       -             -             -                 2EDEBACB75D9FA547F2018E13E695AF1
-    2026-05-21 15:28:17.947  OK       40000092-0005-fe00-b63f-84710c7967bb  10.21.3.36       -             -             -                 2EDEBACB75D9FA547F2018E13E695AF1
-    2026-05-21 17:12:53.004  OK       40000216-0001-fe00-b63f-84710c7967bb  10.21.3.35       1234567890    Z123123123    192.168.139.110   EBD71A864A0F7E6A355827754B89259E
-    2026-05-21 17:14:43.624  OK       400000a6-0005-fe00-b63f-84710c7967bb  10.21.3.36       1234567890    Z123123123    192.168.139.110   EBD71A864A0F7E6A355827754B89259E
-
-    ORPHAN 驗證結果                         5 (成功) / 0 (失敗)
-    >> [WARN] 存在可能來自其他區域或重播的有效 Token
-
-========================================================================
-  Generated: 2026-06-27 02:39:30
-========================================================================
-
-
-========================================================================
-  IIS Log Analysis Report
-========================================================================
-  Period                                  2026-05-21  →  2026-05-21  (1 days)
-
-========================================================================
-  IIS Analysis — Region: 台北
-========================================================================
-
-▶ IIS — 10.22.63.37
-------------------------------------------------------------------------
-  Total requests                          483
-  Unique client IPs                       3
-  302 Redirects                           0
-  5xx errors                              0
-    Health 503                            0
-  Slow (>2000ms)                          0
-
-    Status      Count     % of total
-    --------------------------------
-    200         480        99.4%
-    204         3           0.6%
-
-    Endpoint                                                 Avg(s)    Count     % of total
-    ---------------------------------------------------------------------------------------
-    /health                                                  0.06      472        97.7%
-    /api/GetLungCancerReportURL                              0.10      11          2.3%
-
-    Client IP           Count     % of total
-    ----------------------------------------
-    192.168.139.28      472        97.7%
-    192.168.139.110     6           1.2%
-    10.22.63.37         5           1.0%
-
-▶ IIS — 10.21.3.35
-------------------------------------------------------------------------
-  Total requests                          741
-  Unique client IPs                       3
-  302 Redirects                           3
-  5xx errors                              0
-    Health 503                            0
-  Slow (>5000ms)                          0
-
-    Status      Count     % of total
-    --------------------------------
-    200         695        93.8%
-    404         30          4.0%
-    304         13          1.8%
-    302         3           0.4%
-
-    Endpoint                                                 Avg(s)    Count     % of total
-    ---------------------------------------------------------------------------------------
-    /health                                                  0.10      470        63.4%
-    /api/NhiPatientImage/studies/{uid}/series/{uid}/...      1.03      146        19.7%
-    /api/DigestSummary/hospital                              0.08      67          9.0%
-    /api/NhiPatientImage/studies/{uid}/series-uid            0.16      15          2.0%
-    /api/DigestSummary/key-images                            0.06      6           0.8%
-    /api/registration/get-target-instance                    0.15      4           0.5%
-    /api/digestsummary                                       0.90      4           0.5%
-    /reports/view                                            1.59      3           0.4%
-    /assets/react-vendor-CWOlZk79.js                         0.01      3           0.4%
-    /assets/index-Cj5Ra9vo.css                               0.01      3           0.4%
-
-    Client IP           Count     % of total
-    ----------------------------------------
-    192.168.139.28      470        63.4%
-    192.168.139.110     154        20.8%
-    192.168.139.119     117        15.8%
-
-▶ IIS — 10.21.3.36
-------------------------------------------------------------------------
-  Total requests                          730
-  Unique client IPs                       3
-  302 Redirects                           3
-  5xx errors                              0
-    Health 503                            0
-  Slow (>5000ms)                          0
-
-    Status      Count     % of total
-    --------------------------------
-    200         674        92.3%
-    404         40          5.5%
-    304         13          1.8%
-    302         3           0.4%
-
-    Endpoint                                                 Avg(s)    Count     % of total
-    ---------------------------------------------------------------------------------------
-    /health                                                  0.11      472        64.7%
-    /api/NhiPatientImage/studies/{uid}/series/{uid}/...      1.37      142        19.5%
-    /api/DigestSummary/hospital                              0.12      61          8.4%
-    /api/NhiPatientImage/studies/{uid}/series-uid            0.10      15          2.1%
-    /api/DigestSummary/key-images                            0.07      5           0.7%
-    /api/registration/get-target-instance                    0.11      4           0.5%
-    /reports/view                                            0.21      3           0.4%
-    /assets/react-vendor-CWOlZk79.js                         0.02      3           0.4%
-    /assets/openjpegwasm_decode-C4nnCcr6.wasm                0.41      3           0.4%
-    /assets/index-Cj5Ra9vo.css                               0.02      3           0.4%
-
-    Client IP           Count     % of total
-    ----------------------------------------
-    192.168.139.28      472        64.7%
-    192.168.139.119     209        28.6%
-    192.168.139.110     49          6.7%
-
-========================================================================
-  Generated: 2026-06-27 02:39:31
-========================================================================
-
+  關聯總數                                6
+    NORMAL  (正常流程)                    1  (16.7%)
+    ORPHAN  (APP無對應API)                5  (83.3%)
+    UNVERIFIED (API未被使用)              0  (0.0%)
+  ORPHAN 驗證結果                         5 (成功) / 0 (失敗)
+  延遲 API→APP                            平均 4.8s · 最短 4.822s · 最長 4.822s

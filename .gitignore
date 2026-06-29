@@ -42,3 +42,6 @@ dist/
 # Test artifacts
 tests/output/
 tests/tmp/
+
+# Always-on persistence default output dir (D6 — created on every run)
+/log-parse/

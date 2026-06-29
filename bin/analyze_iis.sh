@@ -14,6 +14,12 @@
 #     collapsed into templates so cardinality stays manageable.
 #   - Top-N client IPs (--top, default 10, 0=all).
 #
+# Views: --view detail (default) = per-server tables; --view summary = KPI text.
+# Formats: --format text (default) | tsv | csv (governs detail file/view; C10).
+# Persistence: always-on via output_utils (persist_init + persist_views).
+# Emit-stats: --emit-stats prints iis_stats.tsv verbatim; short-circuits before
+#   persist_init (no files, no banner). Machine-readable handoff for overview.
+#
 # See docs/design.md §3.2 for field semantics.
 # ----------------------------------------------------------------------------
 
@@ -24,6 +30,8 @@ source "${SCRIPT_DIR}/../lib/common.sh"
 source "${SCRIPT_DIR}/../lib/date_utils.sh"
 source "${SCRIPT_DIR}/../lib/csv_utils.sh"
 source "${SCRIPT_DIR}/../lib/fmt_utils.sh"
+source "${SCRIPT_DIR}/../lib/aggregate_utils.sh"
+source "${SCRIPT_DIR}/../lib/output_utils.sh"
 
 REGIONS_CONF="${SCRIPT_DIR}/../conf/regions.conf"
 
@@ -31,12 +39,26 @@ OPT_LOG_DIR=""
 OPT_DAYS=7
 OPT_FROM="" OPT_TO="" OPT_DATE=""
 OPT_REGION="all"
-OPT_OUTPUT=""
+OPT_OUTPUT_DIR=""    # always-on persistence directory (C1: default empty)
+OPT_TODAY=0
+OPT_DAYS_SET=0
 OPT_TOP=10
 OPT_SLOW_API_MS=2000
 OPT_SLOW_APP_MS=5000
 OPT_FORMAT="text"
+OPT_VIEW="detail"    # detail (default, standalone) | summary
 OPT_MERGE=0
+OPT_EMIT_STATS=0
+
+# ---------------------------------------------------------------------------
+# Renderer context globals (set in main, read by iis_render_* functions)
+# ---------------------------------------------------------------------------
+_IIS_DATE_START=""
+_IIS_DATE_END=""
+_IIS_N_DATES=0
+_IIS_MERGED=0
+declare -a  _IIS_SERVER_KEYS=()   # ordered "region|role|server" keys
+declare -A  _IIS_THRESHOLD=()     # key -> slow_ms threshold
 
 usage() {
     cat <<EOF
@@ -47,49 +69,62 @@ health-check 503 events, and per-endpoint breakdowns.
 
 Options:
   --log-dir PATH     [required] root log directory
-  --region REGION    taipei | taichung | all   (default: all)
-  --days N           integer >= 1              (default: 7)   [ignored if --date/--from set]
-  --from / --to DATE YYYY-MM-DD inclusive range (use together)
-  --date DATE        YYYY-MM-DD single day     (overrides --days/--from/--to)
-  --top N            integer >= 0, 0 = ALL     (default: 10)  [caps Endpoint AND Client IP]
-  --slow-api-ms N    integer ms                (default: 2000)[API-role servers]
-  --slow-app-ms N    integer ms                (default: 5000)[APP-role servers]
-  --merge            flag    REQUIRES --region all; merges hosts, splits API vs APP buckets
-  --format FMT       text | tsv | csv          (default: text)[iis: non-text is a no-op]
-  --output FILE      path                      (default: stdout)
-  --conf FILE        path                      (default: conf/regions.conf)
+  --region REGION    taipei | taichung | all       (default: all)
+  --today            alias for --date \$(today); sets single-day window
+  --days N           integer >= 1                  (default: 7)   [implicit fallback]
+  --from / --to DATE YYYY-MM-DD inclusive range    (use together)
+  --date DATE        YYYY-MM-DD single day
+  --view V           summary | detail              (default: detail)
+  --format FMT       text | tsv | csv              (default: text)
+  --top N            integer >= 0, 0 = ALL         (default: 10)
+  --slow-api-ms N    integer ms                    (default: 2000)
+  --slow-app-ms N    integer ms                    (default: 5000)
+  --merge            REQUIRES --region all; merges hosts, splits API vs APP
+  --emit-stats       print iis_stats.tsv to stdout; no persistence, no banner
+  --output-dir DIR   persistence dir               (default: env > ./log-parse)
+  --conf FILE        regions config                (default: conf/regions.conf)
   -v, --verbose / -h, --help
+
+Interval flags are mutually exclusive: choose ONE of
+  --today | --date | --from/--to | --days (explicit)
+  If multiple are supplied the script aborts (fail-fast per project rule #1).
 
 Common scenarios:
   # 1. Daily IIS health, all regions, default per-role slow thresholds
-  bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --date 2026-05-21
-
-  # 2. Weekly audit, tighten API SLA to 1s, show ALL endpoints
   bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \\
-       --from 2026-05-18 --to 2026-05-25 --slow-api-ms 1000 --top 0
+       --date 2026-05-21
 
-  # 3. Host-agnostic merged view (API vs APP), all regions
-  bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --date 2026-05-21 --merge
+  # 2. Weekly audit, tighten API SLA, show ALL endpoints, CSV export
+  bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \\
+       --from 2026-05-18 --to 2026-05-25 --slow-api-ms 1000 --top 0 \\
+       --view detail --format csv
+
+  # 3. Management summary, top-3 endpoints
+  bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \\
+       --date 2026-05-21 --view summary --top 3
 EOF
 }
 
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --log-dir)      OPT_LOG_DIR="$2";      shift 2 ;;
-            --days)         OPT_DAYS="$2";          shift 2 ;;
-            --from)         OPT_FROM="$2";          shift 2 ;;
-            --to)           OPT_TO="$2";            shift 2 ;;
-            --date)         OPT_DATE="$2";          shift 2 ;;
-            --region)       OPT_REGION="$2";        shift 2 ;;
-            --top)          OPT_TOP="$2";           shift 2 ;;
-            --slow-api-ms)  OPT_SLOW_API_MS="$2";  shift 2 ;;
-            --slow-app-ms)  OPT_SLOW_APP_MS="$2";  shift 2 ;;
-            --merge)        OPT_MERGE=1;            shift ;;
-            --format)       OPT_FORMAT="$2";        shift 2 ;;
-            --output)       OPT_OUTPUT="$2";        shift 2 ;;
-            --conf)         REGIONS_CONF="$2";      shift 2 ;;
-            -v|--verbose)   LOG_LEVEL=DEBUG;        shift ;;
+            --log-dir)      OPT_LOG_DIR="$2";                   shift 2 ;;
+            --days)         OPT_DAYS="$2"; OPT_DAYS_SET=1;      shift 2 ;;
+            --from)         OPT_FROM="$2";                      shift 2 ;;
+            --to)           OPT_TO="$2";                        shift 2 ;;
+            --date)         OPT_DATE="$2";                      shift 2 ;;
+            --today)        OPT_TODAY=1;                        shift ;;
+            --region)       OPT_REGION="$2";                    shift 2 ;;
+            --view)         OPT_VIEW="$2";                      shift 2 ;;
+            --format)       OPT_FORMAT="$2";                    shift 2 ;;
+            --top)          OPT_TOP="$2";                       shift 2 ;;
+            --slow-api-ms)  OPT_SLOW_API_MS="$2";              shift 2 ;;
+            --slow-app-ms)  OPT_SLOW_APP_MS="$2";              shift 2 ;;
+            --merge)        OPT_MERGE=1;                        shift ;;
+            --emit-stats)   OPT_EMIT_STATS=1;                  shift ;;
+            --output-dir)   OPT_OUTPUT_DIR="$2";               shift 2 ;;
+            --conf)         REGIONS_CONF="$2";                  shift 2 ;;
+            -v|--verbose)   LOG_LEVEL=DEBUG;                    shift ;;
             -h|--help)      usage; exit 0 ;;
             *) die "Unknown option: $1" ;;
         esac
@@ -98,9 +133,7 @@ parse_args() {
     if [[ ! -d "$OPT_LOG_DIR" ]]; then die "Log directory not found: $OPT_LOG_DIR"; fi
     if [[ ! -f "$REGIONS_CONF" ]]; then die "conf file not found: $REGIONS_CONF"; fi
     assert_enum "--format" "$OPT_FORMAT" text tsv csv
-    if [[ "$OPT_FORMAT" != "text" ]]; then
-        log_warn "format '$OPT_FORMAT' not supported by analyze_iis; emitting text"
-    fi
+    assert_enum "--view"   "$OPT_VIEW"   summary detail
     assert_uint "--top" "$OPT_TOP"
     assert_uint "--slow-api-ms" "$OPT_SLOW_API_MS"
     assert_uint "--slow-app-ms" "$OPT_SLOW_APP_MS"
@@ -122,116 +155,12 @@ load_regions() {
     done < "$REGIONS_CONF"
 }
 
-# ---------------------------------------------------------------------------
-# IIS analysis awk program (embedded)
-# ---------------------------------------------------------------------------
-
-IIS_AWK='
-# ----------------------------------------------------------------------------
-# Purpose : Analyse IIS W3C log lines; emit TAB-delimited kind-tagged rows.
-# Input   : Raw W3C extended log lines (space-delimited; # lines = comments).
-# Vars    : slow_ms — role-resolved slow-request threshold in milliseconds.
-#           top     — max rows for ENDPOINT and CLIENT_IP (0 = all).
-# Output  : TAB-delimited, kind-prefixed rows on stdout:
-#             TOTAL\t<n>
-#             5XX\t<n>
-#             503_HEALTH\t<n>
-#             SLOW\t<n>
-#             REDIRECT\t<n>
-#             UNIQUE_IPS\t<n>
-#             STATUS\t<status>\t<count>
-#             ENDPOINT\t<uri>\t<count>\t<avg_sec>   (Top-N by count desc,
-#                                                    --top default 10, 0=all)
-#             CLIENT_IP\t<ip>\t<count>              (Top-N by count desc,
-#                                                    --top default 10, 0=all)
-# ----------------------------------------------------------------------------
-BEGIN {
-    health_path    = "/health"
-    slow_threshold = slow_ms + 0
-}
-
-# Skip W3C directive lines and any truncated rows missing required fields.
-/^#/ { next }
-NF < 17 { next }
-
-{
-    # Default IIS W3C field positions (1-based):
-    #   1=date  2=time  3=s-ip  4=cs-method  5=cs-uri-stem  6=cs-uri-query
-    #   7=s-port 8=cs-username 9=c-ip 10=cs(User-Agent) 11=cs(Referer)
-    #   12=sc-status 13=sc-substatus 14=sc-win32-status
-    #   15=sc-bytes 16=cs-bytes 17=time-taken (ms)
-    method = $4
-    uri    = $5
-    status = $12 + 0
-    ttms   = $17 + 0
-    client = $9
-
-    total++
-    status_count[status]++
-
-    # Per-client request counter; "-" appears when IIS could not resolve
-    # the client and is excluded from the unique-IP set.
-    if (client != "-") client_ips[client]++
-
-    # DICOM endpoints embed study/series UIDs in the path; collapse them so
-    # the top-endpoint table reflects logical endpoints, not UID variants.
-    ep = uri
-    if (ep ~ /\/api\/NhiPatientImage\/studies\/[^\/]+\/series\//) {
-        ep = "/api/NhiPatientImage/studies/{uid}/series/{uid}/..."
-    } else if (ep ~ /\/api\/NhiPatientImage\/studies\/[^\/]+\/series-uid/) {
-        ep = "/api/NhiPatientImage/studies/{uid}/series-uid"
-    } else if (ep ~ /\/api\/NhiPatientImage\/studies\/[^\/]+\/instances\//) {
-        ep = "/api/NhiPatientImage/studies/{uid}/instances/{uid}"
-    }
-    ep_count[ep]++
-    ep_time_ms[ep] += ttms   # accumulate time-taken for the per-endpoint mean
-
-    # Severity / health counters. Note: health-check 503s are deliberately
-    # split out from the generic 5xx bucket because they signal a dependency
-    # outage (OracleDB unhealthy), not an application fault.
-    if (status >= 500)                                error5xx++
-    if (ttms >= slow_threshold && uri != health_path) slow++
-    if (status == 503 && uri == health_path)          health503++
-    if (status == 302)                                redirect++
-}
-
-END {
-    printf "TOTAL\t%d\n",      total
-    printf "5XX\t%d\n",        error5xx+0
-    printf "503_HEALTH\t%d\n", health503+0
-    printf "SLOW\t%d\n",       slow+0
-    printf "REDIRECT\t%d\n",   redirect+0
-    printf "UNIQUE_IPS\t%d\n", length(client_ips)
-
-    # Emit raw STATUS counts; render_iis_stats re-sorts in-gawk for display.
-    for (s in status_count)
-        printf "STATUS\t%d\t%d\n", s, status_count[s]
-
-    # Top-N endpoints by request count (descending). 4th field = mean response
-    # time in seconds (time-taken logged in ms). top=0 emits all endpoints.
-    n = asorti(ep_count, ep_sorted, "@val_num_desc")
-    lim = (top == 0) ? n : (n < top ? n : top)
-    for (i = 1; i <= lim; i++) {
-        e = ep_sorted[i]
-        avg_sec = (ep_count[e] > 0) ? (ep_time_ms[e] / ep_count[e] / 1000.0) : 0
-        printf "ENDPOINT\t%s\t%d\t%.2f\n", e, ep_count[e], avg_sec
-    }
-
-    # Top-N unique client IPs with request counts, sorted descending.
-    # top=0 emits all client IPs.
-    m = asorti(client_ips, ip_sorted, "@val_num_desc")
-    lim2 = (top == 0) ? m : (m < top ? m : top)
-    for (i = 1; i <= lim2; i++)
-        printf "CLIENT_IP\t%s\t%d\n", ip_sorted[i], client_ips[ip_sorted[i]]
-}
-'
-
 # append_iis_server_files SERVER DATE_LIST_FILE OUTPUT_FILE
 #   Purpose : Append existing IIS log files for SERVER into OUTPUT_FILE.
 #   Args    : SERVER — hostname/IP; DATE_LIST_FILE — one YYYY-MM-DD per line;
 #             OUTPUT_FILE — destination file (must already exist).
 #   Output  : nothing on stdout.
-#   Returns : none (missing server dir logged as warning).
+#   Returns / Side effects : none (missing server dir logged as warning).
 #   Notes   : Uses date_to_iis_file from lib/date_utils.sh for filename mapping.
 append_iis_server_files() {
     local server="$1" date_list_file="$2" output="$3"
@@ -248,30 +177,236 @@ append_iis_server_files() {
     done < "$date_list_file"
 }
 
-# render_iis_stats LABEL COMBINED THRESHOLD
-#   Purpose : Run IIS_AWK once on COMBINED and emit the KV summary block plus
-#             three reordered %-tables (Status, Endpoint, Client IP).
-#   Args    : LABEL     — server/corpus name (for debug context);
-#             COMBINED  — path to concatenated IIS log file;
-#             THRESHOLD — slow-request threshold in ms (role-resolved).
-#   Output  : KV rows + three tables on stdout.
-#   Returns : none.
-#   Notes   : Caller must print fmt_h2 before calling this.
-#             OPT_TOP governs Endpoint + Client IP row cap (0 = all).
-render_iis_stats() {
-    local label="$1" combined="$2" threshold="$3"
-    log_debug "render_iis_stats: $label (threshold=${threshold}ms, top=${OPT_TOP})"
+# iis_corpus_stats SERVER ROLE REGION COMBINED THRESHOLD
+#   Purpose : Run AGG_IIS_AWK once on COMBINED, prefix each row with
+#             IIS<TAB>REGION<TAB>ROLE<TAB>SERVER<TAB>, and append the
+#             dimensioned rows to ${WORK_TMPDIR}/iis_stats.tsv.
+#             Also records the server key and threshold in renderer globals.
+#   Args    : SERVER — hostname/IP or merged label; ROLE — api|app;
+#             REGION — region id or "all" (merged); COMBINED — path to
+#             concatenated IIS log file (must be non-empty); THRESHOLD —
+#             slow-request threshold in ms (role-resolved).
+#   Output  : nothing on stdout; appends to ${WORK_TMPDIR}/iis_stats.tsv.
+#   Returns / Side effects : appends to _IIS_SERVER_KEYS; sets _IIS_THRESHOLD[key].
+#   Errors / Notes : caller must ensure COMBINED is non-empty before calling.
+iis_corpus_stats() {
+    local server="$1" role="$2" region="$3" combined="$4" threshold="$5"
+    local key="${region}|${role}|${server}"
+    _IIS_SERVER_KEYS+=("$key")
+    _IIS_THRESHOLD["$key"]="$threshold"
+    agg_iis_rows "$combined" "$threshold" "$OPT_TOP" \
+        | gawk -F'\t' -v region="$region" -v role="$role" -v server="$server" \
+          'BEGIN{OFS="\t"} {print "IIS", region, role, server, $0}' \
+        >> "${WORK_TMPDIR}/iis_stats.tsv"
+}
 
-    local stats
-    stats=$(gawk -v slow_ms="$threshold" -v top="$OPT_TOP" "$IIS_AWK" "$combined")
+# ---------------------------------------------------------------------------
+# iis_render_summary — management summary view (format-independent, always text)
+# ---------------------------------------------------------------------------
+
+# iis_render_summary
+#   Purpose : Aggregate stats across all servers in iis_stats.tsv and render
+#             a concise management-level summary: KPIs + percentages + Top-N
+#             enumeration of endpoints, status codes, client IPs.
+#             Format-independent (always text) per C10.
+#   Args    : none (uses globals: OPT_REGION, OPT_TOP, _IIS_DATE_*, WORK_TMPDIR).
+#   Output  : summary block on stdout.
+#   Returns / Side effects : none.
+#   Errors / Notes : gracefully handles empty stats (all zeros/N/A).
+iis_render_summary() {
+    local stats_file="${WORK_TMPDIR}/iis_stats.tsv"
+    local rlabel
+    if [[ "$OPT_REGION" == "all" ]]; then
+        rlabel="all"
+    else
+        rlabel="${REGION_NAMES[$OPT_REGION]:-$OPT_REGION}"
+    fi
+
+    printf "%b============ IIS Summary — Region: %s ============%b\n" \
+        "$C_BOLD" "$rlabel" "$C_RESET"
+    fmt_kv "Period" "${_IIS_DATE_START}  →  ${_IIS_DATE_END}  (${_IIS_N_DATES} days)"
+
+    # Single-pass aggregation across all servers
+    local agg_out
+    agg_out=$(gawk -F'\t' -v top="$OPT_TOP" '
+        $1=="IIS" && $5=="TOTAL"      { tot     += $6+0 }
+        $1=="IIS" && $5=="5XX"        { five_xx += $6+0 }
+        $1=="IIS" && $5=="503_HEALTH" { h503    += $6+0 }
+        $1=="IIS" && $5=="SLOW"       { slow    += $6+0 }
+        $1=="IIS" && $5=="REDIRECT"   { redirect+= $6+0 }
+        $1=="IIS" && $5=="UNIQUE_IPS" { uniq_ip += $6+0 }
+        $1=="IIS" && $5=="ENDPOINT"   { ep[$6]  += $7+0 }
+        $1=="IIS" && $5=="STATUS"     { st[$6]  += $7+0 }
+        $1=="IIS" && $5=="CLIENT_IP"  { ip[$6]  += $7+0 }
+        END {
+            printf "TOTAL\t%d\n",      tot
+            printf "5XX\t%d\n",        five_xx
+            printf "503_HEALTH\t%d\n", h503
+            printf "SLOW\t%d\n",       slow
+            printf "REDIRECT\t%d\n",   redirect
+            printf "UNIQUE_IPS\t%d\n", uniq_ip
+            n = asorti(ep, ep_sorted, "@val_num_desc")
+            lim = (top==0) ? n : (n < top ? n : top)
+            for (i=1; i<=lim; i++) {
+                e = ep_sorted[i]
+                pct = (tot>0) ? (ep[e]/tot*100) : 0
+                printf "ENDPOINT\t%s\t%d\t%.1f\n", e, ep[e], pct
+            }
+            m = asorti(st, st_sorted, "@val_num_desc")
+            lim3 = (m < 3) ? m : 3
+            for (i=1; i<=lim3; i++) {
+                c = st_sorted[i]
+                pct = (tot>0) ? (st[c]/tot*100) : 0
+                printf "STATUS\t%s\t%d\t%.1f\n", c, st[c], pct
+            }
+            k = asorti(ip, ip_sorted, "@val_num_desc")
+            lim3 = (k < 3) ? k : 3
+            for (i=1; i<=lim3; i++) {
+                a = ip_sorted[i]
+                pct = (tot>0) ? (ip[a]/tot*100) : 0
+                printf "CLIENT_IP\t%s\t%d\t%.1f\n", a, ip[a], pct
+            }
+        }
+    ' "$stats_file")
+
+    local total five_xx h503 slow redirect unique_ips
+    total=$(     printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="TOTAL"     {print $2}')
+    five_xx=$(   printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="5XX"       {print $2}')
+    h503=$(      printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="503_HEALTH"{print $2}')
+    slow=$(      printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="SLOW"      {print $2}')
+    redirect=$(  printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="REDIRECT"  {print $2}')
+    unique_ips=$(printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="UNIQUE_IPS"{print $2}')
+
+    local pct_5xx pct_slow pct_redir
+    pct_5xx=$(fmt_pct   "${five_xx:-0}" "${total:-0}")
+    pct_slow=$(fmt_pct  "${slow:-0}"    "${total:-0}")
+    pct_redir=$(fmt_pct "${redirect:-0}" "${total:-0}")
+
+    fmt_kv "總請求數"          "${total:-0}"
+    fmt_kv "不重複用戶端 IP"   "${unique_ips:-0}"
+    fmt_kv "5xx 錯誤率"        "${pct_5xx}  (${five_xx:-0})"
+    fmt_kv "  其中 健康檢查 503" "${h503:-0}"
+    fmt_kv "慢速率"            "${pct_slow}  (${slow:-0})"
+    fmt_kv "302 轉址率"        "${pct_redir}"
+
+    # Top-N endpoints (numbered list)
+    fmt_h3 "Top 端點 (佔比)"
+    local ep_i=0
+    while IFS=$'\t' read -r tag ep cnt pct; do
+        if [[ "$tag" != "ENDPOINT" ]]; then continue; fi
+        ep_i=$((ep_i + 1))
+        printf "    %d. %-52s  %s%%\n" "$ep_i" "$ep" "$pct"
+    done < <(printf '%s\n' "$agg_out")
+
+    # Top-3 status codes (inline)
+    local st_line=""
+    while IFS=$'\t' read -r tag code cnt pct; do
+        if [[ "$tag" != "STATUS" ]]; then continue; fi
+        if [[ -n "$st_line" ]]; then st_line="${st_line} · "; fi
+        st_line="${st_line}${code} ${pct}%"
+    done < <(printf '%s\n' "$agg_out")
+    fmt_h3 "狀態碼分布 (Top 3)"
+    printf "      %s\n" "${st_line:-N/A}"
+
+    # Top-3 client IPs (inline)
+    local ip_line=""
+    while IFS=$'\t' read -r tag ip_addr cnt pct; do
+        if [[ "$tag" != "CLIENT_IP" ]]; then continue; fi
+        if [[ -n "$ip_line" ]]; then ip_line="${ip_line} · "; fi
+        ip_line="${ip_line}${ip_addr} ${pct}%"
+    done < <(printf '%s\n' "$agg_out")
+    fmt_h3 "Top 用戶端 IP"
+    printf "      %s\n" "${ip_line:-N/A}"
+}
+
+# ---------------------------------------------------------------------------
+# iis_render_detail — detail view dispatcher (text | tsv | csv)
+# ---------------------------------------------------------------------------
+
+# iis_render_detail
+#   Purpose : Render the full detail view, routing to text or structured
+#             format based on OPT_FORMAT.
+#   Args    : none (uses globals: OPT_FORMAT, _IIS_*, WORK_TMPDIR, REGION_NAMES).
+#   Output  : detail content on stdout.
+#   Returns / Side effects : none.
+#   Errors / Notes : text format is byte-for-byte compatible with the pre-refactor
+#             per-server layout (guards B-section baselines, B37/B33). tsv/csv
+#             produce a standardized long-format table via AGG_CSV_FUNC.
+iis_render_detail() {
+    if [[ "$OPT_FORMAT" == "tsv" || "$OPT_FORMAT" == "csv" ]]; then
+        _iis_render_detail_structured
+        return
+    fi
+    _iis_render_detail_text
+}
+
+# _iis_render_detail_text
+#   Purpose : Render the current (pre-refactor-compatible) per-server text layout.
+#             Byte-for-byte identical output to the old render_iis_stats function
+#             but reads from iis_stats.tsv (no re-parse of raw log files).
+#   Args    : none.
+#   Output  : fmt_h1 banner + per-region/server KV blocks + tables + fmt_footer.
+#   Returns / Side effects : none.
+#   Notes   : Color-safe: uses $C_RED/$C_YELLOW/$C_RESET which are blanked by
+#             fmt_set_color_state when NO_COLOR=1 inside persist_views (C3/I08).
+_iis_render_detail_text() {
+    fmt_h1 "IIS Log Analysis Report"
+    fmt_kv "Period" "${_IIS_DATE_START}  →  ${_IIS_DATE_END}  (${_IIS_N_DATES} days)"
+
+    local prev_region=""
+    for skey in "${_IIS_SERVER_KEYS[@]}"; do
+        local region role server
+        IFS='|' read -r region role server <<< "$skey"
+        local threshold="${_IIS_THRESHOLD[$skey]}"
+
+        if [[ "$_IIS_MERGED" -eq 0 ]]; then
+            if [[ "$region" != "$prev_region" ]]; then
+                fmt_h1 "IIS Analysis — Region: ${REGION_NAMES[$region]}"
+                prev_region="$region"
+            fi
+        fi
+
+        fmt_h2 "IIS — ${server}"
+        _iis_render_server_text "$region" "$role" "$server" "$threshold"
+    done
+
+    fmt_footer
+}
+
+# _iis_render_server_text REGION ROLE SERVER THRESHOLD
+#   Purpose : Render one server's KV block + Status/Endpoint/Client-IP tables
+#             from iis_stats.tsv.  Output is byte-compatible with the old
+#             render_iis_stats function.
+#   Args    : REGION — region id; ROLE — api|app; SERVER — hostname/IP or merged
+#             label; THRESHOLD — slow-ms for label display.
+#   Output  : KV rows + three tables on stdout.
+#   Returns / Side effects : none.
+#   Notes   : Reads ${WORK_TMPDIR}/iis_stats.tsv; multiple gawk passes acceptable
+#             (formatting-only; stats were computed once in iis_corpus_stats).
+_iis_render_server_text() {
+    local region="$1" role="$2" server="$3" threshold="$4"
+    local stats_file="${WORK_TMPDIR}/iis_stats.tsv"
+
+    # Extract scalar KPIs in a single gawk pass
+    local scalars
+    scalars=$(gawk -F'\t' -v r="$region" -v ro="$role" -v s="$server" '
+        $1=="IIS" && $2==r && $3==ro && $4==s {
+            if ($5=="TOTAL")      printf "TOTAL\t%s\n",      $6
+            if ($5=="5XX")        printf "5XX\t%s\n",        $6
+            if ($5=="503_HEALTH") printf "503_HEALTH\t%s\n", $6
+            if ($5=="SLOW")       printf "SLOW\t%s\n",       $6
+            if ($5=="REDIRECT")   printf "REDIRECT\t%s\n",   $6
+            if ($5=="UNIQUE_IPS") printf "UNIQUE_IPS\t%s\n", $6
+        }
+    ' "$stats_file")
 
     local total error5xx h503 slow redir unique_ips
-    total=$(     echo "$stats" | gawk -F'\t' '$1=="TOTAL"     {print $2}')
-    error5xx=$(  echo "$stats" | gawk -F'\t' '$1=="5XX"       {print $2}')
-    h503=$(      echo "$stats" | gawk -F'\t' '$1=="503_HEALTH"{print $2}')
-    slow=$(      echo "$stats" | gawk -F'\t' '$1=="SLOW"      {print $2}')
-    redir=$(     echo "$stats" | gawk -F'\t' '$1=="REDIRECT"  {print $2}')
-    unique_ips=$(echo "$stats" | gawk -F'\t' '$1=="UNIQUE_IPS"{print $2}')
+    total=$(     printf '%s\n' "$scalars" | gawk -F'\t' '$1=="TOTAL"     {print $2}')
+    error5xx=$(  printf '%s\n' "$scalars" | gawk -F'\t' '$1=="5XX"       {print $2}')
+    h503=$(      printf '%s\n' "$scalars" | gawk -F'\t' '$1=="503_HEALTH"{print $2}')
+    slow=$(      printf '%s\n' "$scalars" | gawk -F'\t' '$1=="SLOW"      {print $2}')
+    redir=$(     printf '%s\n' "$scalars" | gawk -F'\t' '$1=="REDIRECT"  {print $2}')
+    unique_ips=$(printf '%s\n' "$scalars" | gawk -F'\t' '$1=="UNIQUE_IPS"{print $2}')
 
     fmt_kv "Total requests"               "${total:-0}"
     fmt_kv "Unique client IPs"            "${unique_ips:-0}"
@@ -285,11 +420,11 @@ render_iis_stats() {
     echo ""
     printf "    %-10s  %-8s  %s\n" "Status" "Count" "% of total"
     printf "    %s\n" "--------------------------------"
-    echo "$stats" | gawk -F'\t' -v total="${total:-0}" '
-        $1 == "STATUS" {
-            k = sprintf("%012d\t%s", $3, $2)
-            code[k] = $2
-            cnt[k]  = $3
+    gawk -F'\t' -v r="$region" -v ro="$role" -v s="$server" \
+        -v total="${total:-0}" '
+        $1=="IIS" && $2==r && $3==ro && $4==s && $5=="STATUS" {
+            k = sprintf("%012d\t%s", $7, $6)
+            code[k] = $6; cnt[k] = $7
         }
         END {
             m = asorti(code, idx, "@ind_str_desc")
@@ -299,141 +434,225 @@ render_iis_stats() {
                 pct = (total > 0) ? (n / total * 100) : 0
                 printf "    %-10s  %-8d  %5.1f%%\n", c, n, pct
             }
-        }'
+        }' "$stats_file"
 
     # Endpoint table: [Endpoint, Avg(s), Count, % of total], count-desc.
     echo ""
     printf "    %-55s  %-8s  %-8s  %s\n" "Endpoint" "Avg(s)" "Count" "% of total"
     printf "    %s\n" "---------------------------------------------------------------------------------------"
-    echo "$stats" | gawk -F'\t' -v total="${total:-0}" '
-        $1 == "ENDPOINT" {
-            pct = (total > 0) ? ($3 / total * 100) : 0
-            printf "    %-55s  %-8.2f  %-8d  %5.1f%%\n", $2, $4, $3, pct
-        }'
+    gawk -F'\t' -v r="$region" -v ro="$role" -v s="$server" \
+        -v total="${total:-0}" '
+        $1=="IIS" && $2==r && $3==ro && $4==s && $5=="ENDPOINT" {
+            pct = (total > 0) ? ($7 / total * 100) : 0
+            printf "    %-55s  %-8.2f  %-8d  %5.1f%%\n", $6, $8, $7, pct
+        }' "$stats_file"
 
     # Client IP table: [Client IP, Count, % of total], count-desc.
     echo ""
     printf "    %-18s  %-8s  %s\n" "Client IP" "Count" "% of total"
     printf "    %s\n" "----------------------------------------"
-    echo "$stats" | gawk -F'\t' -v total="${total:-0}" '
-        $1 == "CLIENT_IP" {
-            pct = (total > 0) ? ($3 / total * 100) : 0
-            printf "    %-18s  %-8d  %5.1f%%\n", $2, $3, pct
-        }'
+    gawk -F'\t' -v r="$region" -v ro="$role" -v s="$server" \
+        -v total="${total:-0}" '
+        $1=="IIS" && $2==r && $3==ro && $4==s && $5=="CLIENT_IP" {
+            pct = (total > 0) ? ($7 / total * 100) : 0
+            printf "    %-18s  %-8d  %5.1f%%\n", $6, $7, pct
+        }' "$stats_file"
 }
 
-analyze_server_iis() {
-    local server="$1" date_list_file="$2" slow_ms="$3"
-    local combined="${WORK_TMPDIR}/iis_${server}.log"
-    : > "$combined"
+# _iis_render_detail_structured
+#   Purpose : Emit the standardized long-format table (TSV or CSV) for the
+#             detail view.  One row per (server, metric, key) combination.
+#             Header printed once; --top cap applied during stats collection
+#             (ENDPOINT/CLIENT_IP already limited in iis_stats.tsv).
+#   Args    : none (uses globals: OPT_FORMAT, _IIS_SERVER_KEYS, WORK_TMPDIR,
+#             AGG_CSV_FUNC).
+#   Output  : header row + data rows on stdout.
+#   Returns / Side effects : none.
+#   Notes   : Columns: REGION ROLE SERVER METRIC KEY COUNT AVG_SEC PCT.
+#             METRIC ∈ {SUMMARY, STATUS, ENDPOINT, CLIENT_IP}.
+#             AVG_SEC = float for ENDPOINT rows, "-" for all others.
+_iis_render_detail_structured() {
+    local stats_file="${WORK_TMPDIR}/iis_stats.tsv"
+    local use_csv=0
+    if [[ "$OPT_FORMAT" == "csv" ]]; then use_csv=1; fi
 
-    append_iis_server_files "$server" "$date_list_file" "$combined"
-
-    if [[ ! -s "$combined" ]]; then
-        log_warn "  No IIS logs found for $server"
-        return
-    fi
-
-    fmt_h2 "IIS — $server"
-    render_iis_stats "IIS — $server" "$combined" "$slow_ms"
-}
-
-analyze_region_iis() {
-    local region_id="$1" date_list_file="$2"
-    local apis="${REGION_APIS[$region_id]}"
-    local apps="${REGION_APPS[$region_id]}"
-    local -a api_servers app_servers
-
-    fmt_h1 "IIS Analysis — Region: ${REGION_NAMES[$region_id]}"
-
-    IFS=',' read -ra api_servers <<< "$apis"
-    for srv in "${api_servers[@]}"; do
-        analyze_server_iis "$srv" "$date_list_file" "$OPT_SLOW_API_MS"
-    done
-
-    IFS=',' read -ra app_servers <<< "$apps"
-    for srv in "${app_servers[@]}"; do
-        analyze_server_iis "$srv" "$date_list_file" "$OPT_SLOW_APP_MS"
-    done
-}
-
-analyze_merged_iis() {
-    local date_list_file="$1"
-    local combined_api combined_app rid apis apps
-    local -a api_servers app_servers
-
-    combined_api="${WORK_TMPDIR}/iis_merged_api.log"
-    combined_app="${WORK_TMPDIR}/iis_merged_app.log"
-    : > "$combined_api"
-    : > "$combined_app"
-
-    for rid in "${REGION_IDS[@]}"; do
-        apis="${REGION_APIS[$rid]}"
-        apps="${REGION_APPS[$rid]}"
-
-        IFS=',' read -ra api_servers <<< "$apis"
-        for srv in "${api_servers[@]}"; do
-            append_iis_server_files "$srv" "$date_list_file" "$combined_api"
-        done
-
-        IFS=',' read -ra app_servers <<< "$apps"
-        for srv in "${app_servers[@]}"; do
-            append_iis_server_files "$srv" "$date_list_file" "$combined_app"
-        done
-    done
-
-    fmt_h2 "IIS — API_SERVERS (merged, all regions)"
-    if [[ -s "$combined_api" ]]; then
-        render_iis_stats "IIS — API_SERVERS (merged, all regions)" "$combined_api" "$OPT_SLOW_API_MS"
+    # Print header
+    if [[ "$use_csv" -eq 1 ]]; then
+        printf 'REGION,ROLE,SERVER,METRIC,KEY,COUNT,AVG_SEC,PCT\n'
     else
-        log_warn "  No API IIS logs found for merged analysis"
+        printf 'REGION\tROLE\tSERVER\tMETRIC\tKEY\tCOUNT\tAVG_SEC\tPCT\n'
     fi
 
-    fmt_h2 "IIS — APP_SERVERS (merged, all regions)"
-    if [[ -s "$combined_app" ]]; then
-        render_iis_stats "IIS — APP_SERVERS (merged, all regions)" "$combined_app" "$OPT_SLOW_APP_MS"
-    else
-        log_warn "  No APP IIS logs found for merged analysis"
-    fi
+    # Per-server gawk pass; maintains _IIS_SERVER_KEYS ordering
+    local struct_prog
+    struct_prog="${AGG_CSV_FUNC}"'
+function row(r, ro, s, metric, key, count, avgsec, pct) {
+    if (use_csv) {
+        printf "%s,%s,%s,%s,%s,%s,%s,%s\n",
+            q(r), q(ro), q(s), q(metric), q(key), count, q(avgsec), pct
+    } else {
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+            r, ro, s, metric, key, count, avgsec, pct
+    }
+}
+$1=="IIS" && $2==srv_r && $3==srv_ro && $4==srv_s {
+    tag = $5
+    if (tag=="TOTAL")      total  = $6+0
+    if (tag=="5XX")        fivexx = $6+0
+    if (tag=="503_HEALTH") h503   = $6+0
+    if (tag=="SLOW")       slow   = $6+0
+    if (tag=="REDIRECT")   redir  = $6+0
+    if (tag=="UNIQUE_IPS") uniq   = $6+0
+    if (tag=="STATUS")     { st_c[$6]  = $7+0 }
+    if (tag=="ENDPOINT")   { ep_c[$6]  = $7+0; ep_a[$6] = $8+0 }
+    if (tag=="CLIENT_IP")  { ip_c[$6]  = $7+0 }
+}
+END {
+    tot = total+0
+    row(srv_r, srv_ro, srv_s, "SUMMARY", "TOTAL",      tot,       "-", sprintf("%.1f", (tot>0)?100.0:0))
+    pct = (tot>0) ? fivexx/tot*100 : 0
+    row(srv_r, srv_ro, srv_s, "SUMMARY", "5XX",        fivexx+0,  "-", sprintf("%.1f", pct))
+    pct = (tot>0) ? h503/tot*100 : 0
+    row(srv_r, srv_ro, srv_s, "SUMMARY", "503_HEALTH", h503+0,    "-", sprintf("%.1f", pct))
+    pct = (tot>0) ? slow/tot*100 : 0
+    row(srv_r, srv_ro, srv_s, "SUMMARY", "SLOW",       slow+0,    "-", sprintf("%.1f", pct))
+    pct = (tot>0) ? redir/tot*100 : 0
+    row(srv_r, srv_ro, srv_s, "SUMMARY", "REDIRECT",   redir+0,   "-", sprintf("%.1f", pct))
+    row(srv_r, srv_ro, srv_s, "SUMMARY", "UNIQUE_IPS", uniq+0,    "-", "0.0")
+    for (code in st_c) {
+        pct = (tot>0) ? st_c[code]/tot*100 : 0
+        row(srv_r, srv_ro, srv_s, "STATUS", code, st_c[code], "-", sprintf("%.1f", pct))
+    }
+    n = asorti(ep_c, ep_sorted, "@val_num_desc")
+    for (i=1; i<=n; i++) {
+        e = ep_sorted[i]
+        pct = (tot>0) ? ep_c[e]/tot*100 : 0
+        row(srv_r, srv_ro, srv_s, "ENDPOINT", e, ep_c[e],
+            sprintf("%.2f", ep_a[e]+0), sprintf("%.1f", pct))
+    }
+    m = asorti(ip_c, ip_sorted, "@val_num_desc")
+    for (i=1; i<=m; i++) {
+        ip = ip_sorted[i]
+        pct = (tot>0) ? ip_c[ip]/tot*100 : 0
+        row(srv_r, srv_ro, srv_s, "CLIENT_IP", ip, ip_c[ip], "-", sprintf("%.1f", pct))
+    }
+}
+'
+    for skey in "${_IIS_SERVER_KEYS[@]}"; do
+        local region role server
+        IFS='|' read -r region role server <<< "$skey"
+        gawk -F'\t' \
+            -v srv_r="$region" -v srv_ro="$role" -v srv_s="$server" \
+            -v use_csv="$use_csv" \
+            "$struct_prog" "$stats_file"
+    done
 }
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 main() {
     parse_args "$@"
     init_tmpdir
     load_regions
 
+    # Resolve interval (mutex: die on >1 selector)
+    resolve_interval \
+        --today "$OPT_TODAY" --date "$OPT_DATE" \
+        --from  "$OPT_FROM"  --to   "$OPT_TO" \
+        --days-set "$OPT_DAYS_SET" --days "$OPT_DAYS"
+
     local date_list_file="${WORK_TMPDIR}/dates.txt"
-    build_date_list \
-        ${OPT_DATE:+--date "$OPT_DATE"} \
-        ${OPT_FROM:+--from "$OPT_FROM"} \
-        ${OPT_TO:+--to "$OPT_TO"} \
-        ${OPT_DAYS:+--days "$OPT_DAYS"} \
-        > "$date_list_file"
+    build_date_list "${INTERVAL_ARGS[@]}" > "$date_list_file"
 
-    local date_start date_end n_dates
-    date_start=$(head -1 "$date_list_file")
-    date_end=$(tail -1 "$date_list_file")
-    n_dates=$(count_lines "$date_list_file")
+    _IIS_DATE_START=$(head -1 "$date_list_file")
+    _IIS_DATE_END=$(tail -1 "$date_list_file")
+    _IIS_N_DATES=$(count_lines "$date_list_file")
 
-    log_info "Period: $date_start → $date_end ($n_dates days)"
+    log_info "Period: ${_IIS_DATE_START} → ${_IIS_DATE_END} (${_IIS_N_DATES} days)"
 
-    {
-        fmt_h1 "IIS Log Analysis Report"
-        fmt_kv "Period" "${date_start}  →  ${date_end}  (${n_dates} days)"
+    local stats_file="${WORK_TMPDIR}/iis_stats.tsv"
+    : > "$stats_file"
 
-        if [[ "$OPT_MERGE" -eq 1 ]]; then
-            analyze_merged_iis "$date_list_file"
-        else
-            for rid in "${REGION_IDS[@]}"; do
-                if [[ "$OPT_REGION" != "all" && "$OPT_REGION" != "$rid" ]]; then continue; fi
-                analyze_region_iis "$rid" "$date_list_file"
+    # Build iis_stats.tsv — one corpus per server (or merged pool)
+    if [[ "$OPT_MERGE" -eq 1 ]]; then
+        _IIS_MERGED=1
+        local combined_api="${WORK_TMPDIR}/iis_merged_api.log"
+        local combined_app="${WORK_TMPDIR}/iis_merged_app.log"
+        : > "$combined_api"
+        : > "$combined_app"
+
+        local rid
+        for rid in "${REGION_IDS[@]}"; do
+            local apis="${REGION_APIS[$rid]}" apps="${REGION_APPS[$rid]}"
+            local -a api_srvs app_srvs
+            IFS=',' read -ra api_srvs <<< "$apis"
+            for srv in "${api_srvs[@]}"; do
+                append_iis_server_files "$srv" "$date_list_file" "$combined_api"
             done
+            IFS=',' read -ra app_srvs <<< "$apps"
+            for srv in "${app_srvs[@]}"; do
+                append_iis_server_files "$srv" "$date_list_file" "$combined_app"
+            done
+        done
+
+        if [[ -s "$combined_api" ]]; then
+            iis_corpus_stats "API_SERVERS (merged, all regions)" "api" "all" \
+                "$combined_api" "$OPT_SLOW_API_MS"
+        else
+            log_warn "  No API IIS logs found for merged analysis"
+        fi
+        if [[ -s "$combined_app" ]]; then
+            iis_corpus_stats "APP_SERVERS (merged, all regions)" "app" "all" \
+                "$combined_app" "$OPT_SLOW_APP_MS"
+        else
+            log_warn "  No APP IIS logs found for merged analysis"
         fi
 
-        fmt_footer
-    } | if [[ -n "$OPT_OUTPUT" ]]; then tee "$OPT_OUTPUT"; else cat; fi
+    else
+        _IIS_MERGED=0
+        local rid
+        for rid in "${REGION_IDS[@]}"; do
+            if [[ "$OPT_REGION" != "all" && "$OPT_REGION" != "$rid" ]]; then continue; fi
+            local apis="${REGION_APIS[$rid]}" apps="${REGION_APPS[$rid]}"
+            local -a api_srvs app_srvs
 
-    if [[ -n "$OPT_OUTPUT" ]]; then log_info "Report written to: $OPT_OUTPUT"; fi
+            IFS=',' read -ra api_srvs <<< "$apis"
+            for srv in "${api_srvs[@]}"; do
+                local combined="${WORK_TMPDIR}/iis_${srv}.log"
+                : > "$combined"
+                append_iis_server_files "$srv" "$date_list_file" "$combined"
+                if [[ -s "$combined" ]]; then
+                    iis_corpus_stats "$srv" "api" "$rid" "$combined" "$OPT_SLOW_API_MS"
+                else
+                    log_warn "  No IIS logs found for $srv"
+                fi
+            done
+
+            IFS=',' read -ra app_srvs <<< "$apps"
+            for srv in "${app_srvs[@]}"; do
+                local combined="${WORK_TMPDIR}/iis_${srv}.log"
+                : > "$combined"
+                append_iis_server_files "$srv" "$date_list_file" "$combined"
+                if [[ -s "$combined" ]]; then
+                    iis_corpus_stats "$srv" "app" "$rid" "$combined" "$OPT_SLOW_APP_MS"
+                else
+                    log_warn "  No IIS logs found for $srv"
+                fi
+            done
+        done
+    fi
+
+    # --emit-stats: short-circuit BEFORE persist_init (no files, no banner)
+    if [[ "$OPT_EMIT_STATS" -eq 1 ]]; then
+        cat "$stats_file"
+        return
+    fi
+
+    persist_init "$OPT_OUTPUT_DIR"
+
+    persist_views iis "$OPT_VIEW" "$OPT_FORMAT" \
+        iis_render_summary iis_render_detail
 }
 
 main "$@"

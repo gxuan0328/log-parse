@@ -1,0 +1,26 @@
+============ IIS Summary — Region: all ============
+  Period                                  2026-05-21  →  2026-05-21  (1 days)
+  總請求數                                3734
+  不重複用戶端 IP                         15
+  5xx 錯誤率                              1.3%  (50)
+    其中 健康檢查 503                     50
+  慢速率                                  0.1%  (2)
+  302 轉址率                              0.3%
+
+    ■ Top 端點 (佔比)
+    1. /health                                               75.0%
+    2. /api/NhiPatientImage/studies/{uid}/series/{uid}/...   12.2%
+    3. /api/DigestSummary/hospital                           6.1%
+    4. /api/NhiPatientImage/studies/{uid}/series-uid         1.8%
+    5. /api/DigestSummary/key-images                         0.6%
+    6. /api/registration/get-target-instance                 0.5%
+    7. /api/GetLungCancerReportURL                           0.5%
+    8. /reports/view                                         0.3%
+    9. /assets/decodeImageFrameWorker-Be17YydA.js            0.3%
+    10. /api/digestsummary                                    0.3%
+
+    ■ 狀態碼分布 (Top 3)
+      200 95.7% · 404 1.9% · 503 1.3%
+
+    ■ Top 用戶端 IP
+      192.168.139.28 75.0% · 192.168.139.119 19.1% · 192.168.139.110 5.6%

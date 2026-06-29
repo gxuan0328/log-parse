@@ -1,6 +1,6 @@
 # log-parse — Design Specification
 
-> Version 1.0 · 2026-05-25 · Audience: developers, SREs, on-call engineers.
+> Version 2.0 · 2026-06-29 · Audience: developers, SREs, on-call engineers.
 > **Language**: **English** · [繁體中文](design.zh-TW.md)
 
 This document specifies **what** the system does and **why** it is structured
@@ -38,6 +38,7 @@ Each server emits three log families:
 | UC3 | DBA / on-call        | "When did OracleDB go unhealthy? How often does the app crash and restart?" | `analyze_errors`      |
 | UC4 | Operations lead      | "Give me the full daily / weekly digest in one go."                         | `log_report`          |
 | UC5 | Compliance auditor   | "How long after issuing a token did the user actually present it?"          | `analyze_access`      |
+| UC6 | Management           | "Give me a one-page system health overview across all regions and roles."   | `analyze_overview`    |
 
 ---
 
@@ -48,27 +49,40 @@ Each server emits three log families:
                        │     log_report.sh        │   (orchestrator)
                        └────────┬─────────────────┘
                                 │
-              ┌─────────────────┼─────────────────┐
-              ▼                 ▼                 ▼
-      ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
-      │ analyze_      │ │ analyze_iis   │ │ analyze_      │
-      │   access.sh   │ │       .sh     │ │   errors.sh   │
-      └───────┬───────┘ └───────┬───────┘ └───────┬───────┘
-              │                 │                 │
-              └─────────────────┼─────────────────┘
-                                │ sources
-                                ▼
-        ┌────────────────────────────────────────────────┐
-        │  lib/common.sh      logging, tmpdir, deps      │
-        │  lib/date_utils.sh  date ranges, filename map  │
-        │  lib/csv_utils.sh   field extraction (awk)     │
-        │  lib/fmt_utils.sh   text rendering             │
-        └────────────────────────────────────────────────┘
-                                │ reads
-                                ▼
-        ┌────────────────────────────────────────────────┐
-        │   conf/regions.conf  (region → server mapping) │
-        └────────────────────────────────────────────────┘
+         ┌──────────────────────┼──────────────────────┐
+         ▼                      ▼                      ▼
+ ┌──────────────┐   ┌───────────────┐   ┌───────────────────┐
+ │ analyze_     │   │ analyze_iis   │   │ analyze_overview  │
+ │   access.sh  │   │       .sh     │   │         .sh       │
+ └──────┬───────┘   └───────┬───────┘   └─────────┬─────────┘
+        │                   │                     │ --emit-stats
+        │                   │               ┌─────┴──────┐
+        │                   │               ▼            ▼
+        │                   │      analyze_iis  analyze_access
+        │                   │       (--emit-stats only, no persist)
+        │                   │
+ ┌──────────────┐
+ │ analyze_     │
+ │   errors.sh  │
+ └──────┬───────┘
+        │
+        └──────────────────────┬─────────────────────────┘
+                               │ sources
+                               ▼
+  ┌──────────────────────────────────────────────────────┐
+  │  lib/common.sh        logging, tmpdir, deps          │
+  │  lib/date_utils.sh    date ranges, resolve_interval  │
+  │  lib/csv_utils.sh     field extraction (awk)         │
+  │  lib/fmt_utils.sh     text rendering, fmt_set_color  │
+  │  lib/output_utils.sh  always-on persistence (D6)     │
+  │  lib/aggregate_utils.sh  AGG_IIS_AWK, AGG_CSV_FUNC,  │
+  │                           agg_iis_rows, agg_access_rows│
+  └──────────────────────────────────────────────────────┘
+                               │ reads
+                               ▼
+  ┌────────────────────────────────────────────────┐
+  │   conf/regions.conf  (region → server mapping) │
+  └────────────────────────────────────────────────┘
 ```
 
 ### 2.1 Layering rules
@@ -76,8 +90,10 @@ Each server emits three log families:
 1. **CLI layer** (`bin/`) — parses arguments, drives the workflow, prints reports.
    Never contains parsing logic; delegates to `lib/`.
 2. **Library layer** (`lib/`) — pure functions for date math, CSV extraction,
-   formatting, logging. No CLI parsing, no global mutation outside documented
-   `WORK_TMPDIR` / `LOG_LEVEL` / region arrays.
+   formatting, logging, persistence, and shared metric computation. No CLI
+   parsing; no global mutation outside documented sanctioned globals
+   (`WORK_TMPDIR`, `LOG_LEVEL`, region arrays, `RUN_OUTPUT_DIR`, `RUN_TS`,
+   `INTERVAL_ARGS`).
 3. **Configuration layer** (`conf/`) — pipe-delimited text consumed by
    `load_regions()`. No executable content.
 
@@ -93,9 +109,204 @@ boundaries clean: it re-invokes each `analyze_*.sh` with the resolved
 argument set rather than sourcing them. This guarantees that a crash in one
 module cannot corrupt the orchestrator state.
 
+`analyze_overview.sh` also spawns `analyze_iis.sh` and `analyze_access.sh` in
+`--emit-stats` mode to source aggregated statistics. These child spawns produce
+no persistence files and write no banners; they stream raw TAB-delimited stat
+rows to stdout.
+
+### 2.3 New library modules
+
+#### `lib/output_utils.sh` — always-on persistence (D6)
+
+Provides `persist_init`, `persist_ext`, `persist_path`, and `persist_views`.
+Every analyzer module calls this after computing stats. Globals: `RUN_OUTPUT_DIR`
+(resolved absolute path), `RUN_TS` (fixed launch timestamp `YYYYMMDD_HHMMSS`).
+
+Directory precedence (C1): `--output-dir` flag > `$LOG_PARSE_OUTPUT_DIR` env >
+`./log-parse`. The `./log-parse` literal lives **only** inside `persist_init`;
+every CLI defaults `OPT_OUTPUT_DIR=""` so the flag > env precedence holds.
+
+#### `lib/aggregate_utils.sh` — shared metric computation + CSV quoter (D5)
+
+Single source of truth for IIS metric awk and the RFC-4180 CSV quoter:
+
+- **`AGG_IIS_AWK`** — IIS W3C log analyser (relocated verbatim from
+  `bin/analyze_iis.sh`; no logic change). Used via `agg_iis_rows COMBINED SLOW_MS`.
+- **`AGG_CSV_FUNC`** — RFC-4180 gawk `q(s)` function (relocated verbatim from
+  `bin/analyze_access.sh`). Prepended to both the access `render_csv` and the
+  iis csv-detail gawk programs via string concatenation. **No bash-side
+  `fmt_csv_field` is introduced** — `q()` is a gawk function; a bash
+  reimplementation would create a third parallel copy.
+- **`agg_iis_rows COMBINED SLOW_MS [TOP]`** — runs `AGG_IIS_AWK`, emits tagged rows.
+- **`agg_access_rows RESULT_SORTED`** — single gawk pass that replaces the three
+  separate counting passes formerly at `analyze_access.sh:351-353`.
+- **Schema constants** `IIS_STAT_SCHEMA` / `ACCESS_STAT_SCHEMA` + field-index
+  helpers (`IIS_F_REGION`, `IIS_F_TAG`, etc.) so analyzers, renderers, and
+  overview share one contract.
+
+#### `lib/fmt_utils.sh` + `lib/common.sh` — re-entrant color state (C3)
+
+The one-time inline color decision formerly at `lib/common.sh:49` is extracted
+into **`fmt_set_color_state()`** and called once at source time (preserving
+current behavior) plus re-called by `persist_views`:
+
+```bash
+fmt_set_color_state() {
+    if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+        C_RESET='\033[0m';    C_BOLD='\033[1m'
+        C_RED='\033[0;31m';   C_YELLOW='\033[0;33m'
+        C_GREEN='\033[0;32m'; C_CYAN='\033[0;36m';  C_GREY='\033[0;90m'
+    else
+        C_RESET='' C_BOLD='' C_RED='' C_YELLOW='' C_GREEN='' C_CYAN='' C_GREY=''
+    fi
+}
+```
+
+`C_CYAN` is mandatory — `fmt_h3` (`fmt_utils.sh`) uses it for `■` sub-headers.
+Single-quoted `\033` literals are kept; `printf "%b"` and gawk `-v C_*=...`
+both expand them to real ESC bytes at output time. This single toggle covers
+every ANSI emitter: `fmt_h1/h2/h3`, `fmt_kv/fmt_kv_color`, `fmt_ok/warn/err`,
+`_log`, and the direct `-v C_*="$C_*"` gawk passes in `analyze_access.sh`.
+
 ---
 
 ## 3. Module specifications
+
+### 3.0 `analyze_overview.sh` — Management overview (NEW)
+
+#### 3.0.1 Purpose
+
+Provide a single-page, management-level system health overview across all
+regions and service roles. Summary-only; text-only; no `--view` or `--format`
+flag. Defaults to `--region all` with 7-day window.
+
+#### 3.0.2 DRY data sourcing — `--emit-stats` handoff with split arg vectors (C2)
+
+`analyze_overview.sh` contains **zero** log-collection, **zero** parsing, and
+**zero** metric awk. It spawns `analyze_iis.sh` and `analyze_access.sh` in
+`--emit-stats` mode and reads their TAB-delimited stat rows. The arg vectors
+**must** be split because `analyze_access.sh` does not accept `--slow-*-ms`:
+
+```bash
+IIS_ARGS=("${BASE_ARGS[@]}" --slow-api-ms "$OPT_SLOW_API_MS" \
+                             --slow-app-ms "$OPT_SLOW_APP_MS")
+ACCESS_ARGS=("${BASE_ARGS[@]}")   # NO slow thresholds (C2)
+
+analyze_iis.sh    "${IIS_ARGS[@]}"    --emit-stats > "$iis_stats"
+analyze_access.sh "${ACCESS_ARGS[@]}" --emit-stats > "$acc_stats"
+```
+
+Passing `--slow-*-ms` to `analyze_access.sh` would trigger its fail-fast
+`die` on unknown arg and crash the second spawn.
+
+#### 3.0.3 Canonical `--emit-stats` schema
+
+Both analyzers write TAB-delimited rows under the following contracts (defined
+as constants in `lib/aggregate_utils.sh`):
+
+**IIS schema** (`IIS_STAT_SCHEMA`):
+```
+IIS  <region>  <role>  <server>  TOTAL      <n>
+IIS  ...                         5XX        <n>
+IIS  ...                         503_HEALTH <n>
+IIS  ...                         SLOW       <n>
+IIS  ...                         REDIRECT   <n>
+IIS  ...                         UNIQUE_IPS <n>
+IIS  ...                         STATUS     <code>  <count>
+IIS  ...                         ENDPOINT   <uri>   <count>  <avg_sec>
+IIS  ...                         CLIENT_IP  <ip>    <count>
+```
+
+`role` is `api` or `app` (from `conf/regions.conf`). `region` is `taipei` or
+`taichung`; merged mode tags `region=all, server=API_SERVERS|APP_SERVERS`.
+Per-server granularity lets overview bucket into total / per-region / per-role
+by summation.
+
+**Access schema** (`ACCESS_STAT_SCHEMA`):
+```
+ACCESS  <region>  NORMAL        <n>
+ACCESS  ...       ORPHAN        <n>
+ACCESS  ...       UNVERIFIED    <n>
+ACCESS  ...       ORPHAN_OK     <n>
+ACCESS  ...       ORPHAN_FAIL   <n>
+ACCESS  ...       DELTA_COUNT   <n>
+ACCESS  ...       DELTA_SUM     <sec>
+ACCESS  ...       DELTA_MIN     <sec>
+ACCESS  ...       DELTA_MAX     <sec>
+```
+
+#### 3.0.4 Three-cut layout with single-numeric-placement rule (C5)
+
+The report presents three distinct decomposition dimensions. **No single
+numeric literal appears in more than one cut.**
+
+- **總體概況 (Overall)** — system grand totals + headline rates + qualitative
+  verdict. Grand totals (`IIS 總請求數`, `存取關聯總數`) appear **only here**.
+  The verdict line is numeric-free (words only).
+- **分區別 (By Region)** — per-region request *share %*, per-region NORMAL%,
+  per-region combined anomaly count. No grand totals; no role-specific signals.
+- **服務別 (By Service Role)** — per-role request volume + share % plus role-
+  specific problem signals: `UNVERIFIED` only in the API sub-slice (issuance
+  side); `ORPHAN`, `503_HEALTH`, `SLOW` only in the APP sub-slice (verification
+  side). `5XX` and `SLOW` literals appear **only** inside this block.
+
+Request volume legitimately appears as three different decompositions (grand
+total, region split, role split) — but each numeric literal is distinct.
+
+Sample output (weekly, `--from 2026-05-18 --to 2026-05-25`, all regions):
+```
+========================================================================
+  營運總覽報告 (Management Overview)
+========================================================================
+  分析期間                                2026-05-18  →  2026-05-25  (8 天)
+  涵蓋範圍                                2 區域 / 6 伺服器 (2 API · 4 APP)
+
+▶ 總體概況 (Overall)
+------------------------------------------------------------------------
+  IIS 總請求數                            20651
+  不重複用戶端 IP                         21
+  存取關聯總數                            14
+  NORMAL 正常流程率                       57.1%
+  平均 API→APP 延遲                       15.6s
+  整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
+
+▶ 分區別 (By Region)
+------------------------------------------------------------------------
+  [佔比；總量見總體概況]
+  台北                                    IIS 佔比 50.4%   NORMAL 25.0%   異常 6
+  台中                                    IIS 佔比 49.6%   NORMAL 100.0%   異常 0
+
+▶ 服務別 (By Service Role)
+------------------------------------------------------------------------
+
+    ■ API 伺服器 (2 台 · 簽發 Token)
+  IIS 請求數 (佔比)                       6595 (31.9%)
+  5XX 錯誤                                125
+  慢速率 (>2000ms)                        0.0%
+  UNVERIFIED (簽發未使用)                 0
+
+    ■ APP 伺服器 (4 台 · 驗證 Token / DICOM)
+  IIS 請求數 (佔比)                       14056 (68.1%)
+  健康檢查 503 (Oracle 相依)              367
+  慢速率 (>5000ms)                        0.0%
+  ORPHAN (無對應簽發)                     6
+```
+
+#### 3.0.5 Flags accepted / rejected
+
+Accepted: `--log-dir`, `--region`, `--today`, `--date`, `--from`/`--to`,
+`--days`, `--slow-api-ms`, `--slow-app-ms`, `--output-dir`, `--conf`, `-v`, `-h`.
+
+Not accepted (die on receipt): `--view`, `--format`, `--merge`, `--top`,
+`--emit-stats`.
+
+#### 3.0.6 Persistence
+
+Summary-only: `persist_views overview summary text overview_render ''`.
+Only `overview_summary_<TS>.txt` is written (`DETAIL_FN=""` → no detail file).
+Empty-window boundary: percentages rendered as `N/A` / `0.0%`, exit 0.
+
+---
 
 ### 3.1 `analyze_access.sh` — Access-token cross-correlation
 
@@ -205,7 +416,21 @@ order is identical to chronological ascending order.
 
 All three renderers consume `result_sorted`; none re-sort.
 
-#### 3.1.7 Text output — per-category columns
+#### 3.1.7 Views
+
+`--view detail` (standalone default): the per-record correlation tables, as
+described in §3.1.8–3.1.9. Governs both the console output and the persisted
+detail file.
+
+`--view summary` (management text; format-independent — always text): KPI
+block showing aggregate counts + percentages, per-region breakdown, ORPHAN
+verify-result summary, and mean/min/max API→APP latency. Does not contain
+per-record `PATIENT_ID_AES`.
+
+**The summary view is always text regardless of `--format`** (C10). `--format`
+governs only the detail file extension and render path.
+
+#### 3.1.8 Text output — per-category columns (detail view)
 
 Each category shows only its present columns; columns absent for that category
 are dropped. All categories include `PRSN_ID`, `CLIENT_IP`, and a full
@@ -235,7 +460,7 @@ or `VERIFY`):
 The `PATIENT_ID_AES` column is always last and may wrap on narrow terminals.
 No truncation is applied.
 
-#### 3.1.8 Machine-readable output — `tsv` and `csv`
+#### 3.1.9 Machine-readable output — `tsv` and `csv` (detail view)
 
 Both formats are flat outputs over `result_sorted` (same deterministic order
 as text, §3.1.6). Each row is prefixed with a `REGION` column (region name,
@@ -247,15 +472,16 @@ API_SERVER  APP_SERVER  HOSP_ID  PRSN_ID  CLIENT_IP  PATIENT_ID_AES
 ```
 
 - **`--format tsv`** — TAB delimiter, no quoting.
-- **`--format csv`** — comma delimiter, RFC-4180 conditional quoting: a field
-  is quoted only when it contains `"`, `,`, or a newline; embedded `"`
+- **`--format csv`** — comma delimiter, RFC-4180 conditional quoting via the
+  shared `q()` function (`AGG_CSV_FUNC` from `lib/aggregate_utils.sh`): a
+  field is quoted only when it contains `"`, `,`, or a newline; embedded `"`
   characters are doubled. LF line endings. Fields with none of these characters
   appear unquoted.
 
 A header row is emitted once at the top of each output (TAB-joined for tsv,
 comma-joined for csv). Both formats share the byte-stable ordering from §3.1.6.
 
-#### 3.1.9 `--merge` semantics
+#### 3.1.10 `--merge` semantics
 
 `--merge` requires `--region all` (explicit or default). Supplying a
 single-region `--region` with `--merge` aborts with an error.
@@ -274,6 +500,13 @@ all regions.
 
 Text output: a single `Region: all (merged)` block with three ASC-sorted
 category lists. tsv / csv output: `REGION` column value is `merged`.
+
+#### 3.1.11 `--emit-stats`
+
+Prints `access_stats.tsv` verbatim to stdout, then returns before
+`persist_init` (no files, no banners). This is `analyze_overview.sh`'s data
+source. Accepts only the interval/region/conf/verbose subset of flags — never
+`--slow-*-ms` (which would trigger the fail-fast `die` on unknown arg).
 
 ---
 
@@ -339,7 +572,25 @@ count for that server or bucket (including `/health` and redirects). When
 `--top` truncates the endpoint or client-IP list, the visible rows' percentages
 will not sum to 100.
 
-#### 3.2.5 Output sections
+#### 3.2.5 Single computation source
+
+`main()` builds each server's `$combined` once, runs `agg_iis_rows` once per
+corpus (writing dimensioned rows with `region role server` prefix to
+`iis_stats.tsv`), and never re-parses logs. Pure renderers read `iis_stats.tsv`.
+
+#### 3.2.6 Views
+
+`--view detail` (standalone default — D2): the per-server report layout
+described in §3.2.7–3.2.8. No information loss.
+
+`--view summary` (management text; format-independent — always text): concise
+KPIs + % for each scope (overall header, then per region→server, or merged
+buckets). Top-3 enumerations only; omits full tables. Every line carries a %.
+
+**The summary view is always text regardless of `--format`** (C10). `--format`
+governs only the detail file extension and render path.
+
+#### 3.2.7 Detail text output (--format text)
 
 For each server in the selected region(s), or each role bucket under `--merge`:
 
@@ -355,10 +606,27 @@ For each server in the selected region(s), or each role bucket under `--merge`:
    `c-ip = -`.
 
 IIS tables are exclusively count-descending ranked lists; there is no
-per-record chronological detail list, so the deterministic ASC sort introduced
-for `analyze_access` does not apply here.
+per-record chronological detail list.
 
-#### 3.2.6 Per-role slow thresholds
+#### 3.2.8 Detail machine-readable output (--format tsv|csv)
+
+Real long-format table (NEW — was a no-op+warn before this refactor). One
+standardized record per metric row; header emitted once; `--top` cap applied
+to ENDPOINT and CLIENT_IP rows. Column schema:
+
+```
+REGION  ROLE  SERVER       METRIC    KEY                COUNT  AVG_SEC  PCT
+taipei  api   10.22.63.37  SUMMARY   TOTAL              40000  -        100.0
+taipei  api   10.22.63.37  SUMMARY   5XX                120    -        0.3
+taipei  api   10.22.63.37  STATUS    200                36800  -        92.0
+taipei  api   10.22.63.37  ENDPOINT  /api/Auth/IssueTok 5000   0.12     12.5
+taipei  api   10.22.63.37  CLIENT_IP 10.21.3.35         7280   -        18.2
+```
+
+CSV uses the shared `q()` RFC-4180 quoter (`AGG_CSV_FUNC`). TSV uses TAB
+delimiter with no quoting. Both persisted files carry no ANSI color.
+
+#### 3.2.9 Per-role slow thresholds
 
 `--slow-api-ms` (default 2000 ms) applies to servers listed in `REGION_APIS`;
 `--slow-app-ms` (default 5000 ms) applies to servers in `REGION_APPS`. Role
@@ -367,14 +635,14 @@ tighter SLA expected of API token-issuance endpoints versus APP DICOM-serving
 endpoints. The `Slow (>Nms)` label in the report shows the actual threshold
 used for that server's role.
 
-#### 3.2.7 `--top` flag
+#### 3.2.10 `--top` flag
 
 Controls the maximum number of rows shown in both the Endpoint table and the
 Client IP table (default 10; 0=all). The same cap applies to both tables in
 the same invocation. The flag is unified across `analyze_iis` and
 `analyze_errors` (same name, same 0=all semantics, different target list).
 
-#### 3.2.8 `--merge` — two-bucket cross-region corpus
+#### 3.2.11 `--merge` — two-bucket cross-region corpus
 
 Under `--merge`, `analyze_merged_iis` builds two corpora by iterating over all
 configured regions:
@@ -382,18 +650,14 @@ configured regions:
 - **API corpus**: concatenates IIS logs from every region's `REGION_APIS` servers.
 - **APP corpus**: concatenates IIS logs from every region's `REGION_APPS` servers.
 
-The shared `render_iis_stats LABEL COMBINED THRESHOLD` helper runs IIS_AWK
-once on the combined log file, emits the KV summary block, and emits the three
-reordered tables (§3.2.5). Both `analyze_server_iis` (non-merged, per-server)
-and `analyze_merged_iis` (merged, two-bucket) delegate to this helper; the
-caller owns the `fmt_h2` section label.
-
-`render_iis_stats` is invoked once per corpus, producing two output blocks:
+`agg_iis_rows` runs once per corpus, producing two output blocks:
 1. `IIS — API_SERVERS (merged, all regions)` — uses `--slow-api-ms` threshold.
 2. `IIS — APP_SERVERS (merged, all regions)` — uses `--slow-app-ms` threshold.
 
-Each block contains the identical KV summary and three ranked tables as the
-per-server non-merged path, with the role-resolved `Slow (>Nms)` label.
+#### 3.2.12 `--emit-stats`
+
+Prints `iis_stats.tsv` verbatim to stdout, then returns before `persist_init`
+(no files, no banners). This is `analyze_overview.sh`'s data source.
 
 ---
 
@@ -455,7 +719,24 @@ shows up as either a health-check `Unhealthy` event or a query
 Downtime delta is computed with `mktime()` from the parsed timestamp
 (seconds resolution; sub-second precision is dropped).
 
-#### 3.3.6 Output
+#### 3.3.6 Views and persistence
+
+`analyze_errors` has **no `--view` flag**. Console always shows the detail
+view. The persisted `errors_summary_<TS>.txt` exists on disk but is not
+selectable to stdout (de-emphasis: errors is optional and off by default in
+`log_report`).
+
+- **`errors_render_summary`** (thin management text): per region/server
+  `Total ERROR`, `OracleDB health failures` (with % of total errors), `Restart
+  count`, `Unmatched SHUTDOWN`.
+- **`errors_render_detail`**: the full report — top patterns, DB first-failure
+  times, restart table — unchanged from prior behavior.
+
+`--format` accepts `text|tsv|csv` for forwarding compatibility but only `text`
+renders (non-text value triggers `log_warn` and falls back to text; C25).
+Both `errors_summary_*.txt` and `errors_detail_*.txt` are always written.
+
+#### 3.3.7 Output (detail view)
 
 - `Total ERROR entries` — raw count.
 - `OracleDB health failures` — DB-specific subset, in red.
@@ -471,26 +752,46 @@ Downtime delta is computed with `mktime()` from the parsed timestamp
 ### 3.4 `log_report.sh` — Orchestrator
 
 #### 3.4.1 Purpose
-Single entry point for "give me everything". Selects which modules to run
-and where their output goes.
+Single entry point for "give me everything". Selects which modules to run,
+forwards the appropriate flags to each child, and manages shared persistence
+state.
 
 #### 3.4.2 Module selection
 
-`--modules` accepts a comma-separated subset of `access,iis,errors` (default
-all three). Unknown names abort with a clear error.
+`--modules` accepts a comma-separated subset of `overview,iis,access,errors`.
+Default: `overview,iis,access` (this order; errors is **opt-in / off by
+default**). Unknown names abort with `die`. Modules are executed in the order
+listed.
 
-#### 3.4.3 Output modes
+#### 3.4.3 Persistence model
 
-| Mode             | Trigger                            | Behaviour                                              |
-|------------------|------------------------------------|--------------------------------------------------------|
-| Stdout (default) | Neither `--output` nor `--output-dir` | Streams each module to stdout in sequence            |
-| Combined file    | `--output FILE`                    | Truncates FILE, appends each module's output          |
-| Per-module dir   | `--output-dir DIR`                 | Writes `<module>_<YYYYMMDD_HHMMSS>.txt` files in DIR  |
+`log_report.sh` calls `persist_init "$OPT_OUTPUT_DIR"` **once**, then exports
+the resolved dir and timestamp so every child uses the same values:
 
-`--output` and `--output-dir` are mutually exclusive in practice; if both are
-supplied, `--output-dir` wins (the per-module branch fires first).
+```bash
+persist_init "$OPT_OUTPUT_DIR"
+export LOG_PARSE_RUN_TS="$RUN_TS"
+export LOG_PARSE_OUTPUT_DIR="$RUN_OUTPUT_DIR"
+for m in "${MODULES[@]}"; do run_module "analyze_${m}"; done
+```
 
-#### 3.4.4 Argument propagation
+Children default `OPT_OUTPUT_DIR=""` and read `$LOG_PARSE_OUTPUT_DIR` (C1);
+`--output-dir` is **not** forwarded as a flag — the env carries the resolved
+dir. A `log_report --output-dir /custom` run correctly lands every child file
+in `/custom`. Each child self-persists its own file pair. `log_report`'s own
+stdout is the concatenation of each child's selected-view console mirror.
+
+A default run produces exactly five files sharing one `RUN_TS`:
+`overview_summary`, `iis_summary`, `iis_detail`, `access_summary`,
+`access_detail`.
+
+#### 3.4.4 Default view
+
+`OPT_VIEW="summary"` — forwarded to `analyze_iis` and `analyze_access` only.
+`analyze_overview` is summary-only; `analyze_errors` has no `--view`. Callers
+may pass `--view detail` to see per-record tables in the console mirror.
+
+#### 3.4.5 Argument propagation
 
 `build_module_args()` builds a per-module `_MOD_ARGS` array forwarded verbatim
 to each child invocation. Conditional appends use the `if ... then ... fi`
@@ -498,75 +799,135 @@ form (rather than `[[ ]] && cmd`) so that a false predicate at the end of the
 function does not cause the function to return 1 — which under `set -e` would
 otherwise abort the orchestrator before any module runs.
 
-The function is **module-aware**: common flags (`--log-dir`, `--region`,
-`--days`/`--date`/`--from`/`--to`, `--conf`, `--verbose`, `--format`) are
-appended for every module; flags that apply only to specific modules are
-appended inside a `case "$module"` block:
+`--output-dir` is deliberately **not** forwarded as a flag; the env carries
+the resolved dir (see §3.4.3).
 
-- `analyze_access` receives `--merge` (when set).
-- `analyze_iis` receives `--top`, `--slow-api-ms`, `--slow-app-ms`, and
-  `--merge` (when set).
-- `analyze_errors` receives `--top`.
+#### 3.4.6 Option forwarding matrix
 
-`--conf` is appended only when explicitly supplied by the caller (`REGIONS_CONF`
-non-empty). When `--conf` is omitted, each child module resolves its own
-default (`conf/regions.conf`). log_report validates `--conf` only when the
-flag is explicitly supplied; it does not validate the children's default.
-
-`--format` is forwarded to every child. Modules that do not render tsv/csv
-(`analyze_iis`, `analyze_errors`) accept the flag, emit a one-line warning,
-and continue in text mode — so `--format csv` from log_report reaches
-`analyze_access` (which renders csv) while iis and errors stay text without
-aborting.
-
-#### 3.4.5 Option forwarding matrix
-
-| Flag | log_report | access | iis | errors | Notes |
-|---|---|---|---|---|---|
-| `--log-dir` | own | F | F | F | required |
-| `--region` | own | F | F | F | gates `--merge` |
-| `--days` / `--date` / `--from` / `--to` | own | F | F | F | |
-| `--conf` | own (validates only when supplied) | F | F | F | |
-| `--output` / `--output-dir` / `--modules` | own | — | — | — | orchestrator-only |
-| `--verbose` | own | F | F | F | |
-| `--format` | F→all | renders tsv/csv | no-op+warn | no-op+warn | |
-| `--top` | F→{iis,errors} | — | Endpoint+Client-IP | pattern count | 0=ALL |
-| `--slow-api-ms` | F→iis | — | API-role servers | — | default 2000 ms |
-| `--slow-app-ms` | F→iis | — | APP-role servers | — | default 5000 ms |
-| `--merge` | F→{access,iis} | cross-region | two-bucket | — | requires `--region all` |
+| Flag | log_report | overview | access | iis | errors | Notes |
+|---|---|---|---|---|---|---|
+| `--log-dir` | own | F | F | F | F | required |
+| `--region` | own | F | F | F | F | gates `--merge` |
+| `--today` | own | F | F | F | F | interval selector |
+| `--date` / `--from` / `--to` / `--days` | own | F | F | F | F | interval |
+| `--conf` | own (validates only when supplied) | F | F | F | F | |
+| `--output-dir` | own | env | env | env | env | never flag-forwarded (C1) |
+| `--modules` | own | — | — | — | — | orchestrator-only |
+| `--verbose` | own | F | F | F | F | |
+| `--view` | own | — (summary-only) | F | F | — (no view) | default summary |
+| `--format` | own | — (text-only) | F | F | warn+text | governs detail only |
+| `--top` | F→{iis,errors} | — | — | Endpoint+Client-IP | pattern count | 0=ALL |
+| `--slow-api-ms` | F→{overview,iis} | F | — | API-role servers | — | default 2000 ms |
+| `--slow-app-ms` | F→{overview,iis} | F | — | APP-role servers | — | default 5000 ms |
+| `--merge` | F→{access,iis} | — | cross-region | two-bucket | — | requires `--region all` |
 
 Legend: `own` = log_report acts on this flag itself · `F` = forwarded to child ·
-`—` = not accepted by that module (unknown option → `die`).
+`env` = carried via `LOG_PARSE_OUTPUT_DIR` env var · `—` = not accepted.
+
+---
+
+### 3.5 `--output FILE` — REMOVED (breaking)
+
+`--output FILE` has been removed from **all** CLIs. It is superseded by the
+always-on directory persistence model (incompatible with the two-files-per-
+module + multi-module design). No alias is provided. Migration: use
+`--output-dir DIR` and locate the generated files inside that directory.
 
 ---
 
 ## 4. Cross-cutting concerns
 
-### 4.1 Date handling
+### 4.1 Interval selection (mutex, D3)
 
-A single `build_date_list` (in `lib/date_utils.sh`) is the source of truth.
-Priority order:
+All five CLIs accept the same set of interval flags, enforced by
+`resolve_interval` (in `lib/date_utils.sh`):
 
-1. `--date YYYY-MM-DD` — single day.
-2. `--from YYYY-MM-DD --to YYYY-MM-DD` — inclusive range.
-3. `--days N` — last N days ending today (default `N=7`).
+| Flag | Meaning | Notes |
+|---|---|---|
+| `--today` | Single day = today's date | Maps to `--date $(today)` |
+| `--date YYYY-MM-DD` | Single specific day | |
+| `--from D --to D` | Inclusive range (both required) | Counted as one selector |
+| `--days N` | Last N calendar days ending today | Default implicit fallback (N=7) |
+
+**Rule: choose exactly one explicit selector.** Supplying more than one
+aborts with `die`. The error message cites the canonical priority ranking so
+the user knows which to keep:
+
+```
+interval flags are mutually exclusive
+(priority --date > --from/--to > --today > --days): choose exactly ONE (got N)
+```
+
+`--days` is the **only implicit fallback**; it is not counted as a conflict
+unless explicitly supplied with another selector. `resolve_interval` populates
+the global `INTERVAL_ARGS[]` which callers forward verbatim to
+`build_date_list`.
+
+The priority ranking in the error message is informational (it names a
+commonly-intended resolution) but the behavior is always hard mutex — the
+tool never silently picks one selector and proceeds. This satisfies project
+rule #1 ("fail fast, loud; no silent suppression").
+
+### 4.2 Persistence & filenames
+
+Every run of any analyzer module writes report files to a directory. File
+naming convention: `<module>_<kind>_<TS>.<ext>`.
+
+| Component | Values |
+|---|---|
+| `module` | `overview`, `iis`, `access`, `errors` |
+| `kind` | `summary`, `detail` |
+| `TS` | `YYYYMMDD_HHMMSS` — single shared timestamp per run |
+| `ext` | `txt` for summary (always); `txt`, `tsv`, or `csv` for detail |
+
+**Single-TS rule**: all files produced by one top-level invocation (or one
+`log_report` run) share exactly one `RUN_TS`. `log_report` calls
+`persist_init` once and exports `LOG_PARSE_RUN_TS` so every child process
+reads the same value.
+
+**Directory precedence** (C1):
+1. `--output-dir DIR` flag (highest)
+2. `$LOG_PARSE_OUTPUT_DIR` environment variable
+3. `./log-parse` (default, created if absent)
+
+Every CLI defaults `OPT_OUTPUT_DIR=""`. The `./log-parse` literal lives **only**
+inside `persist_init`; this ensures the flag > env precedence actually holds
+when `log_report` spawns children.
+
+**Color-free guarantee** (C3): all persisted files are written with
+`NO_COLOR=1` + `fmt_set_color_state` so `C_*` globals are blank during file
+writes. The console mirror is re-rendered after restoring the original color
+state. No ANSI ESC byte (`0x1b`) appears in any persisted file.
+
+**Overview** writes only a summary file (`overview_summary_<TS>.txt`); no
+detail file is produced.
+
+**`--emit-stats`** mode writes **no files**; it short-circuits before
+`persist_init`.
+
+### 4.3 Date handling
+
+A single `build_date_list` (in `lib/date_utils.sh`) is the source of truth
+for date range generation. `resolve_interval` is the single source of truth
+for interval-flag validation (see §4.1).
 
 All dates are validated via `date -d`; an invalid input aborts with `die`.
 
-### 4.2 Logging
+### 4.4 Logging
 
 `lib/common.sh` exposes `log_debug` / `log_info` / `log_warn` / `log_error`
 honouring `LOG_LEVEL`. All logs go to **stderr** so the report itself can be
-safely piped to a file or tool. Colour is auto-disabled when stdout is not a
-TTY or `NO_COLOR=1` is set.
+safely piped to a file or tool. Colour is governed by `fmt_set_color_state`
+(auto-disabled when stdout is not a TTY or `NO_COLOR=1` is set).
 
-### 4.3 Temp file management
+### 4.5 Temp file management
 
 `init_tmpdir` creates `${TMPDIR:-/tmp}/log_analyze.XXXXXX` and installs a
 trap on `EXIT INT TERM` to remove it. All intermediate files (per-server
-combined logs, per-region join inputs, restart event TSVs) live there.
+combined logs, per-region join inputs, restart event TSVs, `iis_stats.tsv`,
+`access_stats.tsv`) live there.
 
-### 4.4 Error handling
+### 4.6 Error handling
 
 - `set -euo pipefail` in every executable script.
 - Required arguments validated up-front; missing `--log-dir` aborts.
@@ -576,7 +937,7 @@ combined logs, per-region join inputs, restart event TSVs) live there.
 - Empty date data is reported (`無資料` / `No data`) but not treated as an
   error.
 
-### 4.5 Performance characteristics
+### 4.7 Performance characteristics
 
 - Disk I/O is the dominant cost. The two-pass awk join runs at roughly
   100k rows/sec on commodity hardware.
@@ -586,34 +947,69 @@ combined logs, per-region join inputs, restart event TSVs) live there.
 - The orchestrator runs modules sequentially. Adding parallelism would
   require independent `WORK_TMPDIR`s per child and is currently not
   warranted at the observed scale.
+- `analyze_overview.sh` spawns two child processes that re-read the log
+  files (one for IIS, one for access). This double-read is an accepted
+  cost of process isolation; the binding DRY requirement is single-source
+  computation (`lib/aggregate_utils.sh`), not single-read I/O. An
+  `--agg-cache` handoff is explicitly out of scope.
 
-### 4.6 CJK-aware rendering
+### 4.8 CJK-aware rendering
 
 KV rows and stat blocks are padded by **display width** (wcwidth: CJK ideographs = 2 columns) via the `FMT_AWK_WIDTH` engine in `lib/fmt_utils.sh`, so CJK and ASCII labels align correctly in the terminal.
 
 ---
 
-## 5. Extensibility
+## 5. Capability matrix
 
-### 5.1 Adding a region
+| Flag / Feature | analyze_overview | analyze_access | analyze_iis | analyze_errors | log_report | Default |
+|---|---|---|---|---|---|---|
+| `--log-dir` | req | req | req | req | req | — |
+| `--region` | yes | yes | yes | yes | yes | `all` |
+| `--today` | yes | yes | yes | yes | yes | off |
+| `--date` | yes | yes | yes | yes | yes | `""` |
+| `--from`/`--to` | yes | yes | yes | yes | yes | `""` |
+| `--days` | yes | yes | yes | yes | yes | `7` |
+| `--view summary\|detail` | — (summary-only) | yes | yes | — (detail-only) | yes (fwd→iis,access) | standalone=`detail`; log_report=`summary` |
+| `--format text\|tsv\|csv` | — (text-only) | yes | yes (real) | warn+text | yes (fwd) | `text` |
+| `--top N` | — | — | yes | yes | fwd→iis,errors | `10` |
+| `--slow-api-ms` | yes | — | yes | — | fwd→overview,iis | `2000` |
+| `--slow-app-ms` | yes | — | yes | — | fwd→overview,iis | `5000` |
+| `--merge` | — | yes | yes | — | fwd→access,iis | off |
+| `--output-dir` | yes | yes | yes | yes | yes | `""` → `./log-parse` |
+| `--emit-stats` | — | yes | yes | — | — | off |
+| `--modules` | — | — | — | — | yes | `overview,iis,access` |
+| `--conf` | yes | yes | yes | yes | yes | `conf/regions.conf` |
+| `-v`/`--verbose`, `-h` | yes | yes | yes | yes | yes | off |
+| `--output FILE` | REMOVED | REMOVED | REMOVED | REMOVED | REMOVED | n/a |
+
+`--format` on `analyze_iis` is now **real** (governs the detail file/view);
+it was formerly a no-op + warning. Summary is always text regardless of
+`--format` (C10).
+
+---
+
+## 6. Extensibility
+
+### 6.1 Adding a region
 Append to `conf/regions.conf` — no code change required. The new region
 appears in all reports automatically.
 
-### 5.2 Adding a new analyser
+### 6.2 Adding a new analyser
 1. Create `bin/analyze_<name>.sh` following the existing `parse_args` /
-   `load_regions` / `main` skeleton.
+   `load_regions` / `main` skeleton. Source `lib/output_utils.sh` and call
+   `persist_views` at the end of `main`.
 2. Add `<name>` to the `valid_modules` array in `bin/log_report.sh`.
 3. Add a row to the module table in this document and in `usage.md`.
 4. Add a section to `tests/run_tests.sh`.
 
-### 5.3 Changing the access-CSV schema
+### 6.3 Changing the access-CSV schema
 Update column indices in `lib/csv_utils.sh` (`extract_api_records`,
 `extract_app_records`) and the documented field table in §3.1.2. Run the
 test suite to confirm baselines still hold (or update them deliberately).
 
 ---
 
-## 6. Known limitations
+## 7. Known limitations
 
 - IIS time field is treated as UTC; reports do not localise.
 - The error-pattern grouper is heuristic — it will collapse messages that
@@ -622,3 +1018,9 @@ test suite to confirm baselines still hold (or update them deliberately).
 - Restart pairing assumes events arrive in chronological order; if logs are
   rotated mid-event this can produce a false `UNMATCHED`.
 - Only Linux/WSL is supported; macOS requires `gdate` aliasing.
+- Every run writes files to the output directory. Use `--output-dir` or
+  `LOG_PARSE_OUTPUT_DIR` to control placement; add `/log-parse/` to
+  `.gitignore` to prevent committing default-dir output.
+- `analyze_errors` summary is persisted to disk but not selectable to the
+  console (no `--view` flag on errors). Add `--view` to errors only on
+  explicit future request.

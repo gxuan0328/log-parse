@@ -191,10 +191,25 @@ fmt_table_row() {
 # ---------------------------------------------------------------------------
 
 # fmt_footer — closing block with generation timestamp.
+#   Purpose : Print the closing separator block with the run's generation time.
+#   Args    : none.
+#   Output  : footer block on stdout.
+#   Returns / Side effects : none.
+#   Notes   : Uses the shared run timestamp $RUN_TS (set once by persist_init in
+#             output_utils.sh) so a report's footer matches its persisted
+#             filename suffix and is byte-reproducible under a pinned
+#             $LOG_PARSE_RUN_TS. Falls back to wall-clock when RUN_TS is unset
+#             (e.g. fmt_utils sourced outside a CLI run).
 fmt_footer() {
+    local gen_ts
+    if [[ -n "${RUN_TS:-}" ]]; then
+        gen_ts="${RUN_TS:0:4}-${RUN_TS:4:2}-${RUN_TS:6:2} ${RUN_TS:9:2}:${RUN_TS:11:2}:${RUN_TS:13:2}"
+    else
+        gen_ts="$(date '+%Y-%m-%d %H:%M:%S')"
+    fi
     echo ""
     echo "$FMT_SEP1"
-    printf "  Generated: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')"
+    printf "  Generated: %s\n" "$gen_ts"
     echo "$FMT_SEP1"
     echo ""
 }
