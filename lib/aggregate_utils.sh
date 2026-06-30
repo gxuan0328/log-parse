@@ -45,8 +45,10 @@ AGG_IIS_AWK='
 #             SLOW\t<n>
 #             UNIQUE_IPS\t<n>
 #             STATUS\t<status>\t<count>
-#             ENDPOINT\t<uri>\t<count>\t<avg_sec>   (Top-N by count desc,
-#                                                    --top default 10, 0=all)
+#             ENDPOINT\t<uri>\t<count>\t<avg_sec>\t<sum_ms:int>  (Top-N by count desc,
+#                                                    --top default 10, 0=all;
+#                                                    GAP-3: avg/count/sum_ms cover the
+#                                                    per-server --top N capped subset only)
 #             CLIENT_IP\t<ip>\t<count>              (Top-N by count desc,
 #                                                    --top default 10, 0=all)
 #             CATEGORY\t<key:glcr|ds|nhi>\t<count>\t<sum_ms:int>
@@ -149,8 +151,8 @@ END {
     for (i = 1; i <= lim; i++) {
         e = ep_sorted[i]
         avg_sec = (ep_count[e] > 0) ? (ep_time_ms[e] / ep_count[e] / 1000.0) : 0
-        printf "ENDPOINT\t%s\t%d\t%.2f\n", e, ep_count[e], avg_sec
-    }
+        printf "ENDPOINT\t%s\t%d\t%.2f\t%d\n", e, ep_count[e], avg_sec, ep_time_ms[e] + 0
+    }                                              # ^ NEW field 9 = sum_ms (int)
 
     # Top-N unique client IPs with request counts, sorted descending.
     # top=0 emits all client IPs.
@@ -194,7 +196,10 @@ function q(s) {
 #   SLOW       <n>
 #   UNIQUE_IPS <n>
 #   STATUS     <code>  <count>
-#   ENDPOINT   <uri>   <count>  <avg_sec>
+#   ENDPOINT   <uri>   <count>  <avg_sec>  <sum_ms:int>
+#     NOTE: ENDPOINT field 9 = summed time-taken ms (per-server --top N capped subset;
+#     GAP-3: external repro MUST replicate the cap before pooling to match the pinned avgs.
+#     CATEGORY pooling is uncapped/full — see AGG_IIS_AWK docblock.)
 #   CLIENT_IP  <ip>    <count>
 #   CATEGORY   <key:glcr|ds|nhi>  <count>  <sum_ms:int>
 #     NOTE: CATEGORY position 8 = summed time-taken in ms (NOT avg_sec). No slow field.
@@ -210,6 +215,8 @@ IIS_F_TAG=5      # TOTAL | SLOW | UNIQUE_IPS | STATUS | ENDPOINT | CLIENT_IP | C
 IIS_F_KEY=6      # code (STATUS) | uri (ENDPOINT) | ip (CLIENT_IP) | n (scalars) | key (CATEGORY)
 IIS_F_COUNT=7    # count for STATUS / ENDPOINT / CLIENT_IP / CATEGORY
 IIS_F_AVGSEC=8   # avg_sec for ENDPOINT; sum_ms (integer ms) for CATEGORY
+IIS_F_SUMMS=9    # ENDPOINT only: summed time-taken ms (exact cross-server pooling
+                 # over the per-server --top N emitted rows; see GAP-3 caveat above)
 
 # ACCESS_STAT_SCHEMA — row format emitted by analyze_access --emit-stats.
 # Each row: ACCESS <TAB> region <TAB> TAG <TAB> value
@@ -317,4 +324,33 @@ agg_access_rows() {
             printf "DELTA_MAX\t%g\n",   delta_max+0
         }
     ' "$result_sorted"
+}
+
+# ---------------------------------------------------------------------------
+# overview_health_verdict — map NORMAL-flow rate to 整體健康判定 verdict
+# ---------------------------------------------------------------------------
+
+# overview_health_verdict NORMAL TOTAL
+#   Purpose : Map the NORMAL-flow rate to the 整體健康判定 verdict string (req4).
+#             Single source of truth for the 90/70 verdict thresholds (D1).
+#   Args    : NORMAL — integer NORMAL correlation count.
+#             TOTAL  — integer total correlation count (NORMAL+ORPHAN+UNVERIFIED).
+#   Output  : verdict sentence (words only, numeric-free) on stdout.
+#   Returns / Side effects : none.
+#   Errors / Notes : Rate = trunc(NORMAL/TOTAL*100) toward zero via printf %d.
+#             >=90 正常; >=70 注意; <70 警告; TOTAL==0 無資料.
+#             IIS volume is not included in the total (access correlation only).
+#             Numeric-free output preserves the verdict invariant (guards H11).
+overview_health_verdict() {
+    local normal="$1" total="$2"
+    if (( total == 0 )); then
+        echo "無資料 — 本期間無存取關聯記錄"
+        return
+    fi
+    local p
+    p=$(gawk -v n="$normal" -v d="$total" 'BEGIN{printf "%d", n/d*100}')
+    if   (( p >= 90 )); then echo "正常 — 系統整體運作健康"
+    elif (( p >= 70 )); then echo "注意 — 存在異常存取，建議持續監控"
+    else                      echo "警告 — 存取異常比例偏高，建議立即調查"
+    fi
 }

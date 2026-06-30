@@ -106,11 +106,10 @@ summary and the `Scope` line in the detail banner show the active mode explicitl
 ## 0. `bin/analyze_overview.sh`
 
 Management overview combining access cross-correlation results and IIS core-function
-performance into a single report with three panels:
+performance into a single report with two panels:
 
-- **總體概況 (Overall)** — access NORMAL/ORPHAN/UNVERIFIED counts with value + % of 存取關聯總數; average API→APP latency; qualitative verdict.
-- **分區別 (By Region)** — per-region 正常/異常 counts + %, CJK display-width aligned so columns never shift regardless of percentage width.
-- **核心功能效能 (Core Function Performance)** — three IIS-sourced, UTC+8-corrected categories: 雲端查詢 (前端轉跳速度, `/api/GetLungCancerReportURL`), 報告摘要 (摘要載入速度, `/api/DigestSummary` prefix), 影像下載 (影像載入速度, `/api/NhiPatientImage/studies/…` prefix); each row shows count, share% of the 3-category sum, and average response time in seconds. The three categories are a subset of total business requests. 服務別 (By Service Role) was retired.
+- **總體概況 (Overall)** — access NORMAL/ORPHAN/UNVERIFIED counts with value + % of 存取關聯總數; average API→APP latency; 整體健康判定 verdict (thresholds: P = trunc(NORMAL ÷ 存取關聯總數 × 100); P ≥ 90 → 正常, 70 ≤ P ≤ 89 → 注意, P < 70 → 警告, total = 0 → 無資料); followed by an ■ 核心功能效能 (Core Function Performance) sub-block with the three IIS-sourced, UTC+8 day-corrected categories — 雲端查詢 (`/api/GetLungCancerReportURL`), 報告摘要 (`/api/DigestSummary` prefix), 影像下載 (`/api/NhiPatientImage/studies/…` prefix) — each row showing 呼叫次數 (count) and 回應時間 (average seconds, 2 dp); plus 核心功能存取合計 (plain count, no percentage). Category counts and averages are accumulated over the full request population (not top-N capped).
+- **分區別 (By Region)** — one ■ block per in-scope region, each opening with a prose enumeration `存取關聯 N 筆 — NORMAL n (p%) · ORPHAN n (p%) · UNVERIFIED n (p%)` (percentages within that region), followed by the same three core-function categories (呼叫次數 + 回應時間). For a single-region run (e.g. `--region taipei`) the 分區別 block intentionally mirrors 總體概況 — this is the correct ROLLUP+breakdown symmetry, not a double-count.
 
 **IIS date semantics (UTC+8):** `--date D` means the UTC+8 business day D. IIS W3C
 logs are timestamped UTC+0; a local day D = UTC `[D-1 16:00, D 16:00)`. The module
@@ -190,25 +189,34 @@ excluded). IIS core-function counts are UTC+8 day-corrected.
   平均 API→APP 延遲                       19.5s
   整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
 
+    ■ 核心功能效能 (Core Function Performance)
+      雲端查詢    呼叫次數 11       回應時間 0.11s
+      報告摘要    呼叫次數 186      回應時間 0.38s
+      影像下載    呼叫次數 427      回應時間 0.93s
+      核心功能存取合計 624
+
 ▶ 分區別 (By Region)
 ------------------------------------------------------------------------
-  台北        正常 0 (0.0%)         異常 3 (100.0%)
-  台中        正常 6 (100.0%)       異常 0 (0.0%)
 
-▶ 核心功能效能 (Core Function Performance)
-------------------------------------------------------------------------
-  [佔比為三大核心功能合計之占比 (三者為核心功能子集，非全體業務請求)；回應時間為平均值]
-  雲端查詢 (前端轉跳速度) 11 (1.8%)     平均 0.11s
-  報告摘要 (摘要載入速度) 186 (29.8%)   平均 0.38s
-  影像下載 (影像載入速度) 427 (68.4%)   平均 0.93s
-  核心功能存取合計                        624 (100.0%)
+    ■ 台北 (taipei)
+      存取關聯 3 筆 — NORMAL 0 (0.0%) · ORPHAN 3 (100.0%) · UNVERIFIED 0 (0.0%)
+      雲端查詢    呼叫次數 5        回應時間 0.02s
+      報告摘要    呼叫次數 71       回應時間 0.22s
+      影像下載    呼叫次數 220      回應時間 1.48s
+
+    ■ 台中 (taichung)
+      存取關聯 6 筆 — NORMAL 6 (100.0%) · ORPHAN 0 (0.0%) · UNVERIFIED 0 (0.0%)
+      雲端查詢    呼叫次數 6        回應時間 0.19s
+      報告摘要    呼叫次數 115      回應時間 0.47s
+      影像下載    呼叫次數 207      回應時間 0.34s
 ```
 
 Content rules enforced by the implementation:
-- `存取關聯總數` and the NORMAL/ORPHAN/UNVERIFIED counts appear only in the 總體概況 block.
-- 分區別 shows per-region 正常/異常 value + % only; `ORPHAN` and `UNVERIFIED` literals do not appear there.
-- 核心功能效能 shows count, share%, and average response time for each of the 3 categories; there is **no 慢速 column** in the overview (per-server `慢速率` remains in `analyze_iis` summaries).
-- The verdict line is always numeric-free.
+- `存取關聯總數` and the NORMAL/ORPHAN/UNVERIFIED counts appear only in the 總體概況 block (not in 分區別).
+- 分區別 shows one ■ block per in-scope region with a prose `存取關聯 N 筆 — NORMAL n (p%) · ORPHAN n (p%) · UNVERIFIED n (p%)` enumeration (percentages within that region), followed by 呼叫次數 + 回應時間 for each category. The `ORPHAN` and `UNVERIFIED` keywords appear in the prose line only, not as rpad-aligned columns.
+- 核心功能效能 rows show 呼叫次數 (count) and 回應時間 (average seconds); there is **no per-row share percentage** and **no speed sub-description** (e.g. no `前端轉跳速度`). There is **no 慢速 column** (per-server `慢速率` remains in `analyze_iis` summaries).
+- The 整體健康判定 verdict is always numeric-free. Verdict bands: P = trunc(NORMAL ÷ 存取關聯總數 × 100); P ≥ 90 → 正常, 70 ≤ P ≤ 89 → 注意, P < 70 → 警告, total = 0 → 無資料. On 2026-05-21 all-region: 6/9 → trunc(66.7) = 66 < 70 → 警告.
+- Single-region scope (e.g. `--region taipei`): the 分區別 台北 block reproduces the same N/O/U and category figures as 總體概況. This is intentional ROLLUP+breakdown symmetry — not a double-count. The regional label is the meaningful difference.
 - An empty analysis window (no data) yields zeros and `N/A` rates; exit code 0.
 
 > Full weekly sample: [`../examples/sample-outputs/overview_all_week.txt`](../examples/sample-outputs/overview_all_week.txt).
@@ -449,10 +457,10 @@ test-host filter).
   不重複用戶端 IP                         6
   慢速率                                  0.3%  (2)
 
-    ■ Top 端點 (佔比)
-    1. /api/NhiPatientImage/studies/{uid}/series/{uid}/...   50.8%
-    2. /api/DigestSummary/hospital                           21.9%
-    3. /api/NhiPatientImage/studies/{uid}/series-uid          8.3%
+    ■ Top 端點 (佔比 · 平均回應時間)
+     1. /api/NhiPatientImage/studies/{uid}/series/{uid}/...    50.8%   1.05s
+     2. /api/DigestSummary/hospital                            21.9%   0.33s
+     3. /api/NhiPatientImage/studies/{uid}/series-uid           8.3%   0.18s
     ...
 
     ■ 狀態碼分布 (Top 3)
@@ -461,6 +469,19 @@ test-host filter).
     ■ Top 用戶端 IP
       192.168.139.119 98.5% · 10.1.73.37 0.8% · 10.22.63.37 0.7%
 ```
+
+The **Top 端點** section title is **佔比 · 平均回應時間**. Each row shows rank
+(right-aligned `%2d.` so ` 1.`…` 9.` and `10.` keep the URI column at an
+identical offset), percentage of the summary `總請求數`, and per-endpoint average
+response time in seconds (2 dp).
+
+> **Pooling caveat (GAP-3).** The per-endpoint average is pooled from each
+> server's `--top N` emitted rows, not from the full request population for that
+> endpoint. This is the same population the count and percentage already report,
+> so it is internally consistent. External raw-gawk verification must replicate
+> the per-server `--top N` cap before pooling to reproduce the pinned values. By
+> contrast, the 核心功能效能 category counts and averages in the overview are
+> accumulated over the full request population and are not affected by `--top N`.
 
 The status-code distribution (Top-N) is retained as descriptive business-status
 accounting. 302 or 4xx codes may still appear there; that is intentional

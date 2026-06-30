@@ -252,7 +252,7 @@ iis_render_summary() {
         $1=="IIS" && $5=="TOTAL"      { tot     += $6+0 }
         $1=="IIS" && $5=="SLOW"       { slow    += $6+0 }
         $1=="IIS" && $5=="UNIQUE_IPS" { uniq_ip += $6+0 }
-        $1=="IIS" && $5=="ENDPOINT"   { ep[$6]  += $7+0 }
+        $1=="IIS" && $5=="ENDPOINT"   { ep[$6] += $7+0; ep_ms[$6] += $9+0 }
         $1=="IIS" && $5=="STATUS"     { st[$6]  += $7+0 }
         $1=="IIS" && $5=="CLIENT_IP"  { ip[$6]  += $7+0 }
         END {
@@ -262,9 +262,10 @@ iis_render_summary() {
             n = asorti(ep, ep_sorted, "@val_num_desc")
             lim = (top==0) ? n : (n < top ? n : top)
             for (i=1; i<=lim; i++) {
-                e = ep_sorted[i]
+                e   = ep_sorted[i]
                 pct = (tot>0) ? (ep[e]/tot*100) : 0
-                printf "ENDPOINT\t%s\t%d\t%.1f\n", e, ep[e], pct
+                avg = (ep[e]>0) ? (ep_ms[e]/ep[e]/1000.0) : 0
+                printf "ENDPOINT\t%s\t%d\t%.1f\t%.2f\n", e, ep[e], pct, avg
             }
             m = asorti(st, st_sorted, "@val_num_desc")
             lim3 = (m < 3) ? m : 3
@@ -296,13 +297,16 @@ iis_render_summary() {
     fmt_kv "不重複用戶端 IP"   "${unique_ips:-0}"
     fmt_kv "慢速率"            "${pct_slow}  (${slow:-0})"
 
-    # Top-N endpoints (numbered list)
-    fmt_h3 "Top 端點 (佔比)"
+    # Top-N endpoints (numbered list with avg response time).
+    # GAP-3: count/pct/avg are over the per-server --top N emitted rows (capped subset),
+    # not the full request population for capped endpoints. %2d. right-aligns ranks 1-99
+    # so the URI column starts at the same offset for all rows (fixes rank-10 跑版).
+    fmt_h3 "Top 端點 (佔比 · 平均回應時間)"
     local ep_i=0
-    while IFS=$'\t' read -r tag ep cnt pct; do
+    while IFS=$'\t' read -r tag ep cnt pct avg; do
         if [[ "$tag" != "ENDPOINT" ]]; then continue; fi
         ep_i=$((ep_i + 1))
-        printf "    %d. %-52s  %s%%\n" "$ep_i" "$ep" "$pct"
+        printf "    %2d. %-52s  %5s%%  %5ss\n" "$ep_i" "$ep" "$pct" "$avg"
     done < <(printf '%s\n' "$agg_out")
 
     # Top-3 status codes (inline)

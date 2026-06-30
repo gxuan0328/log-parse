@@ -4,7 +4,7 @@
 > Correlates access tokens, surfaces IIS anomalies, and tracks application
 > lifecycle events across paired API / APP servers.
 
-[![Tests](https://img.shields.io/badge/tests-248%2F248-brightgreen)](tests/run_tests.sh)
+[![Tests](https://img.shields.io/badge/tests-258%2F258-brightgreen)](tests/run_tests.sh)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bash 4+](https://img.shields.io/badge/bash-4%2B-lightgrey)](https://www.gnu.org/software/bash/)
 
@@ -19,7 +19,7 @@ geographic regions (Taipei / Taichung) and produces correlated reports:
 
 | Module               | Inputs                                        | Produces                                                                              |
 |----------------------|-----------------------------------------------|---------------------------------------------------------------------------------------|
-| `analyze_overview`   | IIS + Access stats via `--emit-stats`         | Management overview: 總體概況 (access value+%) / 分區別 (CJK fixed-width value+%) / 核心功能效能 (IIS UTC+8-corrected: 雲端查詢/報告摘要/影像下載 count+avg); summary-only, text-only |
+| `analyze_overview`   | IIS + Access stats via `--emit-stats`         | Management overview: two-cut layout — ▶ 總體概況 (access NORMAL/ORPHAN/UNVERIFIED value+%; 整體健康判定 verdict >=90 正常/>=70 注意/<70 警告; ■ 核心功能效能 sub-block: 雲端查詢/報告摘要/影像下載 呼叫次數+回應時間; 核心功能存取合計) / ▶ 分區別 (per-region 存取關聯 N 筆 N/O/U prose + same three categories 呼叫次數+回應時間); summary-only, text-only |
 | `analyze_access`     | API + APP access CSVs                         | Token-issuance ↔ verification flows, orphan / unverified usage; `--view summary|detail` |
 | `analyze_iis`        | IIS W3C extended logs                         | Business-only request metrics: slow requests, endpoint breakdown, status distribution; `--view summary|detail` |
 | `analyze_errors`     | `app-all` / `app-error` / `app-lifetime`      | OracleDB outages, top error patterns, restart downtime                                |
@@ -54,7 +54,7 @@ bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-L
 ### Common scenarios
 
 ```bash
-# Management overview — all regions, last 7 days (總體概況/分區別/核心功能效能)
+# Management overview — all regions, last 7 days (two-cut: 總體概況+核心功能 / 分區別+N/O/U)
 bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG
 
 # Daily ops snapshot for a specific date (default modules: overview→iis→access)
@@ -88,7 +88,7 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── analyze_access.sh    API/APP token cross-correlation
 │   ├── analyze_iis.sh       IIS W3C log analysis
 │   ├── analyze_errors.sh    Application error & lifecycle analysis
-│   ├── analyze_overview.sh  Management overview (總體概況/分區別/核心功能效能)
+│   ├── analyze_overview.sh  Management overview (two-cut: 總體概況/分區別; 核心功能 sub-blocks)
 │   └── log_report.sh        Master orchestrator (default: overview→iis→access)
 ├── lib/                     Reusable shell modules (sourced-only)
 │   ├── common.sh            Logging, tmpdir, dependency checks, color state
@@ -105,7 +105,7 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   └── usage.md             Full CLI reference & worked examples
 ├── examples/                Sample outputs & scripted scenarios
 ├── tests/
-│   └── run_tests.sh         248-test functional suite
+│   └── run_tests.sh         258-test functional suite
 ├── .claude/
 │   ├── CLAUDE.md            Core conventions (auto-loaded every session)
 │   ├── rules/               Path-scoped detailed conventions (loaded on demand)

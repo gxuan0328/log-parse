@@ -2,8 +2,8 @@
 # bin/analyze_overview.sh
 # ----------------------------------------------------------------------------
 # DRY management overview: spawns analyze_iis + analyze_access in --emit-stats
-# mode, buckets the emitted rows via OVERVIEW_AWK, and renders three management
-# cuts: 總體概況 / 分區別 / 核心功能效能.
+# mode, buckets the emitted rows via OVERVIEW_AWK, and renders two management
+# cuts: 總體概況 (global categories embedded) / 分區別 (per-region N/O/U + categories).
 #
 # Summary-only (no --view), text-only (no --format), cross-cut always
 # (no --merge). Persist: summary-only via output_utils (no detail file).
@@ -21,9 +21,9 @@
 #
 # Numeric placement (C5):
 #   Access totals + % → 總體概況 only (no IIS general totals).
-#   Region shares     → 分區別 (fixed-width CJK; no grand totals).
-#   Core-function KPIs (count/avg) → 核心功能效能 only.
-#   Verdict line      → numeric-free (words only).
+#   Region N/O/U + core-function categories → 分區別 per-region blocks (req3/req5).
+#   Core-function KPIs (呼叫次數/回應時間) → embedded in 總體概況 + each 分區別 block.
+#   Verdict line      → numeric-free (words only; 90/70 bands via overview_health_verdict).
 #
 # See docs/design.md §3.0 for full specification.
 # ----------------------------------------------------------------------------
@@ -69,8 +69,8 @@ declare -A REGION_NAMES=() REGION_APIS=() REGION_APPS=()
 OVERVIEW_AWK='
 # ----------------------------------------------------------------------------
 # Purpose : Bucket IIS CATEGORY rows + ACCESS emit-stats rows into pooled
-#           category stats and per-region access counts for the three-cut
-#           overview render. IIS rows are business-only (child filtered /health
+#           global + per-region category stats and per-region access counts
+#           for the two-cut overview render. IIS rows are business-only (child filtered /health
 #           and test-hosts before emitting); no re-filter needed here.
 #           IIS general aggregates (TOTAL/SLOW/UNIQUE_IPS/REGION) are dropped;
 #           only CATEGORY rows are consumed from the IIS file.
@@ -79,6 +79,8 @@ OVERVIEW_AWK='
 # Output  : TAB-delimited structured rows for bash to parse:
 #             CAT        <key:glcr|ds|nhi>  <count>  <avg_sec>
 #               avg_sec = cat_ms/cat_cnt/1000 (single division, exact pooled mean)
+#             CAT_REGION <rid> <key:glcr|ds|nhi> <count> <avg_sec>
+#               per-region exact pooled mean via SUBSEP key (region,key); for 分區別.
 #             ACC_TOTAL  <n>
 #             ACC_NORMAL <n>
 #             ACC_ORPHAN <n>
@@ -90,8 +92,10 @@ OVERVIEW_AWK='
 FILENAME == iis_file {
     if ($5 == "CATEGORY") {
         c = $6
-        cat_cnt[c] += $7 + 0
-        cat_ms[c]  += $8 + 0          # raw summed ms => pooled mean = cat_ms/cat_cnt/1000
+        cat_cnt[c]      += $7 + 0          # GLOBAL (總體概況) — unchanged
+        cat_ms[c]       += $8 + 0
+        catr_cnt[$2, c] += $7 + 0          # PER-REGION (分區別) via SUBSEP key (region,key)
+        catr_ms[$2, c]  += $8 + 0
     }
     next
 }
@@ -111,6 +115,12 @@ END {
         c = _co[i]
         cavg = (cat_cnt[c] > 0) ? (cat_ms[c] / cat_cnt[c] / 1000.0) : 0
         printf "CAT\t%s\t%d\t%.2f\n", c, cat_cnt[c]+0, cavg
+    }
+    # Per-region category rows (分區別; req5). Single division => exact pooled mean.
+    for (rc in catr_cnt) {
+        split(rc, _p, SUBSEP)
+        cavg = (catr_cnt[rc] > 0) ? (catr_ms[rc] / catr_cnt[rc] / 1000.0) : 0
+        printf "CAT_REGION\t%s\t%s\t%d\t%.2f\n", _p[1], _p[2], catr_cnt[rc] + 0, cavg
     }
     # ACCESS aggregates (unchanged).
     printf "ACC_TOTAL\t%d\n",    acc_norm+acc_orph+acc_unver
@@ -210,25 +220,45 @@ load_regions() {
 }
 
 # ---------------------------------------------------------------------------
-# overview_render — render the 3-cut management overview to stdout
+# _render_cat_rows — render the 3 core-function category rows for one scope.
+# ---------------------------------------------------------------------------
+
+# _render_cat_rows
+#   Purpose : Format "name 呼叫次數 count 回應時間 avgs" rows (req1 layout)
+#             for global (總體概況) or per-region (分區別) scope; CJK-aligned.
+#   Args    : none — reads TSV "name<TAB>count<TAB>avg" lines on stdin.
+#   Output  : indented, display-width-aligned rows on stdout (6-space indent).
+#   Returns / Side effects : none.
+#   Errors / Notes : rpad(name,12)+rpad("呼叫次數 "count,18) fixes the 回應時間
+#             column across every scope (guards G03). No %, no speed sub-desc.
+_render_cat_rows() {
+    LC_ALL=C gawk -F'\t' "$FMT_AWK_WIDTH"'
+        NF > 0 { printf "      %s%s%s\n",
+                 rpad($1, 12),
+                 rpad("呼叫次數 " $2, 18),
+                 "回應時間 " $3 "s" }
+    '
+}
+
+# ---------------------------------------------------------------------------
+# overview_render — render the 2-cut management overview to stdout
 # ---------------------------------------------------------------------------
 
 # overview_render
 #   Purpose : Read iis_stats.tsv + acc_stats.tsv (cached under WORK_TMPDIR),
 #             run OVERVIEW_AWK to pool CATEGORY stats and bucket ACCESS rows,
-#             and render three management cuts:
-#               總體概況 (access value+%)
-#               分區別   (CJK fixed-width access value+% per region)
-#               核心功能效能 (glcr/ds/nhi count+%+avg).
+#             and render two management cuts:
+#               總體概況 (access value+% + verdict + global categories sub-block)
+#               分區別   (per-region N/O/U prose line + per-region categories).
 #             Summary-only; text-only; format-independent (C10).
 #   Args    : none (uses globals: _OVW_*, OPT_*, REGION_*, WORK_TMPDIR).
 #   Output  : formatted overview report on stdout.
 #   Returns / Side effects : none.
 #   Errors / Notes : Gracefully handles empty stats (zeros/N/A, no divide-by-zero).
 #             CJK labels use fmt_kv under LC_ALL=C (never raw printf "%-Ns" on CJK).
-#             Numeric placement (C5): access totals+% in 總體概況 only;
-#             per-region decomposition in 分區別 only (fixed-width via rpad);
-#             core-function KPIs in 核心功能效能 only; verdict numeric-free.
+#             Numeric placement (C5): access totals+% in 總體概況 only; per-region
+#             N/O/U+categories in 分區別; verdict numeric-free (overview_health_verdict).
+#             Single-region scope (D8): 分區別 mirrors 總體概況 — intentional ROLLUP.
 overview_render() {
     local iis_stats="${WORK_TMPDIR}/iis_stats.tsv"
     local acc_stats="${WORK_TMPDIR}/acc_stats.tsv"
@@ -282,22 +312,9 @@ overview_render() {
     done
     local n_total_srv=$((n_api_srv + n_app_srv))
 
-    # ── Verdict (numeric-free per C5; words only) ─────────────────────────────
+    # ── Verdict (numeric-free per C5; 90/70 bands via overview_health_verdict) ──
     local verdict
-    if (( acc_total == 0 )); then
-        verdict="無資料 — 本期間無存取關聯記錄"
-    else
-        local _pct_int
-        _pct_int=$(gawk -v n="$acc_normal" -v d="$acc_total" \
-            'BEGIN{printf "%d", n/d*100}')
-        if (( _pct_int >= 98 )); then
-            verdict="正常 — 系統整體運作健康"
-        elif (( _pct_int >= 90 )); then
-            verdict="注意 — 存在異常存取，建議持續監控"
-        else
-            verdict="警告 — 存取異常比例偏高，建議立即調查"
-        fi
-    fi
+    verdict=$(overview_health_verdict "$acc_normal" "$acc_total")
 
     # ═════════════════════════════════════════════════════════════════════════
     # Header
@@ -318,64 +335,66 @@ overview_render() {
     fmt_kv "平均 API→APP 延遲"      "$avg_delta"
     fmt_kv "整體健康判定"           "$verdict"
 
-    # ═════════════════════════════════════════════════════════════════════════
-    # 分區別 (By Region) — access value+% per region; fixed-width CJK (req4)
-    # Rendered through FMT_AWK_WIDTH rpad so "異常" column aligns regardless of
-    # NORMAL% width (e.g. "0.0%" vs "100.0%"). No IIS 佔比 (req5).
-    # ═════════════════════════════════════════════════════════════════════════
-    fmt_h2 "分區別 (By Region)"
-
-    local _region_rows=""
-    for _rid in "${REGION_IDS[@]}"; do
-        if [[ "$OPT_REGION" != "all" && "$OPT_REGION" != "$_rid" ]]; then continue; fi
-        local _rname="${REGION_NAMES[$_rid]}" _r_line _r_norm _r_orph _r_unver
-        _r_line=$(printf '%s\n' "$agg_out" | gawk -F'\t' -v r="$_rid" \
-            '$1=="ACC_REGION" && $2==r {print $3, $4, $5; exit}')
-        _r_norm=$( printf '%s\n' "$_r_line" | awk '{print $1+0}')
-        _r_orph=$( printf '%s\n' "$_r_line" | awk '{print $2+0}')
-        _r_unver=$(printf '%s\n' "$_r_line" | awk '{print $3+0}')
-        local _r_tot=$(( _r_norm + _r_orph + _r_unver ))
-        local _r_anom=$(( _r_orph + _r_unver ))
-        local _np _ap
-        _np=$(fmt_pct "$_r_norm" "$_r_tot"); _ap=$(fmt_pct "$_r_anom" "$_r_tot")
-        _region_rows+="${_rname}	${_r_norm}	${_np}	${_r_anom}	${_ap}"$'\n'
-    done
-
-    LC_ALL=C gawk -F'\t' "$FMT_AWK_WIDTH"'
-        NF > 0 { printf "  %s%s%s\n",
-              rpad($1, 12),
-              rpad("正常 " $2 " (" $3 ")", 22),
-              "異常 " $4 " (" $5 ")" }
-    ' <<< "$_region_rows"
-
-    # ═════════════════════════════════════════════════════════════════════════
-    # 核心功能效能 (Core Function Performance).
-    # Consumes CAT rows (IIS-sourced, tz-corrected, test-host-mode aware).
-    # % of the 3-category sum (D5). avg = exact pooled mean (sum_ms/count/1000).
-    # No 慢速 column: category-slow was out-of-scope and misled on role SLAs.
-    # ═════════════════════════════════════════════════════════════════════════
-    fmt_h2 "核心功能效能 (Core Function Performance)"
-    printf "  %s\n" "[佔比為三大核心功能合計之占比 (三者為核心功能子集，非全體業務請求)；回應時間為平均值]"
-
+    # ── Global categories sub-block (總體概況; req1) ──────────────────────────
+    fmt_h3 "核心功能效能 (Core Function Performance)"
     local _g_c _g_a _d_c _d_a _n_c _n_a
-    IFS=' ' read -r _g_c _g_a <<< "$(printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="CAT"&&$2=="glcr"{print $3,$4;exit}')"
-    IFS=' ' read -r _d_c _d_a <<< "$(printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="CAT"&&$2=="ds"{print $3,$4;exit}')"
-    IFS=' ' read -r _n_c _n_a <<< "$(printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="CAT"&&$2=="nhi"{print $3,$4;exit}')"
+    read -r _g_c _g_a <<< "$(printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="CAT"&&$2=="glcr"{print $3,$4;exit}')"
+    read -r _d_c _d_a <<< "$(printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="CAT"&&$2=="ds"{print $3,$4;exit}')"
+    read -r _n_c _n_a <<< "$(printf '%s\n' "$agg_out" | gawk -F'\t' '$1=="CAT"&&$2=="nhi"{print $3,$4;exit}')"
     _g_c=${_g_c:-0}; _d_c=${_d_c:-0}; _n_c=${_n_c:-0}
     _g_a=${_g_a:-0.00}; _d_a=${_d_a:-0.00}; _n_a=${_n_a:-0.00}
-    local _cat_sum=$(( _g_c + _d_c + _n_c ))
-    local _gp _dp _npc
-    _gp=$( fmt_pct "$_g_c" "$_cat_sum"); _dp=$(fmt_pct "$_d_c" "$_cat_sum"); _npc=$(fmt_pct "$_n_c" "$_cat_sum")
+    _render_cat_rows <<EOF
+雲端查詢	${_g_c}	${_g_a}
+報告摘要	${_d_c}	${_d_a}
+影像下載	${_n_c}	${_n_a}
+EOF
+    printf "      核心功能存取合計 %s\n" "$(( _g_c + _d_c + _n_c ))"
 
-    LC_ALL=C gawk -F'\t' "$FMT_AWK_WIDTH"'
-        { printf "  %s%s%s\n",
-              rpad($1, 24),
-              rpad($2 " (" $3 ")", 14),
-              "平均 " $4 "s" }
-    ' <<< "雲端查詢 (前端轉跳速度)	${_g_c}	${_gp}	${_g_a}
-報告摘要 (摘要載入速度)	${_d_c}	${_dp}	${_d_a}
-影像下載 (影像載入速度)	${_n_c}	${_npc}	${_n_a}"
-    fmt_kv "核心功能存取合計" "${_cat_sum} ($(fmt_pct "$_cat_sum" "$_cat_sum"))"
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 分區別 (By Region) — one ■ block per region: a concise N/O/U enumeration
+    # line (req3, % within region) + the 3 core-function categories (呼叫次數 +
+    # 回應時間, req1). Restructured for intuitive comprehension (req5). CJK
+    # columns via rpad (FMT_AWK_WIDTH). No 異常 lumping, no IIS 佔比.
+    # Single-region scope (D8): this cut intentionally mirrors 總體概況 — the
+    # rollup and the single breakdown block coincide; this is correct, not a bug.
+    # ═══════════════════════════════════════════════════════════════════════════
+    fmt_h2 "分區別 (By Region)"
+
+    local _rid
+    for _rid in "${REGION_IDS[@]}"; do
+        if [[ "$OPT_REGION" != "all" && "$OPT_REGION" != "$_rid" ]]; then continue; fi
+        local _rname="${REGION_NAMES[$_rid]}"
+
+        # Access N/O/U for this region (% within region total)
+        local _rl _rn _ro _ru
+        _rl=$(printf '%s\n' "$agg_out" | gawk -F'\t' -v r="$_rid" \
+            '$1=="ACC_REGION" && $2==r {print $3, $4, $5; exit}')
+        read -r _rn _ro _ru <<< "${_rl:-0 0 0}"
+        _rn=${_rn:-0}; _ro=${_ro:-0}; _ru=${_ru:-0}
+        local _rt=$(( _rn + _ro + _ru ))
+        local _pn _po _pu
+        _pn=$(fmt_pct "$_rn" "$_rt"); _po=$(fmt_pct "$_ro" "$_rt"); _pu=$(fmt_pct "$_ru" "$_rt")
+
+        # Per-region categories from CAT_REGION (defaults "0 0.00")
+        local _gc _ga _dc _da _nc _na
+        read -r _gc _ga <<< "$(printf '%s\n' "$agg_out" | gawk -F'\t' -v r="$_rid" \
+            '$1=="CAT_REGION"&&$2==r&&$3=="glcr"{print $4,$5;exit}')"
+        read -r _dc _da <<< "$(printf '%s\n' "$agg_out" | gawk -F'\t' -v r="$_rid" \
+            '$1=="CAT_REGION"&&$2==r&&$3=="ds"{print $4,$5;exit}')"
+        read -r _nc _na <<< "$(printf '%s\n' "$agg_out" | gawk -F'\t' -v r="$_rid" \
+            '$1=="CAT_REGION"&&$2==r&&$3=="nhi"{print $4,$5;exit}')"
+        _gc=${_gc:-0}; _dc=${_dc:-0}; _nc=${_nc:-0}
+        _ga=${_ga:-0.00}; _da=${_da:-0.00}; _na=${_na:-0.00}
+
+        fmt_h3 "${_rname} (${_rid})"
+        printf "      存取關聯 %s 筆 — NORMAL %s (%s) · ORPHAN %s (%s) · UNVERIFIED %s (%s)\n" \
+            "$_rt" "$_rn" "$_pn" "$_ro" "$_po" "$_ru" "$_pu"
+        _render_cat_rows <<EOF
+雲端查詢	${_gc}	${_ga}
+報告摘要	${_dc}	${_da}
+影像下載	${_nc}	${_na}
+EOF
+    done
 }
 
 # ---------------------------------------------------------------------------

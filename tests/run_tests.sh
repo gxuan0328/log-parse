@@ -5,9 +5,10 @@
 # and error handling. Baselines are derived from the examples/sample-logs/LUNG-CANCER-REPORT-LOG
 # sample data included in the project (dates 2026-05-18 ~ 2026-05-25).
 #
-# Total: 248 tests across eleven sections (A access · B iis · C errors · D log_report ·
+# Total: 258 tests across eleven sections (A access · B iis · C errors · D log_report ·
 #        E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
 #        J test-host/health · K timezone+core-function).
+# Note: Sections J and K exist beyond I; K13/K14 are intentionally vacant (gap preserved).
 #
 # Usage:  bash tests/run_tests.sh
 # Exit:   0 = all passed,  1 = one or more failures
@@ -467,7 +468,7 @@ fi
 
 # B24: --view summary --top 3 端點清單上限 = 3
 out=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all --view summary --top 3 2>/dev/null)
-ep_n=$(printf '%s\n' "$out" | grep -cE "^    [0-9]+\. " 2>/dev/null || true)
+ep_n=$(printf '%s\n' "$out" | grep -cE "^ +[0-9]+\. " 2>/dev/null || true)
 _eq B36 "summary --top 3 端點列數 = 3" "$ep_n" "3"
 
 # B25: 預設執行（無 --view）等同 detail — 含每台伺服器 per-server 表格
@@ -477,6 +478,27 @@ _has B37 "預設（無 --view）等同 detail：含 'Total requests'" "$out" "To
 # B26: --format csv 不應再出現 'non-text not supported' 警告
 err=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv 2>&1 >/dev/null)
 _lacks B38 "--format csv 不輸出 'not supported' 警告到 stderr" "$err" "not supported"
+
+# B39: summary Top-端點 rank-1 行含 avg 令牌且落在 [1.00, 1.10]s 區間
+# Rank-1 (nhi-series, ~1.05s) is uncapped (cnt=367=full pop), so band [1.00,1.10] is
+# reproducible without replicating the per-server --top N cap (GAP-3 safe anchor).
+out39=$(NO_COLOR=1 bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all \
+    --view summary 2>/dev/null)
+rank1_s=$(printf '%s\n' "$out39" | grep -E '^ +1\.' | grep -oE '[0-9]+\.[0-9]+s' | tail -1)
+rank1_v="${rank1_s%s}"
+if [[ -n "$rank1_v" ]]; then
+    b39_chk=$(gawk -v v="$rank1_v" 'BEGIN{print (v>=1.00 && v<=1.10) ? "ok" : "fail"}')
+else
+    b39_chk="fail"
+fi
+_eq B39 "summary Top-端點 rank-1 avg 落在 [1.00,1.10]s" "$b39_chk" "ok"
+
+# B40: --top 0 rank-prefix 寬度唯一 = 1 (no row-10 跑版 with %2d. format)
+out40=$(NO_COLOR=1 bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all \
+    --view summary --top 0 2>/dev/null)
+distinct_widths=$(printf '%s\n' "$out40" | grep -oE '^ +[0-9]+\. ' \
+    | awk '{print length($0)}' | sort -u | wc -l | tr -d ' ')
+_eq B40 "--top 0 rank-prefix 寬度唯一=1（無 跑版）" "$distinct_widths" "1"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section C — analyze_errors.sh  應用程式錯誤與重啟事件
@@ -1148,9 +1170,9 @@ _g02_block=$(printf '%s\n' "$out_g2" | grep -E '總請求數|用戶端 IP' | gre
 _eq G02 "iis summary KV 數值欄對齊 (display-col 一致)" \
     "$(printf '%s' "$_g02_block" | _aligncols)" "1"
 
-# G03: overview 核心功能效能 平均欄對齊 (req4 — 平均 column at fixed display position)
-# Baseline: 雲端查詢/報告摘要/影像下載 — col1(24)+col2(14) are rpad-fixed;
-# so "平均" starts at the same display column in every row.
+# G03: overview category rows 回應時間欄對齊 (req1/R3 — 回應時間 column at fixed display position)
+# Baseline: 雲端查詢/報告摘要/影像下載 — rpad(name,12)+rpad("呼叫次數 "count,18) are fixed;
+# so "回應時間" starts at the same display column in all 9 rows (3 global + 6 per-region).
 # _aligncols strips the last token (avg value e.g. "0.11s") and measures the prefix.
 # sed is a no-op guard (慢速 column removed; left in to keep test portable).
 _g03_block=$(printf '%s\n' "$out_g" | grep -E '雲端查詢|報告摘要|影像下載')
@@ -1159,12 +1181,16 @@ _eq G03 "overview 核心功能效能 平均欄位固定寬度對齊 (display-col
     "$(printf '%s' "$_g03_pre" | _aligncols)" "1"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section H — analyze_overview.sh  管理總覽 (H01–H15)
+# Section H — analyze_overview.sh  管理總覽 (H01–H21)
 # Baselines (fixed dates):
 #   --date 2026-05-21 --region all (exclude):
 #     IIS business total = 723 (external anchor H13; +8h window verified by raw grep)
-#     ACCESS: NORMAL=6 ORPHAN=3 UNVERIFIED=0 total=9; NORMAL率 = 6/9 = 66.7%
-#     核心功能效能: glcr=11 ds=186 nhi=427 sum=624 (K-section detailed anchors)
+#     ACCESS all: NORMAL=6 ORPHAN=3 UNVERIFIED=0 total=9; NORMAL率 66.7% → verdict 警告
+#     ACCESS taipei: NORMAL=0 ORPHAN=3 UNVERIFIED=0; ACCESS taichung: NORMAL=6 ORPHAN=0
+#     核心功能 global: glcr=11/0.11s ds=186/0.38s nhi=427/0.93s sum=624
+#     核心功能 taipei: glcr=5/0.02s ds=71/0.22s nhi=220/1.48s (distinct 3 nhi avgs → K-section)
+#     核心功能 taichung: glcr=6/0.19s ds=115/0.47s nhi=207/0.34s
+#     verdict bands: >=90 正常; >=70 注意; <70 警告 (overview_health_verdict in aggregate_utils)
 # ─────────────────────────────────────────────────────────────────────────────
 
 section "H  analyze_overview.sh — 管理總覽"
@@ -1182,27 +1208,30 @@ else
     _fail "H01  overview exit 0 且含 總體概況 + 存取關聯總數 + NORMAL 正常流程 [rc=$rc]"
 fi
 
-# H02: 分區別 含 台北 + 台中 + 異常; IIS 佔比 不出現 (req5)
+# H02: 分區別 含 台北 + 台中 + NORMAL + ORPHAN + UNVERIFIED; IIS 佔比 不出現 (req5)
+# New structure: per-region ■ blocks with N/O/U prose line (no combined 異常 lump).
 if printf '%s\n' "$out" | grep -qF "台北" && \
    printf '%s\n' "$out" | grep -qF "台中" && \
-   printf '%s\n' "$out" | grep -qF "異常"; then
+   printf '%s\n' "$out" | grep -qF "NORMAL" && \
+   printf '%s\n' "$out" | grep -qF "ORPHAN" && \
+   printf '%s\n' "$out" | grep -qF "UNVERIFIED"; then
     if ! printf '%s\n' "$out" | grep -qF "IIS 佔比"; then
-        _pass "H02  分區別 含 台北+台中+異常; IIS 佔比 不出現"
+        _pass "H02  分區別 含 台北+台中+NORMAL+ORPHAN+UNVERIFIED; IIS 佔比 不出現"
     else
-        _fail "H02  分區別 含 台北+台中+異常; IIS 佔比 不應出現"
+        _fail "H02  分區別 含 台北+台中+NORMAL+ORPHAN+UNVERIFIED; IIS 佔比 不應出現"
     fi
 else
-    _fail "H02  分區別 含 台北+台中+異常 (未找到所需字串)"
+    _fail "H02  分區別 缺少 台北/台中 或 NORMAL/ORPHAN/UNVERIFIED"
 fi
 
-# H03: 核心功能效能 含 雲端查詢 + 報告摘要 + 影像下載
-if printf '%s\n' "$out" | grep -qF "核心功能效能" && \
-   printf '%s\n' "$out" | grep -qF "雲端查詢" && \
-   printf '%s\n' "$out" | grep -qF "報告摘要" && \
-   printf '%s\n' "$out" | grep -qF "影像下載"; then
-    _pass "H03  核心功能效能 含 雲端查詢+報告摘要+影像下載"
+# H03: 總體概況 block 含 雲端查詢 + 報告摘要 + 影像下載 (categories merged into Overall)
+h03_block=$(printf '%s\n' "$out" | sed -n '/▶ 總體概況/,/▶ 分區別/p')
+if printf '%s\n' "$h03_block" | grep -qF "雲端查詢" && \
+   printf '%s\n' "$h03_block" | grep -qF "報告摘要" && \
+   printf '%s\n' "$h03_block" | grep -qF "影像下載"; then
+    _pass "H03  總體概況 block 含 雲端查詢+報告摘要+影像下載"
 else
-    _fail "H03  核心功能效能 含 雲端查詢+報告摘要+影像下載"
+    _fail "H03  總體概況 block 含 雲端查詢+報告摘要+影像下載"
 fi
 
 # H04: 總體概況的 存取關聯總數 不重複出現於 分區別/核心功能效能 區塊 (C5 line-range scoped)
@@ -1215,20 +1244,21 @@ else
     _pass "H04  存取關聯總數 (KV key) 不重複出現於 分區/核心功能 區塊 (C5)"
 fi
 
-# H05: 核心功能效能 3-row 佔比 之和 >= 99% (允許捨入誤差；三列佔比應近 100%)
-# Extracts percentages from glcr/ds/nhi rows: "1.8%", "29.8%", "68.4%" → sum ~100
-share_sum=$(printf '%s\n' "$out" | grep -E '雲端查詢|報告摘要|影像下載' | \
-    grep -oE '\([0-9]+\.[0-9]+%\)' | grep -oE '[0-9]+\.[0-9]+' | \
-    gawk '{s+=$1} END{printf "%d", s+0.5}')
-_gte H05 "核心功能效能 3-row 佔比之和 >= 99" "${share_sum:-0}" "99"
+# H05: category rows 不含百分比 token (req1 % 移除 regression guard)
+# Repurposed from "佔比之和 >= 99" to "no ([N.N%]) token on category rows".
+pct_count=$(printf '%s\n' "$out" | grep -E '雲端查詢|報告摘要|影像下載' | \
+    grep -cE '\([0-9]+\.[0-9]+%\)' || true)
+_eq H05 "category rows 不含 ([N.N%]) 百分比 token (req1 % 移除)" "${pct_count:-0}" "0"
 
-# H06: 核心功能效能 區塊含 平均; 不含 ORPHAN 字面 (C5 placement guard); 無 慢速 (removed)
-core_block=$(printf '%s\n' "$out" | sed -n '/▶ 核心功能效能/,/^$/p')
-if printf '%s\n' "$core_block" | grep -qF "平均" && \
-   ! printf '%s\n' "$core_block" | grep -qF "ORPHAN"; then
-    _pass "H06  核心功能效能 含 平均; ORPHAN 不在此區塊 (C5)"
+# H06: ■ 核心功能效能 sub-block 含 呼叫次數 AND 回應時間 (window anchored on ■ h3)
+# The sed window anchors on the ■ line (which is below the ORPHAN KV line in 總體概況),
+# so the old ORPHAN-absence check was vacuous (always true). It is removed per spec §7.
+core_block=$(printf '%s\n' "$out" | sed -n '/■ 核心功能效能/,/^$/p')
+if printf '%s\n' "$core_block" | grep -qF "呼叫次數" && \
+   printf '%s\n' "$core_block" | grep -qF "回應時間"; then
+    _pass "H06  ■ 核心功能效能 sub-block 含 呼叫次數 AND 回應時間"
 else
-    _fail "H06  核心功能效能 含 平均; ORPHAN 不在此區塊 (C5)"
+    _fail "H06  ■ 核心功能效能 sub-block 含 呼叫次數 AND 回應時間"
 fi
 
 # H07: DRY — overview 核心功能存取合計 == analyze_iis --emit-stats CATEGORY count 之和
@@ -1316,6 +1346,44 @@ if [[ "$rc15" -eq 0 ]] && \
 else
     _fail "H15  --slow-api/app-ms exit 0 且 核心功能效能 存在 (C2 forwarding guard) [rc=$rc15]"
 fi
+
+# H16: 分區別 台北 存取關聯 行含明確 N/O/U 計數 (req3 prose enumeration)
+# Anchor: taipei 0521: NORMAL=0 ORPHAN=3 UNVERIFIED=0 (total=3)
+h16_out=$(NO_COLOR=1 bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null)
+h16_line=$(printf '%s\n' "$h16_out" | sed -n '/■ 台北/,/■ 台中/p' | grep "存取關聯")
+if printf '%s\n' "$h16_line" | grep -qF "NORMAL 0 (0.0%)" && \
+   printf '%s\n' "$h16_line" | grep -qF "ORPHAN 3 (100.0%)" && \
+   printf '%s\n' "$h16_line" | grep -qF "UNVERIFIED 0 (0.0%)"; then
+    _pass "H16  分區別 台北 存取關聯 含 NORMAL 0 (0.0%), ORPHAN 3 (100.0%), UNVERIFIED 0 (0.0%)"
+else
+    _fail "H16  分區別 台北 存取關聯 含 NORMAL 0 (0.0%), ORPHAN 3 (100.0%), UNVERIFIED 0 (0.0%) [got: '${h16_line}']"
+fi
+
+# H17: 分區別 台北 影像下載 per-region row (proves CAT_REGION != global)
+# Anchor: taipei nhi 220/1.48s (distinct from global 427/0.93s)
+h17_taipei=$(printf '%s\n' "$h16_out" | sed -n '/■ 台北/,/■ 台中/p' | grep "影像下載")
+if printf '%s\n' "$h17_taipei" | grep -qF "呼叫次數 220" && \
+   printf '%s\n' "$h17_taipei" | grep -qF "回應時間 1.48s"; then
+    _pass "H17  分區別 台北 影像下載 呼叫次數 220 回應時間 1.48s (per-region CAT_REGION correct)"
+else
+    _fail "H17  分區別 台北 影像下載 呼叫次數 220 回應時間 1.48s [got: '${h17_taipei}']"
+fi
+
+# H18: verdict >=90 boundary — overview_health_verdict 9/10 = 90% → 正常
+_v() { bash -c "source '${PROJECT_DIR}/lib/aggregate_utils.sh'; overview_health_verdict $1 $2" 2>/dev/null; }
+_eq H18 "verdict 90% (9/10) -> 正常 — 系統整體運作健康" "$(_v 9 10)" "正常 — 系統整體運作健康"
+
+# H19: verdict 89 → 注意 (89 < 90; upper 注意 boundary)
+h19_v=$(_v 89 100)
+_hasre H19 "verdict 89% (89/100) starts 注意" "$h19_v" "^注意"
+
+# H20: verdict >=70 boundary — overview_health_verdict 7/10 = 70% → 注意
+h20_v=$(_v 7 10)
+_hasre H20 "verdict 70% (7/10) starts 注意" "$h20_v" "^注意"
+
+# H21: verdict <70 boundary — overview_health_verdict 69/100 = 69% → 警告
+h21_v=$(_v 69 100)
+_hasre H21 "verdict 69% (69/100) starts 警告" "$h21_v" "^警告"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section I — 持久化行為 (Persistence I01–I12)
@@ -1617,12 +1685,14 @@ j20_total=$(printf '%s\n' "$j20_out" | grep "核心功能存取合計" | grep -o
 _eq J20 "overview 預設 (exclude): 核心功能存取合計 == 624" "$j20_total" "624"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section K — timezone correction + core-function CATEGORY (K01–K12)
+# Section K — timezone correction + core-function CATEGORY (K01–K16)
 # Anchors (2026-05-21, --region all, +8h window, /health excluded):
 #   IIS business total: exclude=723, only=209, all=932
 #   CATEGORY (exclude): glcr=11/0.11s, ds=186/0.38s, nhi=427/0.93s, sum=624
 #   CATEGORY (only):    glcr=6, ds=75, nhi=98, sum=179
-#   (慢速 column removed; K13/K14 tests deleted — see commit history)
+#   Per-region (exclude): taipei glcr=5/0.02s ds=71/0.22s nhi=220/1.48s
+#                         taichung glcr=6/0.19s ds=115/0.47s nhi=207/0.34s
+#   (慢速 column removed; K13/K14 intentionally vacant — gap preserved)
 # ─────────────────────────────────────────────────────────────────────────────
 
 section "K  timezone correction + core-function CATEGORY"
@@ -1705,16 +1775,18 @@ k08_emit=$(bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all \
 k08_cat_keys=$(printf '%s\n' "$k08_emit" | gawk -F'\t' '$5=="CATEGORY"{seen[$6]=1} END{print length(seen)}')
 _eq K08 "CATEGORY rows not Top-N capped: --top 1 still emits all 3 distinct category keys" "$k08_cat_keys" "3"
 
-# K09: overview 核心功能效能 present + values/avg
+# K09: overview 總體概況 含新格式 category rows (req1)
+# New format: 呼叫次數 N / 回應時間 Xs (no share%, no parentheses after count)
+# Anchors: glcr global 11/0.11s; 核心功能存取合計 624 (glcr11+ds186+nhi427)
 k09_out=$(bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null)
 if printf '%s\n' "$k09_out" | grep -qF "雲端查詢" && \
-   printf '%s\n' "$k09_out" | grep -qF "11 (" && \
-   printf '%s\n' "$k09_out" | grep -qF "平均 0.11s" && \
+   printf '%s\n' "$k09_out" | grep -qF "呼叫次數 11" && \
+   printf '%s\n' "$k09_out" | grep -qF "回應時間 0.11s" && \
    printf '%s\n' "$k09_out" | grep -qF "核心功能存取合計" && \
    printf '%s\n' "$k09_out" | grep -qF "624"; then
-    _pass "K09  overview 核心功能效能 含 雲端查詢, 11 (, 平均 0.11s; 核心功能存取合計 624"
+    _pass "K09  overview 總體概況 含 雲端查詢, 呼叫次數 11, 回應時間 0.11s; 核心功能存取合計 624"
 else
-    _fail "K09  overview 核心功能效能 含 雲端查詢, 11 (, 平均 0.11s; 核心功能存取合計 624"
+    _fail "K09  overview 總體概況 含 雲端查詢, 呼叫次數 11, 回應時間 0.11s; 核心功能存取合計 624"
 fi
 
 # K10: overview 總體概況 access value+% + lacks IIS 總請求數
@@ -1733,17 +1805,42 @@ else
     _fail "K10  總體概況 缺少 NORMAL/ORPHAN/UNVERIFIED value+%"
 fi
 
-# K11: 分區別 fixed-width req4 regression — 異常 column at identical display position
-# Both 台北 (NORMAL 0.0%) and 台中 (NORMAL 100.0%) lines must have same prefix width before 異常
+# K11: 分區別 per-region category alignment — 影像下載 rows from both regions aligned
+# New: repoint from 異常-column → 回應時間 column fixed via shared _render_cat_rows.
+# Extracts 影像下載 rows from 分區別 section (台北 1.48s + 台中 0.34s); both aligned.
 _k11_block=$(NO_COLOR=1 bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null \
-    | grep -E '台北|台中')
-_eq K11 "分區別 fixed-width: 台北/台中 異常欄 display-col 一致 (req4 regression)" \
-    "$(printf '%s' "$_k11_block" | grep '異常' | _aligncols)" "1"
+    | sed -n '/▶ 分區別/,$p' | grep "影像下載")
+_eq K11 "分區別 per-region 影像下載 rows 回應時間欄 display-col 一致 (shared _render_cat_rows)" \
+    "$(printf '%s' "$_k11_block" | _aligncols)" "1"
 
 # K12: label trim (req2) — access NORMAL block has 驗證筆數; does NOT have 有效時間差
 k12_out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung 2>/dev/null)
 _has K12a "access NORMAL block 含 驗證筆數" "$k12_out" "驗證筆數"
 _lacks K12 "access NORMAL block 不含 有效時間差 (label trimmed req2)" "$k12_out" "有效時間差"
+
+# (K13/K14 intentionally vacant — gap preserved per commit history; K15/K16 continue past gap)
+
+# K15: 分區別 台中 影像下載 per-region exact pooled avg == 0.34s
+# Anchor: taichung nhi 207/0.34s (distinct from global 427/0.93s and taipei 220/1.48s)
+k15_out=$(NO_COLOR=1 bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null)
+k15_nhi=$(printf '%s\n' "$k15_out" | sed -n '/■ 台中/,$p' | grep "影像下載" | head -1)
+_has K15 "分區別 台中 影像下載 回應時間 0.34s (per-region pooled avg distinct from global)" \
+    "$k15_nhi" "回應時間 0.34s"
+
+# K16: 總體概況 global category rows 呼叫次數+回應時間 (no share%); nhi anchor 427/0.93s
+# (68.4%) was the old share% that must be absent.
+k16_out=$(bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null)
+k16_block=$(printf '%s\n' "$k16_out" | sed -n '/▶ 總體概況/,/▶ 分區別/p')
+if printf '%s\n' "$k16_block" | grep -qF "呼叫次數 427" && \
+   printf '%s\n' "$k16_block" | grep -qF "回應時間 0.93s"; then
+    if ! printf '%s\n' "$k16_block" | grep -qF "(68.4%)"; then
+        _pass "K16  總體概況 含 呼叫次數 427 + 回應時間 0.93s; 無 (68.4%) 佔比"
+    else
+        _fail "K16  總體概況 不應含 (68.4%) 佔比 (req1 % 移除)"
+    fi
+else
+    _fail "K16  總體概況 缺少 呼叫次數 427 或 回應時間 0.93s"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Summary

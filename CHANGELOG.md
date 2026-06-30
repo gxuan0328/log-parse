@@ -8,18 +8,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `bin/analyze_overview.sh` — 核心功能效能 (Core Function Performance) section:
-  three IIS-sourced, UTC+8 day-corrected categories each showing count, share%
-  of the 3-category sum, and exact pooled average response time (seconds, 2 dp).
+- `overview_health_verdict` in `lib/aggregate_utils.sh` — pure, single-source
+  verdict mapping (encapsulates trunc + no-data guard; unit-testable at exact
+  band boundaries): `trunc(NORMAL/TOTAL*100)` >=90 → 正常 — 系統整體運作健康;
+  >=70 → 注意 — 存在異常存取，建議持續監控; <70 → 警告 — 存取異常比例偏高，
+  建議立即調查; TOTAL=0 → 無資料 — 本期間無存取關聯記錄.
+- `analyze_iis --view summary` — Top 端點 (佔比 · 平均回應時間): each top-N
+  endpoint now shows per-endpoint average response time pooled over the
+  per-server `--top N` emitted rows. Caveat (GAP-3): avg/pct/count cover the
+  per-server-capped subset, not the full request population for capped endpoints;
+  CATEGORY pooling is uncapped/full — the two regimes must not be conflated.
+  `iis_stats.tsv` ENDPOINT rows gain field 9 (`sum_ms`); field 8 (`avg_sec`)
+  unchanged (non-breaking). Rank column fixed to `%2d.` (`" 1."` … `"10."`)
+  — eliminates the rank >=10 URI-column shift.
+
+### Changed
+- `analyze_overview` — 核心功能效能 (Core Function Performance) standalone `▶`
+  section dissolved; categories now render as ■ sub-blocks: global categories
+  inside ▶ 總體概況; per-region categories inside each ■ block of ▶ 分區別. Only
+  two `▶` cuts remain. Category rows show 呼叫次數 (count) and 回應時間 (avg
+  seconds, 2 dp) only — no per-row percentage, no speed sub-labels.
+- `analyze_overview` — 分區別 (By Region): each region block opens with a prose
+  N/O/U enumeration `存取關聯 N 筆 — NORMAL n (p%) · ORPHAN n (p%) · UNVERIFIED
+  n (p%)` (percentage within the region total) followed by the three core-function
+  categories (呼叫次數 + 回應時間). Replaces the previous combined 正常/異常 form.
+  Single-region scope (e.g. `--region taipei`): 分區別 intentionally mirrors
+  總體概況 (ROLLUP+breakdown symmetry); not a double-count.
+- `整體健康判定` thresholds revised 98/90 → 90/70: `P≥90` → 正常; `70≤P≤89` →
+  注意; `P<70` → 警告. Sample (2026-05-21, all, exclude): NORMAL 6/9 = 66.7% →
+  trunc 66 → 警告 (verdict unchanged; was already <90 under old rule).
+
+Layers: `bin/analyze_overview.sh`, `bin/analyze_iis.sh`, `lib/aggregate_utils.sh`,
+docs(6), `examples/sample-outputs`.
+BREAKING CHANGE: 核心功能效能 standalone section dissolved into 總體概況
+(global scope) and 分區別 (per-region scope); category rows now show 呼叫次數 +
+回應時間 only (per-row percentage and speed sub-labels removed). 分區別 now
+enumerates NORMAL/ORPHAN/UNVERIFIED with per-region percentages (replacing the
+combined 正常/異常). 整體健康判定 thresholds changed 98/90 -> 90/70
+(>=90 正常, >=70 注意, <70 警告). analyze_iis --view summary Top 端點 now shows
+per-endpoint average response time (pooled over the per-server --top N set) and
+fixes the rank-column shift at rank >=10. iis_stats.tsv ENDPOINT rows gain field
+9 (sum_ms) for cross-server avg pooling; field 8 (avg_sec) unchanged.
+overview_health_verdict extracted to lib/aggregate_utils.sh (single source).
+Tests: 258/258 (was 248; +B39/B40/H16-H21/K15/K16; H05 repurposed).
+
+---
+
+### Added
+- `bin/analyze_overview.sh` — 核心功能效能 (Core Function Performance) categories
+  rendered inside 總體概況 (global scope) and inside each per-region ■ block of
+  分區別: three IIS-sourced, UTC+8 day-corrected categories each showing 呼叫次數
+  (count) and 回應時間 (exact pooled average response time, seconds, 2 dp); no
+  per-row percentage, no speed sub-labels.
   Categories (single-source case-insensitive anchored match in `AGG_IIS_AWK`,
   never Top-N truncated):
-  **雲端查詢 (前端轉跳速度)** ← `/api/GetLungCancerReportURL` (app-role);
-  **報告摘要 (摘要載入速度)** ← `/api/DigestSummary` prefix (api-role);
-  **影像下載 (影像載入速度)** ← `/api/NhiPatientImage/studies/…` prefix (api-role).
+  **雲端查詢** ← `/api/GetLungCancerReportURL` (app-role);
+  **報告摘要** ← `/api/DigestSummary` prefix (api-role);
+  **影像下載** ← `/api/NhiPatientImage/studies/…` prefix (api-role).
   Pooled mean is exact: overview pools raw integer `sum_ms` / count and divides
   once (no per-server rounding drift). Sample anchors (2026-05-21, all, exclude):
-  雲端查詢 11 (1.8%) 0.11s, 報告摘要 186 (29.8%) 0.38s,
-  影像下載 427 (68.4%) 0.93s, 核心功能存取合計 624.
+  雲端查詢 11 (0.11s) · 報告摘要 186 (0.38s) · 影像下載 427 (0.93s),
+  核心功能存取合計 624.
 - `lib/date_utils.sh` — `IIS_UTC_OFFSET_HOURS=8` constant and `iis_utc_window`
   helper: maps a UTC+8 local date range [START, END] to the half-open UTC datetime
   bounds `[START-1 16:00:00, END 16:00:00)` used to select IIS rows whose local
@@ -33,9 +82,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `整體健康判定` criteria table added to `docs/design.md` / `docs/design.zh-TW.md`:
   interval = fully-resolved `build_date_list` window in UTC+8; criterion =
   `trunc(NORMAL ÷ 存取關聯總數 × 100)` (integer truncate toward zero via
-  `printf "%d"`, not banker's rounding; 97.6 → 97 → 注意). IIS volume does not
-  enter the verdict. Thresholds: `存取關聯總數=0` → 無資料; `P≥98` → 正常;
-  `90≤P≤97` → 注意; `P<90` → 警告.
+  `printf "%d"`, not banker's rounding; 89.5 → 89 → 注意). IIS volume does not
+  enter the verdict. Thresholds: `存取關聯總數=0` → 無資料; `P≥90` → 正常;
+  `70≤P≤89` → 注意; `P<70` → 警告.
 
 ### Changed
 - `analyze_iis`: `--date D` (and `--from`/`--to`) now means the **UTC+8 business
@@ -54,10 +103,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every line shows value + percentage of 存取關聯總數. `IIS 總請求數` and
   `不重複用戶端 IP` lines removed. ORPHAN/UNVERIFIED shown exclusively here
   (no duplication with the retired 服務別 section).
-- `analyze_overview` — 分區別 (By Region): per-region 正常/異常 counts + % now
-  rendered via `rpad` (CJK display-width engine) so `異常` column starts at an
-  identical display position regardless of NORMAL% width (`0.0%` vs `100.0%`).
-  IIS 佔比 removed.
+- `analyze_overview` — 分區別 (By Region): one ■ block per in-scope region, each
+  opening with a prose enumeration `存取關聯 N 筆 — NORMAL n (p%) · ORPHAN n (p%)
+  · UNVERIFIED n (p%)` (percentage within the region total) followed by the three
+  core-function categories (呼叫次數 + 回應時間). IIS 佔比 removed.
 - `analyze_access` — 驗證筆數 label: suffix `(有效時間差)` dropped from the
   NORMAL block statistics line; 40-col `rpad` auto-realigns.
 
@@ -75,7 +124,7 @@ Layers: `lib/date_utils.sh` (IIS_UTC_OFFSET_HOURS + iis_utc_window),
 `bin/analyze_overview.sh` (OVERVIEW_AWK + render), `bin/analyze_access.sh` (label trim).
 BREAKING CHANGE: overview sections restructured (服務別 removed; IIS general
 totals removed); IIS `--date D` now means the UTC+8 day D.
-Tests: 248/248.
+Tests: 258/258.
 
 ---
 

@@ -5,17 +5,17 @@
   不重複用戶端 IP                         3
   慢速率                                  0.0%  (0)
 
-    ■ Top 端點 (佔比)
-    1. /api/NhiPatientImage/studies/{uid}/series/{uid}/...   59.8%
-    2. /api/DigestSummary/hospital                           17.8%
-    3. /api/NhiPatientImage/studies/{uid}/series-uid         6.6%
-    4. /api/DigestSummary/key-images                         2.4%
-    5. /api/registration/get-target-instance                 1.8%
-    6. /api/GetLungCancerReportURL                           1.5%
-    7. /assets/openjpegwasm_decode-C4nnCcr6.wasm             1.2%
-    8. /reports/view                                         0.9%
-    9. /assets/react-vendor-CWOlZk79.js                      0.9%
-    10. /assets/index-Cj5Ra9vo.css                            0.6%
+    ■ Top 端點 (佔比 · 平均回應時間)
+     1. /api/NhiPatientImage/studies/{uid}/series/{uid}/...    59.8%   1.63s
+     2. /api/DigestSummary/hospital                            17.8%   0.20s
+     3. /api/NhiPatientImage/studies/{uid}/series-uid           6.6%   0.12s
+     4. /api/DigestSummary/key-images                           2.4%   0.06s
+     5. /api/registration/get-target-instance                   1.8%   0.14s
+     6. /api/GetLungCancerReportURL                             1.5%   0.02s
+     7. /assets/openjpegwasm_decode-C4nnCcr6.wasm               1.2%   0.31s
+     8. /reports/view                                           0.9%   1.59s
+     9. /assets/react-vendor-CWOlZk79.js                        0.9%   0.01s
+    10. /assets/index-Cj5Ra9vo.css                              0.6%   0.02s
 
     ■ 狀態碼分布 (Top 3)
       200 74.0% · 404 21.1% · 304 3.9%

@@ -9,7 +9,7 @@ Loaded when editing `tests/run_tests.sh` or any new test file.
 
 ## Single source of truth
 
-`tests/run_tests.sh` is the only regression suite. Currently 248 tests
+`tests/run_tests.sh` is the only regression suite. Currently 258 tests
 across eleven sections (A access · B iis · C errors · D log_report ·
 E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
 J test-host/health · K timezone+core-function).
@@ -30,14 +30,17 @@ Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
 `<SectionLetter><2-digit-id>`, sequential within a section:
 
 - A01–A41  `analyze_access`
-- B01–B38  `analyze_iis`
+- B01–B40  `analyze_iis` (B39: Top-端點 avg; B40: rank-fix)
 - C01–C25  `analyze_errors`
 - D01–D35  `log_report`
 - E01–E26  validation paths
 - F01–F18  user scenarios
 - G01–G03  CJK display-width alignment (+ A35, A36, C22)
-- H01–H15  `analyze_overview`
+- H01–H21  `analyze_overview` (H16-H21: per-region N/O/U + verdict boundaries)
 - I01–I12  persistence (always-on report files)
+- J01–J20  test-host filter + /health exclusion
+- K01–K16  timezone correction + core-function CATEGORY
+  (K13/K14 intentionally vacant — gap preserved per commit history; K15/K16 continue past gap)
 
 When inserting tests, keep numbering monotonic — append new tests at the
 end of the relevant section, do not renumber existing ones.

@@ -157,7 +157,15 @@ Single source of truth for IIS metric awk and the RFC-4180 CSV quoter:
   overview share one contract. `IIS_STAT_SCHEMA` includes the `CATEGORY` row;
   `IIS_F_AVGSEC` (position 8) is overloaded: it holds `avg_sec` for `ENDPOINT`
   rows and `sum_ms` (integer ms) for `CATEGORY` rows — documented in the
-  schema comment.
+  schema comment. `IIS_F_SUMMS=9` (ENDPOINT rows only) provides the field
+  index for the `sum_ms` integer accumulator used by the summary-view avg
+  pooling.
+- **`overview_health_verdict NORMAL TOTAL`** — maps the integer-truncated
+  NORMAL rate to the 整體健康判定 verdict text (verdict single source, per D1).
+  Encapsulates `trunc(NORMAL/TOTAL×100)` via `printf "%d"` and the band
+  mapping (`>=90 → 正常`, `>=70 → 注意`, `<70 → 警告`, `TOTAL==0 → 無資料`).
+  Output is numeric-free (guards H11). Called by `overview_render` in
+  `bin/analyze_overview.sh`.
 
 #### `lib/date_utils.sh` — IIS timezone offset constant and window helper
 
@@ -258,12 +266,25 @@ IIS  <region>  <role>  <server>  TOTAL      <n>
 IIS  ...                         SLOW       <n>
 IIS  ...                         UNIQUE_IPS <n>
 IIS  ...                         STATUS     <code>  <count>
-IIS  ...                         ENDPOINT   <uri>   <count>  <avg_sec>
+IIS  ...                         ENDPOINT   <uri>   <count>  <avg_sec>  <sum_ms:int>
 IIS  ...                         CLIENT_IP  <ip>    <count>
 IIS  ...                         CATEGORY   <key:glcr|ds|nhi>  <count>  <sum_ms:int>
+  NOTE: ENDPOINT position 9 = summed time-taken ms over the per-server --top N
+        emitted rows only (see GAP-3 caveat in §3.2.5). Field 8 (avg_sec) is
+        unchanged and read by all downstream consumers except summary avg pooling.
   NOTE: CATEGORY position 8 = summed time-taken in ms (NOT avg_sec).
         avg_sec = sum_ms/count/1000 (single division → exact cross-server pooled mean).
+        CATEGORY pooling is uncapped (full request population, independent of --top).
 ```
+
+**OVERVIEW_AWK** (`bin/analyze_overview.sh`) also emits an additional row type
+from cross-server CATEGORY pooling, used internally by `overview_render`:
+```
+  CAT_REGION  <region>  <key:glcr|ds|nhi>  <count>  <avg_sec>
+```
+This row carries the per-region count and exact pooled mean (Σsum_ms / Σcount /
+1000) for each category key. Not emitted by `AGG_IIS_AWK`; it is
+`OVERVIEW_AWK`'s own regional aggregation step.
 
 All rows reflect **business-only traffic**: `/health` requests are excluded
 unconditionally and the test-host mode (§3.2.14) is applied before any row is
@@ -292,44 +313,57 @@ ACCESS  ...       DELTA_MIN     <sec>
 ACCESS  ...       DELTA_MAX     <sec>
 ```
 
-#### 3.0.4 Three-cut layout with single-numeric-placement rule (C5)
+#### 3.0.4 Two-cut layout with single-numeric-placement rule (C5)
 
-The report presents three distinct decomposition dimensions. **No single
+The report presents two distinct decomposition dimensions. **No single
 numeric literal appears in more than one cut.**
 
 - **總體概況 (Overall)** — access-business grand totals with value + percentage,
   average API→APP latency, and the qualitative verdict. `存取關聯總數` appears
   **only here**. The verdict line is numeric-free (words only). IIS general
   totals (`IIS 總請求數`, unique IPs) are **not shown** — the overview is
-  access-business-focused.
-- **分區別 (By Region)** — per-region 正常 N (p%) / 異常 N (p%), rendered with
-  CJK display-width fixed-width padding (`rpad` via `FMT_AWK_WIDTH`) so the
-  `異常` column never shifts regardless of NORMAL% string width.
-- **核心功能效能 (Core Function Performance)** — three IIS-sourced, UTC+8
-  day-corrected categories, each showing: count, share % of the three-category
-  sum, and average response time in seconds (exact pooled mean). The three
-  categories are a **subset** of total business requests (footnote line
-  clarifies this). See §3.0.7 for category definitions.
+  access-business-focused. An **■ 核心功能效能 (Core Function Performance)**
+  sub-block follows immediately inside 總體概況, listing the three IIS-sourced,
+  UTC+8 day-corrected categories (雲端查詢 / 報告摘要 / 影像下載) each with
+  `呼叫次數 <count>` and `回應時間 <avg>s` (no per-row percentage), plus a
+  plain `核心功能存取合計 <sum>` count. See §3.0.7 for category definitions.
+- **分區別 (By Region)** — one ■ block per in-scope region, each opening with
+  a prose enumeration `存取關聯 N 筆 — NORMAL n (p%) · ORPHAN n (p%) ·
+  UNVERIFIED n (p%)` (percentage within the region total), followed by the same
+  three core-function categories (呼叫次數 + 回應時間). Category counts and
+  averages are accumulated over the full request population (uncapped —
+  independent of `--top`). **Single-region scope (D8):** for `--region taipei`
+  the 分區別 台北 block intentionally shows the same N/O/U totals and category
+  counts as 總體概況 — this is the correct ROLLUP+breakdown symmetry (not a
+  double-count); the regional label and framing are the value added. Suppressing
+  the 分區別 cut for single-region scope would break regression tests and add
+  scope-specific branching without benefit.
+
+The standalone **核心功能效能** section has been dissolved into 總體概況
+(global) and 分區別 (per-region). No information is lost; per-row percentage
+and speed sub-labels are removed (see §3.0.7).
 
 **服務別 (By Service Role) is retired.** Its IIS general-request content was
 removed as part of the access-business focus (req5); its remaining access role
 signals (UNVERIFIED/ORPHAN) are now present in 總體概況, so keeping it would
 duplicate information (C5 single-placement rule). No information is lost.
 
-**整體健康判定 criteria** (req3): The verdict is computed over the fully-resolved
-analysis window (the `build_date_list` output in UTC+8 business time). Criterion:
-`正常流程率 = trunc(NORMAL ÷ 存取關聯總數 × 100)` — integer **truncate toward
-zero** (implemented as `printf "%d"`, not banker's rounding; 97.6 % → 97 →
-注意). IIS request volume does **not** enter the verdict.
+**整體健康判定 criteria** (req4): The verdict is computed by `overview_health_verdict`
+in `lib/aggregate_utils.sh` (single source, D1) over the fully-resolved analysis
+window. Rate: `P = trunc(NORMAL ÷ 存取關聯總數 × 100)` — integer **truncate
+toward zero** (implemented via `printf "%d"`, not banker's rounding;
+P = 89.5 % → trunc → 89 → 注意, not 正常; P = 90.0 % → 90 → 正常). IIS
+request volume does **not** enter the verdict.
 
 | Condition (integer P = trunc(NORMAL ÷ 存取關聯總數 × 100)) | 判定 | Text |
 |---|---|---|
 | 存取關聯總數 = 0 | 無資料 | 無資料 — 本期間無存取關聯記錄 |
-| P ≥ 98 | 正常 | 正常 — 系統整體運作健康 |
-| 90 ≤ P ≤ 97 | 注意 | 注意 — 存在異常存取，建議持續監控 |
-| P < 90 | 警告 | 警告 — 存取異常比例偏高，建議立即調查 |
+| P ≥ 90 | 正常 | 正常 — 系統整體運作健康 |
+| 70 ≤ P ≤ 89 | 注意 | 注意 — 存在異常存取，建議持續監控 |
+| P < 70 | 警告 | 警告 — 存取異常比例偏高，建議立即調查 |
 
-Lower bounds are inclusive (`>=`). P = 97.6 % → trunc → 97 → 注意 (not 正常).
+Lower bounds are inclusive (`>=`). P = 89.5 % → trunc → 89 → 注意 (not 正常;
+90 is the cutpoint). P = 90.0 % → 90 → 正常.
 
 Sample output (single day `--date 2026-05-21`, all regions,
 `--test-hosts exclude` default — business traffic only):
@@ -349,18 +383,26 @@ Sample output (single day `--date 2026-05-21`, all regions,
   平均 API→APP 延遲                       19.5s
   整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
 
+    ■ 核心功能效能 (Core Function Performance)
+      雲端查詢    呼叫次數 11       回應時間 0.11s
+      報告摘要    呼叫次數 186      回應時間 0.38s
+      影像下載    呼叫次數 427      回應時間 0.93s
+      核心功能存取合計 624
+
 ▶ 分區別 (By Region)
 ------------------------------------------------------------------------
-  台北        正常 0 (0.0%)         異常 3 (100.0%)
-  台中        正常 6 (100.0%)       異常 0 (0.0%)
 
-▶ 核心功能效能 (Core Function Performance)
-------------------------------------------------------------------------
-  [佔比為三大核心功能合計之占比 (三者為核心功能子集，非全體業務請求)；回應時間為平均值]
-  雲端查詢 (前端轉跳速度) 11 (1.8%)     平均 0.11s
-  報告摘要 (摘要載入速度) 186 (29.8%)   平均 0.38s
-  影像下載 (影像載入速度) 427 (68.4%)   平均 0.93s
-  核心功能存取合計                        624 (100.0%)
+    ■ 台北 (taipei)
+      存取關聯 3 筆 — NORMAL 0 (0.0%) · ORPHAN 3 (100.0%) · UNVERIFIED 0 (0.0%)
+      雲端查詢    呼叫次數 5        回應時間 0.02s
+      報告摘要    呼叫次數 71       回應時間 0.22s
+      影像下載    呼叫次數 220      回應時間 1.48s
+
+    ■ 台中 (taichung)
+      存取關聯 6 筆 — NORMAL 6 (100.0%) · ORPHAN 0 (0.0%) · UNVERIFIED 0 (0.0%)
+      雲端查詢    呼叫次數 6        回應時間 0.19s
+      報告摘要    呼叫次數 115      回應時間 0.47s
+      影像下載    呼叫次數 207      回應時間 0.34s
 ```
 
 #### 3.0.5 Flags accepted / rejected
@@ -386,9 +428,9 @@ and consumed by both `analyze_iis` and `analyze_overview`:
 
 | Key | Label | Pattern | Role |
 |-----|-------|---------|------|
-| `glcr` | 雲端查詢 (前端轉跳速度) | `^/api/GetLungCancerReportURL$` (exact) | APP |
-| `ds` | 報告摘要 (摘要載入速度) | `^/api/DigestSummary(/|$)` (prefix) | API |
-| `nhi` | 影像下載 (影像載入速度) | `^/api/NhiPatientImage/studies/` (prefix) | API |
+| `glcr` | 雲端查詢 | `^/api/GetLungCancerReportURL$` (exact) | APP |
+| `ds` | 報告摘要 | `^/api/DigestSummary(/|$)` (prefix) | API |
+| `nhi` | 影像下載 | `^/api/NhiPatientImage/studies/` (prefix) | API |
 
 Category matching is independent of the ENDPOINT Top-N cap (`--top`); all
 matching rows accumulate regardless of the cap. The `nhi` prefix covers the
@@ -727,7 +769,7 @@ before any counting (§3.2.14).
 | `status_count[]`   | Per-status-code count (e.g. 200, 302, 404) — descriptive Top-N distribution, business-only |
 | `slow`             | Rows where `time-taken >= threshold`; threshold is `--slow-api-ms` (default 2000 ms) for API-role servers and `--slow-app-ms` (default 5000 ms) for APP-role servers |
 | `client_ips`       | Hash of `c-ip → request_count`; `length()` yields unique-IP count; iterated for the per-IP table. `-` excluded. |
-| `top endpoints`    | Top-N endpoints by request count (after DICOM grouping), N controlled by `--top` (default 10, 0=all); each with **mean response time** in seconds (2 dp) |
+| `top endpoints`    | Top-N endpoints by request count (after DICOM grouping), N controlled by `--top` (default 10, 0=all); each with **mean response time** in seconds (2 dp). **GAP-3 caveat:** each server emits only its own top-N endpoint rows, so the summary-view per-endpoint avg / pct / count are pooled over a **per-server-capped subset** — not the full request population for endpoints that fall outside a server's top N. CATEGORY pooling (雲端查詢 / 報告摘要 / 影像下載) is uncapped and accumulates every matching row. External reproduction of per-endpoint avgs must replicate the per-server cap to get identical numbers. |
 | `client_ip_roster` | Top-N unique `c-ip` values with request count and `% of total`, N controlled by `--top` (0=all) |
 
 The `% of total` denominator for all three tables is the `total` business
@@ -750,6 +792,12 @@ KPIs + % for each scope (overall header, then per region→server, or merged
 buckets). Includes a `資料範圍` (scope) management banner showing the traffic
 universe (business requests; /health excluded; test-hosts mode). Top-3
 enumerations only; omits full tables. Every line carries a %.
+
+The summary's **Top 端點 (佔比 · 平均回應時間)** sub-block lists up to `--top`
+endpoints with right-aligned rank numbers (` 1.` … `10.`, fixed-width `%2d.`
+to prevent column shift at rank 10), percentage of total, and per-endpoint
+average response time in seconds. The avg/pct/count are pooled over the
+per-server top-N set (see GAP-3 caveat in §3.2.5).
 
 **The summary view is always text regardless of `--format`** (C10). `--format`
 governs only the detail file extension and render path.

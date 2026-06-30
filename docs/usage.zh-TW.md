@@ -99,11 +99,10 @@ interval flags are mutually exclusive
 
 ## 0. `bin/analyze_overview.sh`
 
-管理總覽報告，整合存取關聯結果與 IIS 核心功能效能，以三個面板呈現：
+管理總覽報告，整合存取關聯結果與 IIS 核心功能效能，以兩個面板呈現：
 
-- **總體概況 (Overall)** — 存取 NORMAL/ORPHAN/UNVERIFIED 筆數及其占存取關聯總數之百分比；平均 API→APP 延遲；質性健康判定。
-- **分區別 (By Region)** — 各區域正常/異常筆數 + 百分比，以 CJK 顯示寬度固定對齊，欄位不因百分比長度而移位。
-- **核心功能效能 (Core Function Performance)** — 三個 IIS 來源、UTC+8 日期修正的類別：雲端查詢（前端轉跳速度，`/api/GetLungCancerReportURL`）、報告摘要（摘要載入速度，`/api/DigestSummary` 前綴）、影像下載（影像載入速度，`/api/NhiPatientImage/studies/…` 前綴）；每列顯示筆數、三類合計占比，以及平均回應時間（秒）。三類為業務請求的子集。服務別（By Service Role）已移除。
+- **總體概況 (Overall)** — 存取 NORMAL/ORPHAN/UNVERIFIED 筆數及其占存取關聯總數之百分比；平均 API→APP 延遲；整體健康判定（判斷依據：P = trunc(NORMAL ÷ 存取關聯總數 × 100)；P ≥ 90 → 正常；70 ≤ P ≤ 89 → 注意；P < 70 → 警告；總數 = 0 → 無資料）；其後緊跟 ■ 核心功能效能 (Core Function Performance) 子區塊，包含三個 IIS 來源、UTC+8 日期修正的類別 — 雲端查詢（`/api/GetLungCancerReportURL`）、報告摘要（`/api/DigestSummary` 前綴）、影像下載（`/api/NhiPatientImage/studies/…` 前綴）— 各列顯示呼叫次數與回應時間（秒，2 位小數），以及核心功能存取合計（純筆數，無百分比）。類別筆數與平均值採全量累計，不受 top-N 截斷影響。
+- **分區別 (By Region)** — 每個在範圍內的區域各有一個 ■ 區塊，以散文形式列舉 `存取關聯 N 筆 — NORMAL n (p%) · ORPHAN n (p%) · UNVERIFIED n (p%)`（百分比為該區域內部占比），接著呈現同三個核心功能類別（呼叫次數 + 回應時間）。單一區域執行時（例如 `--region taipei`），分區別區塊會刻意與總體概況一致 — 此為 ROLLUP+明細的正確對稱行為，並非重複計算。
 
 **IIS 日期語意（UTC+8）：** `--date D` 代表 UTC+8 業務日 D。IIS W3C 日誌以
 UTC+0 時間記錄；本地一天 D = UTC `[D-1 16:00, D 16:00)`。模組讀取 `u_ex(D-1)`
@@ -181,25 +180,34 @@ bash bin/analyze_overview.sh --log-dir "$LOG_DIR" \
   平均 API→APP 延遲                       19.5s
   整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
 
+    ■ 核心功能效能 (Core Function Performance)
+      雲端查詢    呼叫次數 11       回應時間 0.11s
+      報告摘要    呼叫次數 186      回應時間 0.38s
+      影像下載    呼叫次數 427      回應時間 0.93s
+      核心功能存取合計 624
+
 ▶ 分區別 (By Region)
 ------------------------------------------------------------------------
-  台北        正常 0 (0.0%)         異常 3 (100.0%)
-  台中        正常 6 (100.0%)       異常 0 (0.0%)
 
-▶ 核心功能效能 (Core Function Performance)
-------------------------------------------------------------------------
-  [佔比為三大核心功能合計之占比 (三者為核心功能子集，非全體業務請求)；回應時間為平均值]
-  雲端查詢 (前端轉跳速度) 11 (1.8%)     平均 0.11s
-  報告摘要 (摘要載入速度) 186 (29.8%)   平均 0.38s
-  影像下載 (影像載入速度) 427 (68.4%)   平均 0.93s
-  核心功能存取合計                        624 (100.0%)
+    ■ 台北 (taipei)
+      存取關聯 3 筆 — NORMAL 0 (0.0%) · ORPHAN 3 (100.0%) · UNVERIFIED 0 (0.0%)
+      雲端查詢    呼叫次數 5        回應時間 0.02s
+      報告摘要    呼叫次數 71       回應時間 0.22s
+      影像下載    呼叫次數 220      回應時間 1.48s
+
+    ■ 台中 (taichung)
+      存取關聯 6 筆 — NORMAL 6 (100.0%) · ORPHAN 0 (0.0%) · UNVERIFIED 0 (0.0%)
+      雲端查詢    呼叫次數 6        回應時間 0.19s
+      報告摘要    呼叫次數 115      回應時間 0.47s
+      影像下載    呼叫次數 207      回應時間 0.34s
 ```
 
 實作強制執行的內容規則：
-- `存取關聯總數` 與 NORMAL/ORPHAN/UNVERIFIED 筆數僅出現在總體概況區塊。
-- 分區別僅顯示各區域正常/異常筆數 + 百分比；`ORPHAN` 與 `UNVERIFIED` 關鍵字不會出現在此區塊。
-- 核心功能效能顯示三類別各自的筆數、占比與平均回應時間；overview 中**無慢速欄**（每台伺服器的 `慢速率` 仍保留在 `analyze_iis` 摘要中）。
-- 健康判定行永遠不含數字。
+- `存取關聯總數` 與 NORMAL/ORPHAN/UNVERIFIED 筆數僅出現在總體概況區塊（不出現在分區別）。
+- 分區別每個區域顯示一個 ■ 區塊，以散文形式列舉 `存取關聯 N 筆 — NORMAL n (p%) · ORPHAN n (p%) · UNVERIFIED n (p%)`（百分比為該區域內部占比），接著顯示各類別的呼叫次數 + 回應時間。`ORPHAN` 與 `UNVERIFIED` 關鍵字僅出現在散文列舉行，不以 rpad 對齊欄位呈現。
+- 核心功能效能列顯示呼叫次數與回應時間（秒，2 位小數）；**不含各列占比百分比**，亦**不含速度子說明**（例如無 `前端轉跳速度`）。overview 中**無慢速欄**（每台伺服器的 `慢速率` 仍保留在 `analyze_iis` 摘要中）。
+- 整體健康判定行永遠不含數字。判定邏輯：P = trunc(NORMAL ÷ 存取關聯總數 × 100)；P ≥ 90 → 正常；70 ≤ P ≤ 89 → 注意；P < 70 → 警告；總數 = 0 → 無資料。以 2026-05-21 全區域為例：6/9 → trunc(66.7) = 66 < 70 → 警告。
+- 單一區域範圍（例如 `--region taipei`）：分區別 台北 區塊與總體概況呈現相同的 N/O/U 與類別數值。此為刻意設計的 ROLLUP+明細對稱行為，並非重複計算。區域標籤是兩者之間的有意義差異。
 - 空窗口（無資料）時輸出零值與 `N/A` 比率；退出碼 0。
 
 > 完整週報範例：[`../examples/sample-outputs/overview_all_week.txt`](../examples/sample-outputs/overview_all_week.txt)。
@@ -431,10 +439,10 @@ bash bin/analyze_iis.sh --log-dir "$LOG_DIR" \
   不重複用戶端 IP                         6
   慢速率                                  0.3%  (2)
 
-    ■ Top 端點 (佔比)
-    1. /api/NhiPatientImage/studies/{uid}/series/{uid}/...   50.8%
-    2. /api/DigestSummary/hospital                           21.9%
-    3. /api/NhiPatientImage/studies/{uid}/series-uid          8.3%
+    ■ Top 端點 (佔比 · 平均回應時間)
+     1. /api/NhiPatientImage/studies/{uid}/series/{uid}/...    50.8%   1.05s
+     2. /api/DigestSummary/hospital                            21.9%   0.33s
+     3. /api/NhiPatientImage/studies/{uid}/series-uid           8.3%   0.18s
     ...
 
     ■ 狀態碼分布 (Top 3)
@@ -443,6 +451,16 @@ bash bin/analyze_iis.sh --log-dir "$LOG_DIR" \
     ■ Top 用戶端 IP
       192.168.139.119 98.5% · 10.1.73.37 0.8% · 10.22.63.37 0.7%
 ```
+
+**Top 端點** 區塊標題為 **佔比 · 平均回應時間**。每列顯示靠右對齊序號（`%2d.`，
+使 ` 1.`…` 9.` 與 `10.` 的 URI 欄起始位置一致）、占 summary `總請求數` 之百分比，
+以及各端點平均回應時間（秒，2 位小數）。
+
+> **聚合範圍說明（GAP-3）。** 各端點的平均回應時間是從每個伺服器各自的
+> `--top N` 輸出列加權聚合而來，並非該端點全量請求的平均值。這與筆數和百分比
+> 所反映的母群體一致，因此在內部是自洽的。以外部 raw-gawk 方式重現時，必須先
+> 複製各伺服器的 top-N 截斷再進行聚合，才能重現固定值。相較之下，overview 中
+> 核心功能效能的類別筆數與平均值採全量累計，不受 `--top N` 截斷影響。
 
 狀態碼分布（Top-N）作為描述性業務狀態統計予以保留。302 或 4xx 代碼可能仍會出現
 於其中；此為設計如此（反映業務請求的實際 HTTP 回應分布）。
