@@ -6,6 +6,7 @@
 # Public surface:
 #   validate_date DATE         — abort if not YYYY-MM-DD
 #   today                      — print today (YYYY-MM-DD)
+#   local_hour                 — print current host-clock hour 0-23 (no leading zero)
 #   date_add BASE OFFSET       — add OFFSET days (may be negative)
 #   date_diff END START        — integer day count
 #   resolve_interval [flags]   — mutex interval validator; populates INTERVAL_ARGS
@@ -84,6 +85,27 @@ validate_date() {
 
 # today  — Print today in YYYY-MM-DD (local time).
 today() { date '+%Y-%m-%d'; }
+
+# local_hour  — Print the current host-clock hour as an integer 0-23, no leading zero.
+#   Purpose : Return the current hour (0-23) from the host clock without a leading
+#             zero, avoiding the octal-interpretation trap that %-H addresses on GNU
+#             date (08 and 09 are not valid octal; the %-H format strips the pad).
+#   Args    : none.
+#   Output  : integer 0-23 on stdout.
+#   Returns / Side effects : none.
+#   Notes   : Reads the host clock deliberately — the same clock today() uses to
+#             select UTC+8-named log directories — so the overview chart gate
+#             (today() comparison) and the today-cap (local_hour - 1) always read
+#             the SAME clock and can never desync.
+#             PRECONDITION (inherited, not introduced): the host clock runs in the
+#             business reference TZ UTC+8 (the same assumption today() already
+#             makes).  On a non-UTC+8 host run with TZ=Asia/Taipei, which shifts
+#             today() AND local_hour() together so the gate fires and the cap is
+#             correct.  We deliberately do NOT pin only local_hour to Asia/Taipei;
+#             that would make the cap UTC+8 while the gate/today() stay host-local,
+#             desyncing them on a UTC host.
+#             LOG_PARSE_NOW_HOUR — override for deterministic today-cap tests.
+local_hour() { echo "${LOG_PARSE_NOW_HOUR:-$(date '+%-H')}"; }
 
 # date_add BASE OFFSET
 #   Purpose : Add OFFSET days (signed) to BASE; print resulting YYYY-MM-DD.

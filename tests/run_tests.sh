@@ -5,7 +5,7 @@
 # and error handling. Baselines are derived from the examples/sample-logs/LUNG-CANCER-REPORT-LOG
 # sample data included in the project (dates 2026-05-18 ~ 2026-05-25).
 #
-# Total: 258 tests across eleven sections (A access · B iis · C errors · D log_report ·
+# Total: 267 tests across eleven sections (A access · B iis · C errors · D log_report ·
 #        E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
 #        J test-host/health · K timezone+core-function).
 # Note: Sections J and K exist beyond I; K13/K14 are intentionally vacant (gap preserved).
@@ -231,11 +231,11 @@ TMPD_A26=$(mktemp -d /tmp/lp_a26.XXXXXX)
 bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
     --output-dir "$TMPD_A26" >/dev/null 2>&1; rc=$?
 _ok  A26 "--output-dir 持久化執行成功"  "$rc"
-det_file=$(ls "$TMPD_A26"/access_detail_*.txt 2>/dev/null | head -1)
+det_file=$(ls "$TMPD_A26"/*/access_detail*.txt 2>/dev/null | head -1)
 if [[ -n "$det_file" && -s "$det_file" ]]; then
-    _pass "A27  access_detail_*.txt 已產生且非空白"
+    _pass "A27  access_detail*.txt 已產生且非空白"
 else
-    _fail "A27  access_detail_*.txt 不存在或為空"
+    _fail "A27  access_detail*.txt 不存在或為空"
 fi
 rm -rf "$TMPD_A26"
 
@@ -612,7 +612,7 @@ _has C23 "--today 單日期間標頭含 '(1 days)'" "$out" "(1 days)"
 TMPD_C24=$(mktemp -d /tmp/lp_c24.XXXXXX)
 bash "$ERRORS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung \
     --output-dir "$TMPD_C24" >/dev/null 2>&1
-_sum_file=$(ls "$TMPD_C24"/errors_summary_*.txt 2>/dev/null | head -1)
+_sum_file=$(ls "$TMPD_C24"/*/errors_summary.txt 2>/dev/null | head -1)
 _has C24 "errors_summary file 含 'Total ERROR' 欄位" \
     "$(cat "${_sum_file:-/dev/null}" 2>/dev/null)" "Total ERROR"
 rm -rf "$TMPD_C24"
@@ -657,22 +657,22 @@ TMPD_D13=$(mktemp -d /tmp/lp_d13.XXXXXX)
 bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
     --modules access --output-dir "$TMPD_D13" >/dev/null 2>&1; rc=$?
 _ok D13 "log_report --modules access --output-dir 執行成功 (L4 持久化模式)"  "$rc"
-_glob D14 "access_summary_*.txt 持久化檔案已產生" "${TMPD_D13}/access_summary_*.txt"
+_glob D14 "access_summary.txt 持久化檔案已產生" "${TMPD_D13}/*/access_summary.txt"
 # access summary 含 '關聯總數' KPI 標籤 (summary view, format-independent)
-_sum_f_d15=$(ls "${TMPD_D13}"/access_summary_*.txt 2>/dev/null | head -1)
+_sum_f_d15=$(ls "${TMPD_D13}"/*/access_summary.txt 2>/dev/null | head -1)
 _has D15 "access_summary 持久化檔案含 '關聯總數' KPI" \
     "$(cat "${_sum_f_d15:-/dev/null}" 2>/dev/null)" "關聯總數"
 rm -rf "$TMPD_D13"
 
-# D5: --output-dir 各模組分別寫入 (access+iis+errors 各 2 個 = 6 個)
+# D5: --output-dir 各模組分別寫入 (access 3 + iis 2 + errors 2 = 7 個)
 TMPD=$(mktemp -d /tmp/lp_outdir.XXXXXX)
 bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
     --modules access,iis,errors --output-dir "$TMPD" >/dev/null 2>&1; rc=$?
 _ok D16 "--output-dir 執行成功"  "$rc"
-file_count=$(ls "$TMPD" 2>/dev/null | wc -l | tr -d ' ')
-_eq  D17 "--output-dir 產生 6 個報告檔案 (access+iis+errors 各 summary+detail)"  "$file_count"  "6"
+file_count=$(find "$TMPD" -type f 2>/dev/null | wc -l | tr -d ' ')
+_eq  D17 "--output-dir 產生 7 個報告檔案 (access 3 + iis 2 + errors 2)"  "$file_count"  "7"
 # 每個檔案均非空
-empty_files=$(find "$TMPD" -maxdepth 1 -type f -empty | wc -l | tr -d ' ')
+empty_files=$(find "$TMPD" -type f -empty | wc -l | tr -d ' ')
 _eq  D18 "--output-dir 所有檔案均非空白"  "$empty_files"  "0"
 rm -rf "$TMPD"
 
@@ -795,11 +795,14 @@ fi
 TMPD_D35=$(mktemp -d /tmp/lp_d35.XXXXXX)
 bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 \
     --output-dir "$TMPD_D35" >/dev/null 2>&1
-if compgen -G "${TMPD_D35}/overview_summary_*.txt" > /dev/null 2>&1 && \
-   compgen -G "${TMPD_D35}/iis_summary_*.txt"      > /dev/null 2>&1 && \
-   compgen -G "${TMPD_D35}/iis_detail_*.txt"       > /dev/null 2>&1 && \
-   compgen -G "${TMPD_D35}/access_summary_*.txt"   > /dev/null 2>&1 && \
-   compgen -G "${TMPD_D35}/access_detail_*.txt"    > /dev/null 2>&1; then
+if [[ -f "${TMPD_D35}/*/overview_summary.txt" ]] 2>/dev/null || \
+   ls "${TMPD_D35}"/*/overview_summary.txt > /dev/null 2>&1; then
+    _ovw_ok=1; else _ovw_ok=0; fi
+if ls "${TMPD_D35}"/*/iis_summary.txt      > /dev/null 2>&1; then _iis_s_ok=1; else _iis_s_ok=0; fi
+if ls "${TMPD_D35}"/*/iis_detail.txt       > /dev/null 2>&1; then _iis_d_ok=1; else _iis_d_ok=0; fi
+if ls "${TMPD_D35}"/*/access_summary.txt   > /dev/null 2>&1; then _acc_s_ok=1; else _acc_s_ok=0; fi
+if ls "${TMPD_D35}"/*/access_detail.txt    > /dev/null 2>&1; then _acc_d_ok=1; else _acc_d_ok=0; fi
+if [[ "$_ovw_ok$_iis_s_ok$_iis_d_ok$_acc_s_ok$_acc_d_ok" == "11111" ]]; then
     _pass "D35  各模組持久化配對均已建立 (overview+iis+access)"
 else
     _fail "D35  各模組持久化配對均已建立 (overview+iis+access)"
@@ -953,8 +956,8 @@ TMPD=$(mktemp -d /tmp/lp_weekly.XXXXXX)
 bash "$REPORT" --log-dir "$LOG_DIR" --from 2026-05-19 --to 2026-05-25 \
     --modules access,iis,errors --output-dir "$TMPD" >/dev/null 2>&1; rc=$?
 _ok  F07 "[情境-週報] --from --to 全模組 --output-dir 執行成功"  "$rc"
-file_count=$(ls "$TMPD" 2>/dev/null | wc -l | tr -d ' ')
-_eq  F08 "[情境-週報] 產生 6 個週報檔案 (access+iis+errors 各 summary+detail)"  "$file_count"  "6"
+file_count=$(find "$TMPD" -type f 2>/dev/null | wc -l | tr -d ' ')
+_eq  F08 "[情境-週報] 產生 7 個週報檔案 (access 3 + iis 2 + errors 2)"  "$file_count"  "7"
 rm -rf "$TMPD"
 
 # F5: 情境 — IIS 效能稽核，自訂慢請求門檻 (效能工程師，--slow-ms 已分為 --slow-api-ms/--slow-app-ms)
@@ -1004,16 +1007,16 @@ else
     _fail "F14  [情境-overview獨立] 三切面 (總體概況/分區別/核心功能效能) 均存在 [rc=$rc_f14]"
 fi
 
-# F10: 情境 — log_report 預設模組產生 5 個持久化檔案且無 .plain 殘留 (C4)
+# F10: 情境 — log_report 預設模組產生 6 個持久化檔案且無 .plain 殘留 (C4)
 TMPD_F15=$(mktemp -d /tmp/lp_f15.XXXXXX)
 bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 \
     --output-dir "$TMPD_F15" >/dev/null 2>&1; rc_f15=$?
-_f15_cnt=$(ls "$TMPD_F15" 2>/dev/null | wc -l | tr -d ' ')
-_f15_plain=$(compgen -G "${TMPD_F15}/*.plain" > /dev/null 2>&1 && echo 1 || echo 0)
-if [[ "$rc_f15" -eq 0 && "$_f15_cnt" -eq 5 && "$_f15_plain" -eq 0 ]]; then
-    _pass "F15  [情境-週報] 預設模組產生恰好 5 個持久化檔案 (無 .plain 殘留 C4)"
+_f15_cnt=$(find "$TMPD_F15" -type f 2>/dev/null | wc -l | tr -d ' ')
+_f15_plain=$(find "$TMPD_F15" -type f -name "*.plain" 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$rc_f15" -eq 0 && "$_f15_cnt" -eq 6 && "$_f15_plain" -eq 0 ]]; then
+    _pass "F15  [情境-週報] 預設模組產生恰好 6 個持久化檔案 (無 .plain 殘留 C4)"
 else
-    _fail "F15  [情境-週報] 預設模組產生恰好 5 個持久化檔案 (無 .plain 殘留 C4) [rc=$rc_f15 files=$_f15_cnt plain=$_f15_plain]"
+    _fail "F15  [情境-週報] 預設模組產生恰好 6 個持久化檔案 (無 .plain 殘留 C4) [rc=$rc_f15 files=$_f15_cnt plain=$_f15_plain]"
 fi
 rm -rf "$TMPD_F15"
 
@@ -1021,24 +1024,24 @@ rm -rf "$TMPD_F15"
 TMPD_F16=$(mktemp -d /tmp/lp_f16.XXXXXX)
 bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
     --view detail --format csv --output-dir "$TMPD_F16" >/dev/null 2>&1; rc_f16=$?
-if [[ "$rc_f16" -eq 0 ]] && compgen -G "${TMPD_F16}/access_detail_*.csv" > /dev/null 2>&1; then
+if [[ "$rc_f16" -eq 0 ]] && ls "${TMPD_F16}"/*/access_detail.csv > /dev/null 2>&1; then
     _pass "F16  [情境-記錄匯出] access --view detail --format csv 成功且持久化 csv 存在"
 else
     _fail "F16  [情境-記錄匯出] access --view detail --format csv 成功且持久化 csv 存在 [rc=$rc_f16]"
 fi
 rm -rf "$TMPD_F16"
 
-# F12: 情境 — 週報含錯誤稽核 (全模組) 產生 7 個持久化檔案
+# F12: 情境 — 週報含錯誤稽核 (全模組) 產生 8 個持久化檔案
 TMPD_F17=$(mktemp -d /tmp/lp_f17.XXXXXX)
 bash "$REPORT" --log-dir "$LOG_DIR" \
     --from 2026-05-18 --to 2026-05-25 \
     --modules overview,iis,access,errors \
     --output-dir "$TMPD_F17" >/dev/null 2>&1; rc_f17=$?
-_f17_cnt=$(ls "$TMPD_F17" 2>/dev/null | wc -l | tr -d ' ')
-if [[ "$rc_f17" -eq 0 && "$_f17_cnt" -eq 7 ]]; then
-    _pass "F17  [情境-週報稽核] 全模組週報產生 7 個持久化檔案"
+_f17_cnt=$(find "$TMPD_F17" -type f 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$rc_f17" -eq 0 && "$_f17_cnt" -eq 8 ]]; then
+    _pass "F17  [情境-週報稽核] 全模組週報產生 8 個持久化檔案"
 else
-    _fail "F17  [情境-週報稽核] 全模組週報產生 7 個持久化檔案 [rc=$rc_f17 files=$_f17_cnt]"
+    _fail "F17  [情境-週報稽核] 全模組週報產生 8 個持久化檔案 [rc=$rc_f17 files=$_f17_cnt]"
 fi
 rm -rf "$TMPD_F17"
 
@@ -1130,6 +1133,71 @@ out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --today --region taipei \
     --view summary 2>/dev/null)
 _has A41 "access --today 單日期間標頭含 '(1 days)'" "$out" "(1 days)"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Section A (continued) — A42–A44  access_ip_counts.tsv 持久化 + 隔離
+# Baselines: --date 2026-05-21 --region all (all ground truth pinned from spec):
+#   --test-hosts all  -> 2 data rows: '-' 9  then  192.168.139.110 3 (sort count desc/IP asc)
+#   --test-hosts exclude (default) -> 1 data row: '-' 9
+#   column sum (NORMAL+ORPHAN) = 12 under --test-hosts all
+# ─────────────────────────────────────────────────────────────────────────────
+
+# A42: access --test-hosts all 持久化 access_ip_counts.tsv 含 192.168.139.110 = 3
+TMPD_A42=$(mktemp -d /tmp/lp_a42.XXXXXX)
+bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all \
+    --test-hosts all --output-dir "$TMPD_A42" >/dev/null 2>&1
+_a42_file=$(ls "$TMPD_A42"/*/access_ip_counts.tsv 2>/dev/null | head -1)
+if [[ -z "$_a42_file" ]]; then
+    _fail "A42  access_ip_counts.tsv 不存在"
+else
+    _a42_hdr=$(head -1 "$_a42_file")
+    _a42_ip=$(gawk -F'\t' '$1=="192.168.139.110"{print $2; exit}' "$_a42_file")
+    _a42_sum=$(gawk -F'\t' 'NR>1{s+=$2} END{print s+0}' "$_a42_file")
+    _a42_first=$(sed -n '2p' "$_a42_file" | cut -f1)
+    if [[ "$_a42_hdr" == "CLIENT_IP	REQUEST_COUNT" && \
+          "$_a42_ip" == "3" && \
+          "$_a42_sum" == "12" && \
+          "$_a42_first" == "-" ]]; then
+        _pass "A42  access_ip_counts.tsv: 標頭 + 192.168.139.110=3 + sum=12 + 首行='-'"
+    else
+        _fail "A42  access_ip_counts.tsv: 標頭/IP/sum/首行不符 [hdr=$_a42_hdr ip=$_a42_ip sum=$_a42_sum first=$_a42_first]"
+    fi
+fi
+rm -rf "$TMPD_A42"
+
+# A43: empty corpus (2026-05-20 無存取 CSV) → access_ip_counts.tsv 僅含標頭 (1 行, 0 data rows)
+TMPD_A43=$(mktemp -d /tmp/lp_a43.XXXXXX)
+bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-20 --region all \
+    --output-dir "$TMPD_A43" >/dev/null 2>&1
+_a43_file=$(ls "$TMPD_A43"/*/access_ip_counts.tsv 2>/dev/null | head -1)
+if [[ -z "$_a43_file" ]]; then
+    _fail "A43  access_ip_counts.tsv 不存在 (空語料庫日期)"
+else
+    _a43_lines=$(wc -l < "$_a43_file" | tr -d ' ')
+    if [[ "$_a43_lines" -eq 1 ]]; then
+        _pass "A43  空語料庫 access_ip_counts.tsv 僅含 1 行標頭 (0 data rows)"
+    else
+        _fail "A43  空語料庫 access_ip_counts.tsv 行數應為 1，得 $_a43_lines"
+    fi
+fi
+rm -rf "$TMPD_A43"
+
+# A44: (a) stdout 不含 REQUEST_COUNT; (b) --emit-stats 無子目錄且無 access_ip_counts.tsv
+TMPD_A44=$(mktemp -d /tmp/lp_a44.XXXXXX)
+_a44_stdout=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all \
+    --test-hosts all --output-dir "$TMPD_A44" 2>/dev/null)
+_a44_no_rc=$(printf '%s\n' "$_a44_stdout" | grep -cF "REQUEST_COUNT" 2>/dev/null || true)
+rm -rf "$TMPD_A44"
+TMPD_A44b=$(mktemp -d /tmp/lp_a44b.XXXXXX)
+bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all \
+    --emit-stats --output-dir "$TMPD_A44b" >/dev/null 2>&1
+_a44_emit_cnt=$(find "$TMPD_A44b" -type f 2>/dev/null | wc -l | tr -d ' ')
+rm -rf "$TMPD_A44b"
+if [[ "$_a44_no_rc" -eq 0 && "$_a44_emit_cnt" -eq 0 ]]; then
+    _pass "A44  stdout 不含 REQUEST_COUNT; --emit-stats 無持久化檔案"
+else
+    _fail "A44  stdout 不含 REQUEST_COUNT; --emit-stats 無持久化檔案 [rc_in_stdout=$_a44_no_rc emit_files=$_a44_emit_cnt]"
+fi
+
 # C22: errors 重啟表 (含 UNMATCHED CJK 列) 第三欄對齊
 # Use --date 2026-05-25 --region taipei: Restart count=0 => only UNMATCHED rows exist.
 # Extract header + UNMATCHED-only rows (col3 = single-token "?") to avoid the
@@ -1179,6 +1247,51 @@ _g03_block=$(printf '%s\n' "$out_g" | grep -E '雲端查詢|報告摘要|影像�
 _g03_pre=$(printf '%s\n' "$_g03_block" | sed 's/慢速.*//')
 _eq G03 "overview 核心功能效能 平均欄位固定寬度對齊 (display-col 一致)" \
     "$(printf '%s' "$_g03_pre" | _aligncols)" "1"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section G (continued) — G04–G05  fmt_bar + agg_access_records 新行為
+# G04 empirically verified: max bucket 4 -> 40 cells; 1 -> 10 cells; U+2588=3 bytes.
+#   byte-len(row "14") - byte-len(row "13") = 30 cells x 3 bytes = 90.
+# G05 guard: NORMAL with empty APP_TIME -> no HOUR-00 row; WARN on stderr; IP still counted.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# G04: fmt_bar 比例縮放 + U+2588 3-byte UTF-8 排放 (LC_ALL=C 下 byte-diff == 90)
+# max bucket 4 -> 40 cells; count 1 -> 10 cells; 30 cells x 3 bytes each = 90.
+# fmt_utils already sourced above.
+_g04_out=$(printf '13\t1\n14\t4\n15\t4\n' | fmt_bar)
+_g04_r13=$(printf '%s\n' "$_g04_out" | gawk '$1=="13"{print; exit}')
+_g04_r14=$(printf '%s\n' "$_g04_out" | gawk '$1=="14"{print; exit}')
+# Use wc -c (byte count), not ${#var} (character count), to measure UTF-8 bytes correctly
+_g04_len13=$(printf '%s' "$_g04_r13" | wc -c | tr -d ' ')
+_g04_len14=$(printf '%s' "$_g04_r14" | wc -c | tr -d ' ')
+_g04_diff=$(( _g04_len14 - _g04_len13 ))
+_eq G04 "fmt_bar LC_ALL=C: row14 byte-len - row13 byte-len == 90 (30 cells x 3 bytes U+2588)" \
+    "$_g04_diff" "90"
+
+# G05: agg_access_records: malformed APP_TIME (empty) -> no HOUR-00 row; WARN on stderr; IP counted
+_g05_tmpdir=$(mktemp -d /tmp/lp_g05.XXXXXX)
+_g05_file="${_g05_tmpdir}/result_sorted.tsv"
+# row1: NORMAL with empty APP_TIME ($3), CLIENT_IP 10.0.0.1
+printf 'NORMAL\t2026-05-21 14:00:00.000\t\t0\tOK\treq001\t10.22.63.37\t10.21.3.35\tH01\tP01\t10.0.0.1\tENC001\n' \
+    > "$_g05_file"
+# row2: ORPHAN with valid APP_TIME 2026-05-21 14:05:00.000, CLIENT_IP 10.0.0.2
+printf 'ORPHAN\t-\t2026-05-21 14:05:00.000\t-\t-\treq002\t-\t10.21.3.35\t-\t-\t10.0.0.2\t-\n' \
+    >> "$_g05_file"
+_g05_out=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/aggregate_utils.sh'
+    agg_access_records '${_g05_file}'
+" 2>"${_g05_tmpdir}/err.txt")
+_g05_hour00=$(printf '%s\n' "$_g05_out" | gawk -F'\t' '$1=="HOUR"&&$2=="00"{print $3; exit}')
+_g05_hour14=$(printf '%s\n' "$_g05_out" | gawk -F'\t' '$1=="HOUR"&&$2=="14"{print $3; exit}')
+_g05_ip_sum=$(printf '%s\n' "$_g05_out" | gawk -F'\t' '$1=="IP"{s+=$3} END{print s+0}')
+_g05_warn=$(grep -c "WARN" "${_g05_tmpdir}/err.txt" 2>/dev/null || echo 0)
+if [[ -z "$_g05_hour00" && "$_g05_hour14" == "1" && "$_g05_ip_sum" -eq 2 && "$_g05_warn" -ge 1 ]]; then
+    _pass "G05  malformed APP_TIME: 無 HOUR-00、HOUR-14=1、IP sum=2、stderr WARN 存在"
+else
+    _fail "G05  malformed APP_TIME guard 不符 [hour00=${_g05_hour00:-NONE} hour14=${_g05_hour14:-0} ip_sum=$_g05_ip_sum warn=$_g05_warn]"
+fi
+rm -rf "$_g05_tmpdir"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section H — analyze_overview.sh  管理總覽 (H01–H21)
@@ -1386,8 +1499,60 @@ h21_v=$(_v 69 100)
 _hasre H21 "verdict 69% (69/100) starts 警告" "$h21_v" "^警告"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Section H (continued) — H22–H25  存取紀錄橫條圖 (每小時) 單日 + 多日 + today-cap
+# Baselines (verified from spec pinned_numbers, exclude mode 2026-05-21):
+#   global: hour 13=1, 14=4, 15=4; taipei: 15=3; taichung: 13=1, 14=4, 15=1
+#   Three charts total in single-day run (global + taipei + taichung).
+#   Multi-day run: NO chart (gate: _OVW_N_DATES==1 only).
+#   today-cap: LOG_PARSE_NOW_HOUR=3 -> hours 00-02 only; =0 -> "今日尚無完整小時資料".
+# ─────────────────────────────────────────────────────────────────────────────
+
+# H22: 單日 overview (2026-05-21) 總體概況: 含 存取紀錄橫條圖 + hour-14 count=4 + U+2588 存在
+out_h22=$(NO_COLOR=1 bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null)
+_h22_global_sec=$(printf '%s\n' "$out_h22" | sed -n '/▶ 總體概況/,/▶ 分區別/p')
+_h22_has_chart=$(printf '%s\n' "$_h22_global_sec" | grep -cF "存取紀錄橫條圖" 2>/dev/null || true)
+# Bar row format: "      14    4  [bars]" — $1=label, $2=count (awk default whitespace split)
+_h22_h14=$(printf '%s\n' "$_h22_global_sec" | gawk '$1=="14"{print $2+0; exit}')
+_h22_has_block=$(printf '%s\n' "$_h22_global_sec" | LC_ALL=C od -An -tx1 | grep -c "e2 96 88" 2>/dev/null || true)
+if [[ "$_h22_has_chart" -ge 1 && "$_h22_h14" == "4" && "$_h22_has_block" -ge 1 ]]; then
+    _pass "H22  總體概況: 含 存取紀錄橫條圖 + hour-14=4 + U+2588 FULL BLOCK 存在"
+else
+    _fail "H22  總體概況: 含 存取紀錄橫條圖 + hour-14=4 + U+2588 [chart=$_h22_has_chart h14=${_h22_h14:-?} block=$_h22_has_block]"
+fi
+
+# H23: 存取紀錄橫條圖 出現 3 次; 台北 hour-15=3; 台中 hour-14=4 (ACC_HOUR_REGION distinct from global)
+_h23_chart_cnt=$(printf '%s\n' "$out_h22" | grep -cF "存取紀錄橫條圖" 2>/dev/null || true)
+_h23_taipei_sec=$(printf '%s\n' "$out_h22" | sed -n '/■ 台北/,/■ 台中/p')
+_h23_tp15=$(printf '%s\n' "$_h23_taipei_sec" | gawk '$1=="15"{print $2+0; exit}')
+_h23_taichung_sec=$(printf '%s\n' "$out_h22" | sed -n '/■ 台中/,$p')
+_h23_tc14=$(printf '%s\n' "$_h23_taichung_sec" | gawk '$1=="14"{print $2+0; exit}')
+if [[ "$_h23_chart_cnt" -eq 3 && "$_h23_tp15" == "3" && "$_h23_tc14" == "4" ]]; then
+    _pass "H23  橫條圖 3 次; 台北 hour-15=3; 台中 hour-14=4 (per-region 獨立於 global)"
+else
+    _fail "H23  橫條圖/台北/台中 [charts=$_h23_chart_cnt tp15=${_h23_tp15:-?} tc14=${_h23_tc14:-?}]"
+fi
+
+# H24: 多日 overview (--from --to, _OVW_N_DATES==8) 不含 存取紀錄橫條圖 (gate 保護)
+out_h24=$(NO_COLOR=1 bash "$OVERVIEW" --log-dir "$LOG_DIR" \
+    --from 2026-05-18 --to 2026-05-25 2>/dev/null)
+_lacks H24 "多日 overview 不含 存取紀錄橫條圖 (chart is single-day only)" \
+    "$out_h24" "存取紀錄橫條圖"
+
+# H25: today-cap — HOUR=3 -> chart 含 00-02 只; HOUR=0 -> 今日尚無完整小時資料
+out_h25=$(NO_COLOR=1 LOG_PARSE_NOW_HOUR=3 bash "$OVERVIEW" --log-dir "$LOG_DIR" --today 2>/dev/null)
+_h25_has_chart=$(printf '%s\n' "$out_h25" | grep -cF "存取紀錄橫條圖" 2>/dev/null || true)
+_h25_late=$(printf '%s\n' "$out_h25" | grep -cE '^ {6}(0[3-9]|1[0-9]|2[0-3])  ' 2>/dev/null || true)
+out_h25z=$(NO_COLOR=1 LOG_PARSE_NOW_HOUR=0 bash "$OVERVIEW" --log-dir "$LOG_DIR" --today 2>/dev/null)
+_h25_empty=$(printf '%s\n' "$out_h25z" | grep -cF "今日尚無完整小時資料" 2>/dev/null || true)
+if [[ "$_h25_has_chart" -ge 1 && "$_h25_late" -eq 0 && "$_h25_empty" -ge 1 ]]; then
+    _pass "H25  today-cap HOUR=3: chart 存在 + hour03-23 缺席; HOUR=0: 今日尚無完整小時資料"
+else
+    _fail "H25  today-cap [chart=$_h25_has_chart late=$_h25_late empty=$_h25_empty]"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Section I — 持久化行為 (Persistence I01–I12)
-# Baselines: analyze_iis taipei 2026-05-21 (2 files); log_report 5 files.
+# Baselines: analyze_iis taipei 2026-05-21 (2 files); log_report 6 files.
 # Every test uses its own TMPD_Ixx via --output-dir to isolate from
 # the global PERSIST_TMPDIR.  I02 uses a subshell + env -u to test default.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1398,11 +1563,11 @@ section "I  持久化行為 — always-on report persistence"
 TMPD_I01=$(mktemp -d /tmp/lp_i01.XXXXXX)
 bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
     --output-dir "$TMPD_I01" >/dev/null 2>&1
-if compgen -G "${TMPD_I01}/iis_summary_*.txt" > /dev/null 2>&1 && \
-   compgen -G "${TMPD_I01}/iis_detail_*.txt"   > /dev/null 2>&1; then
-    _pass "I01  standalone iis 寫出 iis_summary_*.txt + iis_detail_*.txt"
+if ls "${TMPD_I01}"/*/iis_summary.txt > /dev/null 2>&1 && \
+   ls "${TMPD_I01}"/*/iis_detail.txt  > /dev/null 2>&1; then
+    _pass "I01  standalone iis 寫出 iis_summary.txt + iis_detail.txt"
 else
-    _fail "I01  standalone iis 寫出 iis_summary_*.txt + iis_detail_*.txt"
+    _fail "I01  standalone iis 寫出 iis_summary.txt + iis_detail.txt"
 fi
 rm -rf "$TMPD_I01"
 
@@ -1435,8 +1600,8 @@ rm -rf "$TMPD_I03_ENV" "$TMPD_I03_FLAG"
 TMPD_I04=$(mktemp -d /tmp/lp_i04.XXXXXX)
 bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
     --format csv --output-dir "$TMPD_I04" >/dev/null 2>&1
-_i04_csv=$(compgen -G "${TMPD_I04}/iis_detail_*.csv" > /dev/null 2>&1 && echo 1 || echo 0)
-_i04_plain=$(compgen -G "${TMPD_I04}/*.plain" > /dev/null 2>&1 && echo 1 || echo 0)
+_i04_csv=$(ls "${TMPD_I04}"/*/iis_detail.csv > /dev/null 2>&1 && echo 1 || echo 0)
+_i04_plain=$(find "${TMPD_I04}" -type f -name "*.plain" 2>/dev/null | wc -l | tr -d ' ')
 if [[ "$_i04_csv" -eq 1 && "$_i04_plain" -eq 0 ]]; then
     _pass "I04  detail 副檔名跟隨 --format csv (*.csv 存在，無 *.plain 殘留 C4)"
 else
@@ -1448,7 +1613,7 @@ rm -rf "$TMPD_I04"
 TMPD_I05=$(mktemp -d /tmp/lp_i05.XXXXXX)
 bash "$IIS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei \
     --format csv --output-dir "$TMPD_I05" >/dev/null 2>&1
-if compgen -G "${TMPD_I05}/iis_summary_*.txt" > /dev/null 2>&1; then
+if ls "${TMPD_I05}"/*/iis_summary.txt > /dev/null 2>&1; then
     _pass "I05  summary 檔案永遠為 .txt (即使 --format csv C10)"
 else
     _fail "I05  summary 檔案永遠為 .txt (即使 --format csv C10)"
@@ -1467,23 +1632,23 @@ rm -rf "$TMPD_I06"
 TMPD_I07=$(mktemp -d /tmp/lp_i07.XXXXXX)
 bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 \
     --output-dir "$TMPD_I07" >/dev/null 2>&1
-_i07_sum=$(compgen -G "${TMPD_I07}/overview_summary_*.txt" > /dev/null 2>&1 && echo 1 || echo 0)
-_i07_det=$(compgen -G "${TMPD_I07}/overview_detail_*"      > /dev/null 2>&1 && echo 1 || echo 0)
+_i07_sum=$(ls "${TMPD_I07}"/*/overview_summary.txt > /dev/null 2>&1 && echo 1 || echo 0)
+_i07_det=$(find "${TMPD_I07}" -type f -name "overview_detail*" 2>/dev/null | wc -l | tr -d ' ')
 if [[ "$_i07_sum" -eq 1 && "$_i07_det" -eq 0 ]]; then
-    _pass "I07  overview 僅寫出 overview_summary_*.txt (無 overview_detail_*)"
+    _pass "I07  overview 僅寫出 overview_summary.txt (無 overview_detail_*)"
 else
-    _fail "I07  overview 僅寫出 overview_summary_*.txt (無 overview_detail_*) [sum=$_i07_sum det=$_i07_det]"
+    _fail "I07  overview 僅寫出 overview_summary.txt (無 overview_detail_*) [sum=$_i07_sum det=$_i07_det]"
 fi
 rm -rf "$TMPD_I07"
 
 # I08: 所有持久化檔案均無 ANSI ESC 碼 (C3 color-free)
 # Runs all 4 modules to cover overview_summary + iis_summary + iis_detail +
-# access_summary + access_detail + errors_summary + errors_detail (7 files total).
+# access_summary + access_detail + access_ip_counts + errors_summary + errors_detail (8 files total).
 TMPD_I08=$(mktemp -d /tmp/lp_i08.XXXXXX)
 bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 \
     --modules overview,iis,access,errors --output-dir "$TMPD_I08" >/dev/null 2>&1
 _i08_esc=0
-for _f in "$TMPD_I08"/*; do
+for _f in "$TMPD_I08"/*/*; do
     _c=$(grep -cP '\x1b' "$_f" 2>/dev/null || true)
     _i08_esc=$(( _i08_esc + _c ))
 done
@@ -1520,23 +1685,23 @@ fi
 TMPD_I11=$(mktemp -d /tmp/lp_i11.XXXXXX)
 LOG_PARSE_RUN_TS="20260521_000000" bash "$IIS" --log-dir "$LOG_DIR" \
     --date 2026-05-21 --region taipei --output-dir "$TMPD_I11" >/dev/null 2>&1
-if [[ -f "${TMPD_I11}/iis_summary_20260521_000000.txt" ]]; then
-    _pass "I11  固定 LOG_PARSE_RUN_TS=20260521_000000 產生精確檔名"
+if [[ -f "${TMPD_I11}/20260521_000000/iis_summary.txt" ]]; then
+    _pass "I11  固定 LOG_PARSE_RUN_TS=20260521_000000 產生精確子目錄 + 無 TS 檔名"
 else
-    _fail "I11  固定 LOG_PARSE_RUN_TS=20260521_000000 產生精確檔名 [files: $(ls "$TMPD_I11" 2>/dev/null)]"
+    _fail "I11  固定 LOG_PARSE_RUN_TS=20260521_000000 產生精確子目錄 + 無 TS 檔名 [files: $(ls -R "$TMPD_I11" 2>/dev/null)]"
 fi
 rm -rf "$TMPD_I11"
 
-# I12: log_report 預設模組 → 5 個檔案共享同一 RUN_TS；--output-dir 落入自訂目錄 (C1)
+# I12: log_report 預設模組 → 6 個檔案落入同一 TS 子目錄；--output-dir 落入自訂目錄 (C1)
 TMPD_I12=$(mktemp -d /tmp/lp_i12.XXXXXX)
 bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 \
     --output-dir "$TMPD_I12" >/dev/null 2>&1
-_i12_cnt=$(ls "$TMPD_I12" 2>/dev/null | wc -l | tr -d ' ')
-_i12_ts_uniq=$(ls "$TMPD_I12" | grep -oE '[0-9]{8}_[0-9]{6}' | sort -u | wc -l | tr -d ' ')
-if [[ "$_i12_cnt" -eq 5 && "$_i12_ts_uniq" -eq 1 ]]; then
-    _pass "I12  log_report 預設模組 5 個檔案共享同一 RUN_TS 且落入 --output-dir (C1)"
+_i12_cnt=$(find "$TMPD_I12" -type f 2>/dev/null | wc -l | tr -d ' ')
+_i12_ts_uniq=$(ls -d "$TMPD_I12"/*/ 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$_i12_cnt" -eq 6 && "$_i12_ts_uniq" -eq 1 ]]; then
+    _pass "I12  log_report 預設模組 6 個檔案落入同一 TS 子目錄且落入 --output-dir (C1)"
 else
-    _fail "I12  log_report 預設模組 5 個檔案共享同一 RUN_TS 且落入 --output-dir (C1) [files=$_i12_cnt ts_uniq=$_i12_ts_uniq]"
+    _fail "I12  log_report 預設模組 6 個檔案落入同一 TS 子目錄且落入 --output-dir (C1) [files=$_i12_cnt ts_subdirs=$_i12_ts_uniq]"
 fi
 rm -rf "$TMPD_I12"
 

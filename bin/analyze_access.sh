@@ -19,6 +19,9 @@
 # Views: --view detail (default) = per-record tables; --view summary = KPI text.
 # Formats: --format text (default) | tsv | csv (governs detail file/view; C10).
 # Persistence: always-on via output_utils (persist_init + persist_views).
+#   Real runs write THREE files: access_summary.txt, access_detail.<ext>, and
+#   access_ip_counts.tsv (CLIENT_IP request counts sorted by count desc / IP asc).
+#   access_ip_counts.tsv is a machine-readable side artifact, never written to stdout.
 # Emit-stats: --emit-stats prints access_stats.tsv verbatim; short-circuits before
 #   persist_init (no files, no banner). Accepts interval/region/conf/verbose only.
 #
@@ -524,6 +527,44 @@ access_region_stats() {
         | gawk -F'\t' -v region="$region" \
           'BEGIN{OFS="\t"} {print "ACCESS", region, $1, $2}' \
         >> "${WORK_TMPDIR}/access_stats.tsv"
+    agg_access_records "$result_sorted" \
+        | gawk -F'\t' -v region="$region" \
+          'BEGIN{OFS="\t"} $1=="HOUR"{print "HOUR", region, $2, $3}' \
+        >> "${WORK_TMPDIR}/access_stats.tsv"
+}
+
+# ---------------------------------------------------------------------------
+# access_write_ip_counts — write per-IP request counts to access_ip_counts.tsv
+# ---------------------------------------------------------------------------
+
+# access_write_ip_counts
+#   Purpose : Aggregate CLIENT_IP request counts (predicate: NORMAL|ORPHAN) from
+#             all post-correlation result_sorted files and write to
+#             ${RUN_OUTPUT_DIR}/access_ip_counts.tsv (machine-readable side
+#             artifact; never written to stdout).  Header is always written;
+#             data rows are written only when _ACC_SORTED is non-empty.
+#             Sort order: REQUEST_COUNT descending, then CLIENT_IP ascending.
+#             Coalesced IP key: empty or "-" -> sentinel "-" (surfaces the real
+#             upstream logging gap rather than silently dropping the record).
+#   Args    : none (reads global _ACC_SORTED array and OPT_OUTPUT_DIR context).
+#   Output  : nothing on stdout; writes ${RUN_OUTPUT_DIR}/access_ip_counts.tsv.
+#   Returns / Side effects : writes one file; logs its path via log_info.
+#   Errors / Notes : persist_init must be called before this function.
+#             Always TSV (machine record), independent of --format.
+#             Empty corpus (_ACC_SORTED empty) -> header-only file (1 line, 0 data rows).
+#             Covers region/all/merge automatically (reads _ACC_SORTED, already
+#             test-host filtered; no separate per-region run needed).
+access_write_ip_counts() {
+    local outfile
+    outfile="$(persist_path access ip_counts tsv)"
+    printf 'CLIENT_IP\tREQUEST_COUNT\n' > "$outfile"
+    if (( ${#_ACC_SORTED[@]} > 0 )); then
+        agg_access_records "${_ACC_SORTED[@]}" \
+            | gawk -F'\t' '$1=="IP"{print $2"\t"$3}' \
+            | sort -t$'\t' -k2,2nr -k1,1 \
+            >> "$outfile"
+    fi
+    log_info "Persisted IP counts: $outfile"
 }
 
 # ---------------------------------------------------------------------------
@@ -896,6 +937,7 @@ main() {
     fi
 
     persist_init "$OPT_OUTPUT_DIR"
+    access_write_ip_counts
 
     persist_views access "$OPT_VIEW" "$OPT_FORMAT" \
         access_render_summary access_render_detail

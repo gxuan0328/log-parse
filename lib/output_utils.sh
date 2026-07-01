@@ -6,6 +6,7 @@
 # single launch timestamp inside the resolved output directory.
 #
 # Globals (sanctioned, documented):
+#   RUN_BASE_DIR    — resolved base dir; RUN_OUTPUT_DIR = RUN_BASE_DIR/RUN_TS.
 #   RUN_OUTPUT_DIR  — resolved absolute path to the output directory.
 #   RUN_TS          — fixed launch timestamp (YYYYMMDD_HHMMSS) for this run.
 #
@@ -20,6 +21,7 @@
 #   - All log output goes to STDERR; stdout = report content.
 
 RUN_OUTPUT_DIR=""
+RUN_BASE_DIR=""   # resolved base dir; RUN_OUTPUT_DIR = RUN_BASE_DIR/RUN_TS
 RUN_TS=""
 
 # persist_init CLI_OUTPUT_DIR
@@ -29,19 +31,25 @@ RUN_TS=""
 #             RUN_OUTPUT_DIR is already set).
 #   Args    : CLI_OUTPUT_DIR — value of --output-dir flag ("" = use env/default).
 #   Output  : nothing on stdout; logs resolved dir+ts at debug level.
-#   Returns / Side effects : sets RUN_OUTPUT_DIR and RUN_TS; mkdir -p the dir.
+#   Returns / Side effects : sets RUN_BASE_DIR, RUN_TS, RUN_OUTPUT_DIR;
+#             mkdir -p RUN_OUTPUT_DIR. Layout: <base>/<RUN_TS>/<module>_<kind>.<ext>
+#             (RUN_TS is the subdir name; per-file timestamps are dropped).
 #   Errors / Notes : Dir precedence (C1): CLI flag > $LOG_PARSE_OUTPUT_DIR >
 #             ./log-parse. The ./log-parse literal lives ONLY here; callers
 #             MUST default OPT_OUTPUT_DIR="" so the flag > env precedence holds.
 #             ts: $LOG_PARSE_RUN_TS when set (shared/deterministic across child
 #             processes launched by log_report) else date +%Y%m%d_%H%M%S.
+#             log_report exports LOG_PARSE_OUTPUT_DIR=RUN_BASE_DIR (the base, not
+#             the subdir) so children re-derive the same RUN_OUTPUT_DIR without
+#             double-nesting: child RUN_OUTPUT_DIR = base/RUN_TS = same subdir.
 persist_init() {
     local cli_dir="${1:-}"
     # Idempotency guard: if RUN_OUTPUT_DIR is already resolved in this process,
     # honour the existing dir+ts (single-RUN_TS invariant for I12/D33).
     if [[ -n "$RUN_OUTPUT_DIR" ]]; then return 0; fi
-    RUN_OUTPUT_DIR="${cli_dir:-${LOG_PARSE_OUTPUT_DIR:-./log-parse}}"
+    RUN_BASE_DIR="${cli_dir:-${LOG_PARSE_OUTPUT_DIR:-./log-parse}}"
     RUN_TS="${LOG_PARSE_RUN_TS:-$(date '+%Y%m%d_%H%M%S')}"
+    RUN_OUTPUT_DIR="${RUN_BASE_DIR%/}/${RUN_TS}"
     mkdir -p "$RUN_OUTPUT_DIR" || die "cannot create output dir: $RUN_OUTPUT_DIR"
     log_debug "output dir: $RUN_OUTPUT_DIR  ts: $RUN_TS"
 }
@@ -63,13 +71,14 @@ persist_ext() {
 # persist_path MODULE KIND EXT
 #   Purpose : Construct the canonical output file path for a module/kind pair.
 #   Args    : MODULE — stem (overview|iis|access|errors);
-#             KIND   — summary|detail;
+#             KIND   — summary|detail|ip_counts (and any future kinds);
 #             EXT    — file extension (txt|tsv|csv).
-#   Output  : full path string on stdout: RUN_OUTPUT_DIR/MODULE_KIND_RUN_TS.EXT
-#   Returns / Side effects : none (RUN_OUTPUT_DIR and RUN_TS must be set first).
+#   Output  : full path string on stdout: <base>/<RUN_TS>/<module>_<kind>.<ext>
+#             (the run-directory name carries the timestamp; filenames are stable).
+#   Returns / Side effects : none (RUN_OUTPUT_DIR must be set by persist_init first).
 #   Errors / Notes : call persist_init before this function.
 persist_path() {
-    printf '%s/%s_%s_%s.%s\n' "$RUN_OUTPUT_DIR" "$1" "$2" "$RUN_TS" "$3"
+    printf '%s/%s_%s.%s\n' "$RUN_OUTPUT_DIR" "$1" "$2" "$3"
 }
 
 # persist_views MODULE VIEW FORMAT SUMMARY_FN DETAIL_FN

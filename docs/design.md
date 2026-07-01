@@ -94,8 +94,8 @@ Each server emits three log families:
 2. **Library layer** (`lib/`) — pure functions for date math, CSV extraction,
    formatting, logging, persistence, and shared metric computation. No CLI
    parsing; no global mutation outside documented sanctioned globals
-   (`WORK_TMPDIR`, `LOG_LEVEL`, region arrays, `RUN_OUTPUT_DIR`, `RUN_TS`,
-   `INTERVAL_ARGS`).
+   (`WORK_TMPDIR`, `LOG_LEVEL`, region arrays, `RUN_BASE_DIR`,
+   `RUN_OUTPUT_DIR`, `RUN_TS`, `INTERVAL_ARGS`).
 3. **Configuration layer** (`conf/`) — plain text files with no executable
    content. `regions.conf` is pipe-delimited and consumed by the per-bin
    `load_regions()`. `test_hosts.conf` lists one IPv4 per line and is consumed
@@ -417,7 +417,8 @@ Not accepted (die on receipt): `--view`, `--format`, `--merge`, `--top`,
 #### 3.0.6 Persistence
 
 Summary-only: `persist_views overview summary text overview_render ''`.
-Only `overview_summary_<TS>.txt` is written (`DETAIL_FN=""` → no detail file).
+Only `overview_summary.txt` is written under the run directory
+`<base>/<RUN_TS>/` (`DETAIL_FN=""` → no detail file).
 Empty-window boundary: percentages rendered as `N/A` / `0.0%`, exit 0.
 
 #### 3.0.7 核心功能效能 — category definitions (single source: `AGG_IIS_AWK`)
@@ -450,6 +451,53 @@ accepted by `analyze_overview` and forwarded to the IIS child spawn. They
 control the global IIS `SLOW` bucket. However, the overview only consumes
 `CATEGORY` rows (which carry `count` + `sum_ms`, no slow field), so the
 thresholds do **not** influence any value displayed in the overview output.
+
+#### 3.0.8 Single-day hourly bar chart — 存取紀錄橫條圖
+
+When the analysis window is exactly **one day** (`_OVW_N_DATES==1`),
+`overview_render` appends a `存取紀錄橫條圖 (每小時)` section using
+`_render_hour_chart`:
+
+- **Data source**: `HOUR` rows emitted by `agg_access_records` in
+  `analyze_access` via `--emit-stats`; `OVERVIEW_AWK` collects them into
+  `acc_hour[HH]` (global) and `acc_hour_r[region,HH]` (per-region).
+- **Unit**: NORMAL+ORPHAN APP_TIME hours (same predicate as REQ2; APP_TIME
+  is already UTC+8 — no further conversion). UNVERIFIED rows carry no
+  APP_TIME and are excluded.
+- **Axis**: `00..LAST`, zero-filled. For a past single-day date (e.g.
+  `--date 2026-05-21`), `LAST=23` (full axis). For `--today`:
+  `LAST = local_hour() - 1`; at hour 0, `LAST=-1` → graceful note
+  `(今日尚無完整小時資料)` instead of a bar chart.
+- **Today-cap and TZ requirement**: `local_hour()` (in `lib/date_utils.sh`)
+  reads the HOST clock identically to `today()`, so the gate
+  (`_OVW_DATE_START == today()`) and the cap (`LAST = local_hour()-1`) always
+  read the same clock. **PRECONDITION** (inherited, not introduced): the host
+  clock must run in UTC+8 (the same assumption `today()` already makes). On
+  a non-UTC+8 host run with `TZ=Asia/Taipei` — this shifts both `today()`
+  and `local_hour()` together so the gate fires and the cap is correct. Do
+  NOT pin only `local_hour()` to Asia/Taipei; doing so would desync the gate
+  and the cap on a UTC host.
+- **Rendering**: `fmt_bar` in `lib/fmt_utils.sh` renders label+count pairs
+  piped on stdin into proportional U+2588 bar glyphs (LC_ALL=C; max 40 cells;
+  min 1 cell when val>0; U+2588 emitted as `sprintf "%c%c%c", 226, 150, 136`).
+- **Multi-day gating**: when `_OVW_N_DATES > 1` (e.g. `--from`/`--to` or
+  `--days`), no chart is rendered. The weekly overview fixtures stay
+  chart-free.
+- **Layout**: one global chart follows `核心功能存取合計` inside `▶ 總體概況`;
+  one per-region chart follows the per-region category rows inside each
+  `■ 台北` / `■ 台中` block of `▶ 分區別`.
+
+**Verified anchor values (2026-05-21, all regions, default exclude):**
+
+| Scope | Hour | Count |
+|-------|------|-------|
+| Global | 13 | 1 |
+| Global | 14 | 4 |
+| Global | 15 | 4 |
+| 台北 | 15 | 3 |
+| 台中 | 13 | 1 |
+| 台中 | 14 | 4 |
+| 台中 | 15 | 1 |
 
 ---
 
@@ -659,6 +707,42 @@ Prints `access_stats.tsv` verbatim to stdout, then returns before
 `persist_init` (no files, no banners). This is `analyze_overview.sh`'s data
 source. Accepts only the interval/region/conf/verbose subset of flags — never
 `--slow-*-ms` (which would trigger the fail-fast `die` on unknown arg).
+
+#### 3.1.12 `access_ip_counts.tsv` — always-on IP attribution file
+
+Every **real** (non `--emit-stats`) `analyze_access` run writes a third
+persisted file `access_ip_counts.tsv` alongside `access_summary.txt` and
+`access_detail.*` under `<base>/<RUN_TS>/`:
+
+- **Source**: `result_sorted` rows with `$1 == "NORMAL" || $1 == "ORPHAN"`.
+  The identical predicate is used by `agg_access_records` (single source
+  shared by REQ2 and REQ3). UNVERIFIED rows are excluded (the APP server
+  never received them, so no access occurred).
+- **IP key**: `$11` (CLIENT_IP) coalesced — empty or `"-"` → sentinel `"-"`.
+  The `"-"` sentinel surfaces the real upstream logging gap (missing
+  CLIENT_IP fields) rather than silently omitting those records.
+- **Sort order**: count descending, IP ascending for tie-breaking.
+- **Schema**: TSV header `CLIENT_IP<TAB>REQUEST_COUNT`, then data rows.
+  Empty corpus → header-only file (exactly 1 line).
+- **Scope**: covers `--region`, `all`, and `--merge` automatically (reads
+  `_ACC_SORTED`, the same post-correlation array used for rendering).
+- **Never on stdout**: the file is a side artifact; it never appears in the
+  console mirror or `--emit-stats` output.
+- **`agg_access_records` guard**: malformed `APP_TIME` (fails
+  `/^([01][0-9]|2[0-3])$/` on `substr($3,12,2)`) emits a `[WARN]` to
+  stderr and is excluded from the hourly hour-key — but its IP is still
+  counted (fail-loud, not silent; matches the existing graceful-degradation
+  precedent for `ts_to_epoch` returning `N/A`).
+
+**Verified sample (2026-05-21, --region all, default --test-hosts exclude):**
+```
+CLIENT_IP	REQUEST_COUNT
+-	9
+```
+(All 9 business CLIENT_IPs are blank upstream under `exclude` mode. With
+`--test-hosts all`: an additional row `192.168.139.110<TAB>3` appears with
+the IP attribution for the QA test host. With `--test-hosts only`: one row
+`192.168.139.110<TAB>3`.)
 
 ---
 
@@ -1025,24 +1109,29 @@ listed.
 #### 3.4.3 Persistence model
 
 `log_report.sh` calls `persist_init "$OPT_OUTPUT_DIR"` **once**, then exports
-the resolved dir and timestamp so every child uses the same values:
+the resolved **base dir** and timestamp so every child uses the same values:
 
 ```bash
 persist_init "$OPT_OUTPUT_DIR"
 export LOG_PARSE_RUN_TS="$RUN_TS"
-export LOG_PARSE_OUTPUT_DIR="$RUN_OUTPUT_DIR"
+export LOG_PARSE_OUTPUT_DIR="$RUN_BASE_DIR"   # base, not the subdir
 for m in "${MODULES[@]}"; do run_module "analyze_${m}"; done
 ```
 
 Children default `OPT_OUTPUT_DIR=""` and read `$LOG_PARSE_OUTPUT_DIR` (C1);
 `--output-dir` is **not** forwarded as a flag — the env carries the resolved
-dir. A `log_report --output-dir /custom` run correctly lands every child file
-in `/custom`. Each child self-persists its own file pair. `log_report`'s own
-stdout is the concatenation of each child's selected-view console mirror.
+base dir. Each child calls `persist_init ""` which reads `$LOG_PARSE_OUTPUT_DIR`
+as `RUN_BASE_DIR` and `$LOG_PARSE_RUN_TS` as `RUN_TS`, deriving the same
+`RUN_OUTPUT_DIR = <base>/<RUN_TS>` without double-nesting. A
+`log_report --output-dir /custom` run correctly lands every child file in
+`/custom/<RUN_TS>/`. Each child self-persists its own file pair.
+`log_report`'s own stdout is the concatenation of each child's selected-view
+console mirror.
 
-A default run produces exactly five files sharing one `RUN_TS`:
-`overview_summary`, `iis_summary`, `iis_detail`, `access_summary`,
-`access_detail`.
+A default run produces exactly six files sharing one `RUN_TS` under one
+`<base>/<RUN_TS>/` subdir: `overview_summary.txt`, `iis_summary.txt`,
+`iis_detail.txt`, `access_summary.txt`, `access_detail.txt`,
+`access_ip_counts.tsv`.
 
 #### 3.4.4 Default view
 
@@ -1131,19 +1220,26 @@ rule #1 ("fail fast, loud; no silent suppression").
 ### 4.2 Persistence & filenames
 
 Every run of any analyzer module writes report files to a directory. File
-naming convention: `<module>_<kind>_<TS>.<ext>`.
+layout: `<base>/<RUN_TS>/<module>_<kind>.<ext>`.
 
 | Component | Values |
 |---|---|
+| `base` | resolved output directory (`--output-dir` \| `$LOG_PARSE_OUTPUT_DIR` \| `./log-parse`) |
+| `RUN_TS` | `YYYYMMDD_HHMMSS` — the run-directory name (shared timestamp per run) |
 | `module` | `overview`, `iis`, `access`, `errors` |
-| `kind` | `summary`, `detail` |
-| `TS` | `YYYYMMDD_HHMMSS` — single shared timestamp per run |
-| `ext` | `txt` for summary (always); `txt`, `tsv`, or `csv` for detail |
+| `kind` | `summary`, `detail`, or `ip_counts` (access only) |
+| `ext` | `txt` for summary (always); `txt`, `tsv`, or `csv` for detail; `tsv` for ip_counts |
 
-**Single-TS rule**: all files produced by one top-level invocation (or one
-`log_report` run) share exactly one `RUN_TS`. `log_report` calls
-`persist_init` once and exports `LOG_PARSE_RUN_TS` so every child process
-reads the same value.
+**Run-directory rule**: all files produced by one top-level invocation (or
+one `log_report` run) land in a single `<base>/<RUN_TS>/` subdir. The
+directory name IS the run timestamp; filenames carry no per-file TS suffix.
+`log_report` calls `persist_init` once and exports `LOG_PARSE_RUN_TS` so
+every child process reads the same timestamp and re-derives the same subdir
+without double-nesting.
+
+**Sanctioned globals** (set by `persist_init`, read-only elsewhere):
+`RUN_BASE_DIR` — resolved base dir; `RUN_TS` — launch timestamp;
+`RUN_OUTPUT_DIR = RUN_BASE_DIR/RUN_TS` — the concrete per-run directory.
 
 **Directory precedence** (C1):
 1. `--output-dir DIR` flag (highest)
@@ -1159,8 +1255,8 @@ when `log_report` spawns children.
 writes. The console mirror is re-rendered after restoring the original color
 state. No ANSI ESC byte (`0x1b`) appears in any persisted file.
 
-**Overview** writes only a summary file (`overview_summary_<TS>.txt`); no
-detail file is produced.
+**Overview** writes only a summary file (`overview_summary.txt` under the
+run directory); no detail file is produced.
 
 **`--emit-stats`** mode writes **no files**; it short-circuits before
 `persist_init`.

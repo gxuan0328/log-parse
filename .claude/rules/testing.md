@@ -9,7 +9,7 @@ Loaded when editing `tests/run_tests.sh` or any new test file.
 
 ## Single source of truth
 
-`tests/run_tests.sh` is the only regression suite. Currently 258 tests
+`tests/run_tests.sh` is the only regression suite. Currently 267 tests
 across eleven sections (A access · B iis · C errors · D log_report ·
 E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
 J test-host/health · K timezone+core-function).
@@ -29,14 +29,14 @@ Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
 
 `<SectionLetter><2-digit-id>`, sequential within a section:
 
-- A01–A41  `analyze_access`
+- A01–A44  `analyze_access` (A42: IP file exists + counts; A43: empty corpus header-only; A44: stdout isolation + emit-stats no-create)
 - B01–B40  `analyze_iis` (B39: Top-端點 avg; B40: rank-fix)
 - C01–C25  `analyze_errors`
 - D01–D35  `log_report`
 - E01–E26  validation paths
 - F01–F18  user scenarios
-- G01–G03  CJK display-width alignment (+ A35, A36, C22)
-- H01–H21  `analyze_overview` (H16-H21: per-region N/O/U + verdict boundaries)
+- G01–G05  CJK display-width alignment (+ A35, A36, C22; G04: fmt_bar determinism; G05: agg_access_records malformed-APP_TIME guard)
+- H01–H25  `analyze_overview` (H16-H21: per-region N/O/U + verdict boundaries; H22: single-day global chart; H23: per-region chart counts; H24: multi-day no chart; H25: today-cap + midnight)
 - I01–I12  persistence (always-on report files)
 - J01–J20  test-host filter + /health exclusion
 - K01–K16  timezone correction + core-function CATEGORY

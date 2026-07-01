@@ -22,11 +22,13 @@ all fixtures deterministically.
 
 ## Persistence model
 
-Every run writes files to a directory (default `./log-parse/`, overridden by
-`--output-dir DIR` or `$LOG_PARSE_OUTPUT_DIR`). Runtime filenames include a
-launch timestamp: `<module>_<kind>_<YYYYMMDD_HHMMSS>.<ext>`. The committed
-fixtures below use stripped/descriptive names without the volatile timestamp.
-Pin `LOG_PARSE_RUN_TS=20260521_000000` to produce exact-match filenames.
+Every run writes files into a **timestamped subdirectory** of the output base
+(default `./log-parse/`, overridden by `--output-dir DIR` or
+`$LOG_PARSE_OUTPUT_DIR`). Layout: `<base>/<YYYYMMDD_HHMMSS>/<module>_<kind>.<ext>`.
+The subdirectory name IS the shared timestamp; all files from one run land in
+the same subdir with stable basenames. The committed fixtures below use
+descriptive names without the volatile timestamp prefix.
+Pin `LOG_PARSE_RUN_TS=20260521_000000` to produce exact-match subdirectory names.
 
 All outputs are generated with `NO_COLOR=1` so they remain readable in
 plain text. Live runs in a TTY render the same content in colour.
@@ -39,10 +41,17 @@ The overview report (`analyze_overview.sh`) presents two cuts:
 
 > **IIS UTC+8 day semantics.** IIS W3C logs are timestamped UTC+0. `--date D` (and `--from`/`--to`) select the UTC+8 business day: rows are read from `u_ex(D−1)` (≥ 16:00 UTC) and `u_ex(D)` (< 16:00 UTC), covering local midnight through 23:59. Access and .NET app logs are natively UTC+8 and are unchanged.
 
+**Single-day hourly bar chart (存取紀錄橫條圖).** When `--date` or `--today`
+selects exactly one day, each 總體概況 and each ■ Region block appends a
+`存取紀錄橫條圖 (每小時)` section. The chart counts NORMAL+ORPHAN APP_TIME
+hours (UTC+8; unit = access record). Axis 00..23 for past dates; `--today`
+caps at `LAST = local_hour() - 1`. Multi-day windows omit the chart entirely.
+
 | File | What it shows | Reproduce |
 |------|---------------|-----------|
-| `overview_all_week.txt`               | Management overview — all regions, 2026-05-18 → 2026-05-25 (8 days); two-cut layout: ▶ 總體概況 (access value+%, 整體健康判定 警告, ■ 核心功能效能: 雲端查詢 11/0.11s · 報告摘要 186/0.38s · 影像下載 427/0.93s; 合計 624), ▶ 分區別 (台北: 0 NORMAL/3 ORPHAN/0 UNVERIFIED + 5/71/220 counts; 台中: 6/0/0 + 6/115/207 counts) | `bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --output-dir /tmp/sample` |
-| `overview_taipei_week.txt`            | Management overview — taipei region only, 2026-05-18 → 2026-05-25; two-cut layout; 分區別 台北 block mirrors 總體概況 (rollup+breakdown symmetry for single-region scope); categories 雲端查詢 5/0.02s · 報告摘要 71/0.22s · 影像下載 220/1.48s; 合計 296 | `bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --region taipei --output-dir /tmp/sample` |
+| `overview_all_week.txt`               | Management overview — all regions, 2026-05-18 → 2026-05-25 (8 days); two-cut layout: ▶ 總體概況 (access value+%, 整體健康判定 警告, ■ 核心功能效能: 雲端查詢 11/0.11s · 報告摘要 186/0.38s · 影像下載 427/0.93s; 合計 624), ▶ 分區別 (台北: 0 NORMAL/3 ORPHAN/0 UNVERIFIED + 5/71/220 counts; 台中: 6/0/0 + 6/115/207 counts); **no hourly chart** (multi-day window) | `bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --output-dir /tmp/sample` |
+| `overview_taipei_week.txt`            | Management overview — taipei region only, 2026-05-18 → 2026-05-25; two-cut layout; 分區別 台北 block mirrors 總體概況 (rollup+breakdown symmetry for single-region scope); categories 雲端查詢 5/0.02s · 報告摘要 71/0.22s · 影像下載 220/1.48s; 合計 296; **no hourly chart** (multi-day window) | `bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --region taipei --output-dir /tmp/sample` |
+| `overview_all_2026-05-21.txt`         | Management overview — all regions, single day 2026-05-21; same two-cut layout as weekly but includes **存取紀錄橫條圖 (每小時)** in both 總體概況 and each ■ Region block; axis 00..23 (past date); anchor values: h13=1, h14=4, h15=4 (global/exclude); chart rendered with U+2588 full-block glyphs (max 40 cells, min 1 cell when val>0) | `bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --date 2026-05-21 --output-dir /tmp/sample` |
 
 ## IIS
 
@@ -72,6 +81,7 @@ The overview report (`analyze_overview.sh`) presents two cuts:
 | `access_all_week.tsv`                | TSV flat output (all regions, week) for downstream pipelines; deterministic ASC sort, single REQUEST_ID column | `bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --format tsv --output-dir /tmp/sample` |
 | `access_all_week.csv`                | CSV flat output (all regions, week) with RFC-4180 conditional quoting; same deterministic sort as TSV | `bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --format csv --output-dir /tmp/sample` |
 | `access_all_merged_2026-05-21.txt`   | Cross-region merged correlation detail (all regions treated as one host-agnostic corpus); merged NORMAL count >= sum of per-region | `bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --date 2026-05-21 --merge --output-dir /tmp/sample` |
+| `access_ip_counts_all_2026-05-21.tsv` | IP attribution file — always-on third artifact; NORMAL+ORPHAN CLIENT_IP counts for 2026-05-21, all regions, default `--test-hosts exclude`; two columns: `CLIENT_IP<TAB>REQUEST_COUNT`; sort: count desc, IP asc; empty/`-` IP coalesced to sentinel `-`; verified: `-\t9` (9 records with null/dash IP) | `bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --date 2026-05-21 --output-dir /tmp/sample` |
 
 ## Errors
 

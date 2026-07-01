@@ -92,8 +92,8 @@ LUNG-CANCER-REPORT 系統為兩家醫院（台北 / 台中）提供臨床研究�
    解析邏輯均委派至 `lib/`。
 2. **共用函式庫層**（`lib/`） — 純函式：日期計算、CSV 擷取、版面格式、
    日誌、持久化、共用指標計算；不含 CLI 解析，僅變更已記錄之已核可全域
-   狀態（`WORK_TMPDIR`、`LOG_LEVEL`、區域陣列、`RUN_OUTPUT_DIR`、`RUN_TS`、
-   `INTERVAL_ARGS`）。
+   狀態（`WORK_TMPDIR`、`LOG_LEVEL`、區域陣列、`RUN_BASE_DIR`、
+   `RUN_OUTPUT_DIR`、`RUN_TS`、`INTERVAL_ARGS`）。
 3. **設定檔層**（`conf/`） — 純文字檔，不含可執行內容。`regions.conf`
    為管道字元分隔格式，由各 bin 內的 `load_regions()` 讀取。
    `test_hosts.conf` 每行一個 IPv4，由 `lib/common.sh` 中的
@@ -393,7 +393,8 @@ P = 90.0% → 90 → 正常。
 #### 3.0.6 持久化
 
 僅摘要：`persist_views overview summary text overview_render ''`。
-僅寫入 `overview_summary_<TS>.txt`（`DETAIL_FN=""` → 無詳細檔案）。
+僅在執行目錄 `<base>/<RUN_TS>/` 下寫入 `overview_summary.txt`
+（`DETAIL_FN=""` → 無詳細檔案）。
 空時間視窗邊界：百分比以 `N/A` / `0.0%` 呈現，正常 exit 0。
 
 #### 3.0.7 核心功能效能 — 類別定義（單一事實來源：`AGG_IIS_AWK`）
@@ -423,6 +424,47 @@ P = 90.0% → 90 → 正常。
 `analyze_overview` 接受並轉傳給 IIS 子程序，用於控制全局 IIS `SLOW` 統計桶。
 然而，overview 僅消費 `CATEGORY` 列（含 `count` + `sum_ms`，無慢速欄位），
 因此這兩個閾值**不影響** overview 任何顯示值。
+
+#### 3.0.8 單日每小時橫條圖 — 存取紀錄橫條圖
+
+當分析視窗恰好為**一天**（`_OVW_N_DATES==1`）時，`overview_render`
+透過 `_render_hour_chart` 附加 `存取紀錄橫條圖 (每小時)` 區段：
+
+- **資料來源**：由 `analyze_access --emit-stats` 中的 `agg_access_records`
+  輸出的 `HOUR` 列；`OVERVIEW_AWK` 將其收集至 `acc_hour[HH]`（全局）與
+  `acc_hour_r[region,HH]`（各區域）。
+- **統計單位**：NORMAL+ORPHAN 的 APP_TIME 小時數（與 REQ2 使用相同謂詞；
+  APP_TIME 已為 UTC+8，無需再轉換）。UNVERIFIED 列無 APP_TIME，排除在外。
+- **橫軸**：`00..LAST`，以零填充。過去單日日期（如 `--date 2026-05-21`）
+  `LAST=23`（完整橫軸）。`--today` 時 `LAST = local_hour() - 1`；
+  當小時為 0 時 `LAST=-1` → 顯示 `(今日尚無完整小時資料)` 提示而非橫條圖。
+- **今日截止與 TZ 前提條件**：`local_hour()`（位於 `lib/date_utils.sh`）
+  與 `today()` 讀取同一主機時鐘，因此觸發條件（`_OVW_DATE_START == today()`）
+  與截止（`LAST = local_hour()-1`）永遠讀取同一個時鐘，不會產生偏差。
+  **前提條件**（繼承，非新增）：主機時鐘必須為 UTC+8（與 `today()` 已
+  做的假設相同）。在非 UTC+8 主機上，請以 `TZ=Asia/Taipei` 執行 —
+  此設定同時平移 `today()` 與 `local_hour()`，使觸發條件與截止保持正確。
+  請勿只把 `local_hour()` 固定為 Asia/Taipei；此做法會在 UTC 主機上使
+  觸發條件與截止產生偏差。
+- **渲染**：`lib/fmt_utils.sh` 中的 `fmt_bar` 將 stdin 上的標籤+計數對
+  渲染為比例式 U+2588 橫條圖（LC_ALL=C；最多 40 格；當 val>0 時最少 1 格；
+  U+2588 以 `sprintf "%c%c%c", 226, 150, 136` 輸出）。
+- **多日閘控**：`_OVW_N_DATES > 1`（如 `--from`/`--to` 或 `--days`）時
+  不渲染橫條圖。週報固定檔案保持無橫條圖。
+- **版面**：一個全局橫條圖接在 `▶ 總體概況` 的 `核心功能存取合計` 之後；
+  各 `■ 台北` / `■ 台中` 區塊中各區域類別列之後各有一個每區域橫條圖。
+
+**已驗證基準值（2026-05-21，全區域，預設 exclude）：**
+
+| 範圍 | 小時 | 計數 |
+|------|------|------|
+| 全局 | 13 | 1 |
+| 全局 | 14 | 4 |
+| 全局 | 15 | 4 |
+| 台北 | 15 | 3 |
+| 台中 | 13 | 1 |
+| 台中 | 14 | 4 |
+| 台中 | 15 | 1 |
 
 ---
 
@@ -618,6 +660,39 @@ tsv / csv 輸出：`REGION` 欄值為 `merged`。
 （無檔案、無標題橫幅）。這是 `analyze_overview.sh` 的資料來源。
 僅接受旗標子集（interval / region / conf / verbose），**不接受**
 `--slow-*-ms`（會觸發失敗快速的 `die` 未知參數）。
+
+#### 3.1.12 `access_ip_counts.tsv` — 常開式 IP 歸因檔案
+
+每次**真實**（非 `--emit-stats`）`analyze_access` 執行，會在
+`<base>/<RUN_TS>/` 下的 `access_summary.txt` 與 `access_detail.*` 旁
+寫入第三個持久化檔案 `access_ip_counts.tsv`：
+
+- **資料來源**：`result_sorted` 中 `$1 == "NORMAL" || $1 == "ORPHAN"` 的列。
+  與 `agg_access_records` 使用相同謂詞（REQ2 與 REQ3 的單一共用來源）。
+  UNVERIFIED 列排除在外（APP 伺服器從未收到，無存取發生）。
+- **IP 鍵**：`$11`（CLIENT_IP）合併值——空白或 `"-"` → 哨兵 `"-"`。
+  `"-"` 哨兵用以呈現真實的上游日誌缺失（CLIENT_IP 欄位空白），而非
+  靜默略過這些紀錄。
+- **排序順序**：計數降冪，IP 升冪（用於平手時的決勝）。
+- **Schema**：TSV 表頭 `CLIENT_IP<TAB>REQUEST_COUNT`，後接資料列。
+  空語料庫 → 僅含表頭的檔案（恰好 1 行）。
+- **範圍**：自動涵蓋 `--region`、`all` 與 `--merge`（讀取 `_ACC_SORTED`，
+  即渲染器使用的同一後比對陣列）。
+- **從不輸出至 stdout**：此檔案為側向產物；不會出現在主控台鏡像或
+  `--emit-stats` 輸出中。
+- **`agg_access_records` 防護**：`APP_TIME`（`substr($3,12,2)`）格式錯誤
+  （不符 `/^([01][0-9]|2[0-3])$/`）時，向 stderr 輸出 `[WARN]` 並排除
+  於小時統計——但該記錄的 IP 仍納入計數（快速失敗、非靜默；與
+  `ts_to_epoch` 返回 `N/A` 之現有優雅降級先例一致）。
+
+**已驗證範例（2026-05-21，--region all，預設 --test-hosts exclude）：**
+```
+CLIENT_IP	REQUEST_COUNT
+-	9
+```
+（在 `exclude` 模式下，所有 9 筆業務記錄的 CLIENT_IP 上游均為空白。
+以 `--test-hosts all` 執行時，額外出現 `192.168.139.110<TAB>3` 列。
+以 `--test-hosts only` 執行時，只有 `192.168.139.110<TAB>3` 一列。）
 
 ---
 
@@ -913,8 +988,8 @@ Oracle 相依失敗仍可完整透過 `analyze_errors`（§3.3）觀測（讀取
 #### 3.3.6 視圖與持久化
 
 `analyze_errors` **無 `--view` 旗標**。Console 永遠顯示詳細視圖。持久
-化的 `errors_summary_<TS>.txt` 存在於磁碟但不可選擇輸出至 stdout（刻意
-降低強調：errors 在 `log_report` 中為選配且預設關閉）。
+化的 `errors_summary.txt` 存在於執行目錄磁碟中但不可選擇輸出至 stdout
+（刻意降低強調：errors 在 `log_report` 中為選配且預設關閉）。
 
 - **`errors_render_summary`**（精簡管理文字）：每區域 / 伺服器之
   `Total ERROR`、`OracleDB health failures`（含佔錯誤總數之百分比）、
@@ -958,19 +1033,22 @@ Oracle 相依失敗仍可完整透過 `analyze_errors`（§3.3）觀測（讀取
 ```bash
 persist_init "$OPT_OUTPUT_DIR"
 export LOG_PARSE_RUN_TS="$RUN_TS"
-export LOG_PARSE_OUTPUT_DIR="$RUN_OUTPUT_DIR"
+export LOG_PARSE_OUTPUT_DIR="$RUN_BASE_DIR"   # 基底目錄，非子目錄
 for m in "${MODULES[@]}"; do run_module "analyze_${m}"; done
 ```
 
 子程序預設 `OPT_OUTPUT_DIR=""` 並讀取 `$LOG_PARSE_OUTPUT_DIR`（C1）；
-`--output-dir` **不**以旗標形式轉傳——環境變數承載已解析的目錄。
+`--output-dir` **不**以旗標形式轉傳——環境變數承載已解析的基底目錄。
+每個子程序呼叫 `persist_init ""` 時，讀取 `$LOG_PARSE_OUTPUT_DIR` 作為
+`RUN_BASE_DIR`、`$LOG_PARSE_RUN_TS` 作為 `RUN_TS`，推導出
+`RUN_OUTPUT_DIR = <base>/<RUN_TS>`，不會產生雙重巢狀。
 `log_report --output-dir /custom` 執行後，每個子程序的檔案均正確落在
-`/custom`。每個子程序自行持久化其本身的檔案對。`log_report` 本身的
-stdout 是每個子程序之所選視圖 console 鏡像的串接。
+`/custom/<RUN_TS>/`。每個子程序自行持久化其本身的檔案對。`log_report`
+本身的 stdout 是每個子程序之所選視圖 console 鏡像的串接。
 
-一次預設執行產生共享同一 `RUN_TS` 的恰好五個檔案：
-`overview_summary`、`iis_summary`、`iis_detail`、`access_summary`、
-`access_detail`。
+一次預設執行在單一 `<base>/<RUN_TS>/` 子目錄下產生恰好六個檔案：
+`overview_summary.txt`、`iis_summary.txt`、`iis_detail.txt`、
+`access_summary.txt`、`access_detail.txt`、`access_ip_counts.tsv`。
 
 #### 3.4.4 預設視圖
 
@@ -1052,19 +1130,26 @@ interval flags are mutually exclusive
 
 ### 4.2 持久化與檔名
 
-每次執行任何分析器模組都會將報告檔案寫入目錄。檔名規範：
-`<module>_<kind>_<TS>.<ext>`。
+每次執行任何分析器模組都會將報告檔案寫入目錄。檔案佈局：
+`<base>/<RUN_TS>/<module>_<kind>.<ext>`。
 
 | 元件 | 值 |
 |---|---|
+| `base` | 已解析之輸出目錄（`--output-dir` \| `$LOG_PARSE_OUTPUT_DIR` \| `./log-parse`） |
+| `RUN_TS` | `YYYYMMDD_HHMMSS` — 執行子目錄名稱（每次執行共用之時間戳） |
 | `module` | `overview`、`iis`、`access`、`errors` |
-| `kind` | `summary`、`detail` |
-| `TS` | `YYYYMMDD_HHMMSS` — 每次執行共用之單一時間戳 |
-| `ext` | 摘要永遠為 `txt`；詳細可為 `txt`、`tsv`、`csv` |
+| `kind` | `summary`、`detail` 或 `ip_counts`（僅 access） |
+| `ext` | 摘要永遠為 `txt`；詳細可為 `txt`、`tsv`、`csv`；ip_counts 為 `tsv` |
 
-**單一時間戳規則**：一次頂層呼叫（或一次 `log_report` 執行）產生的所有
-檔案共享唯一一個 `RUN_TS`。`log_report` 呼叫 `persist_init` 一次並匯出
-`LOG_PARSE_RUN_TS`，讓每個子程序讀取相同值。
+**執行目錄規則**：一次頂層呼叫（或一次 `log_report` 執行）產生的所有
+檔案均落在單一 `<base>/<RUN_TS>/` 子目錄中。目錄名稱即為執行時間戳；
+各檔案名稱不再含時間戳後綴。`log_report` 呼叫 `persist_init` 一次並匯出
+`LOG_PARSE_RUN_TS`，讓每個子程序讀取相同時間戳並自行推導同一子目錄，
+不產生雙重巢狀。
+
+**已核可全域變數**（由 `persist_init` 設定，其他地方唯讀）：
+`RUN_BASE_DIR` — 已解析基底目錄；`RUN_TS` — 啟動時間戳；
+`RUN_OUTPUT_DIR = RUN_BASE_DIR/RUN_TS` — 本次執行之實體目錄。
 
 **目錄優先順序**（C1）：
 1. `--output-dir DIR` 旗標（最高）
@@ -1080,8 +1165,8 @@ interval flags are mutually exclusive
 還原原始色碼狀態後重新渲染。任何持久化檔案中均不含 ANSI ESC 位元組
 （`0x1b`）。
 
-**Overview** 僅寫入摘要檔（`overview_summary_<TS>.txt`）；不產生詳細
-檔案。
+**Overview** 僅在執行目錄下寫入摘要檔（`overview_summary.txt`）；
+不產生詳細檔案。
 
 **`--emit-stats`** 模式**不寫入任何檔案**；它在 `persist_init` 之前
 提前返回。

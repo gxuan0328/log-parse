@@ -44,13 +44,16 @@ interval flags are mutually exclusive
 可用 `--output-dir DIR` 旗標或 `LOG_PARSE_OUTPUT_DIR` 環境變數覆寫。
 優先順序：`--output-dir` 旗標 > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`。
 
-檔案命名規則：`<模組>_<種類>_<時間戳>.<副檔名>`，其中：
-- `<種類>` 為 `summary` 或 `detail`
-- `<時間戳>` 格式為 `YYYYmmdd_HHMMSS`；同一次執行的所有檔案共用相同後綴
-- `<副檔名>` 的 summary 永遠為 `txt`；detail 依 `--format` 為 `txt`、`tsv` 或 `csv`
+檔案佈局：`<base>/<YYYYMMDD_HHMMSS>/<模組>_<種類>.<副檔名>`，其中：
+- `<base>` 為已解析之輸出目錄
+- `<YYYYMMDD_HHMMSS>` 為執行子目錄名稱（共用啟動時間戳；同一次執行
+  的所有檔案均落在此單一子目錄中）
+- `<種類>` 為 `summary`、`detail` 或 `ip_counts`（僅 access）
+- `<副檔名>` 的 summary 永遠為 `txt`；detail 依 `--format` 為 `txt`、
+  `tsv` 或 `csv`；`access_ip_counts` 為 `tsv`
 
 持久化檔案永遠不含 ANSI 色碼。`--view` 旗標只控制**主控台鏡像**（哪個視圖
-串流至 stdout）；不論 `--view` 為何，兩個檔案均永遠寫入。
+串流至 stdout）；不論 `--view` 為何，所有檔案均永遠寫入。
 建議在 `.gitignore` 加入 `/log-parse/`，以免誤提交執行產物。
 
 ### 更名與移除的旗標
@@ -112,8 +115,23 @@ UTC 時間 ≥ 16:00 的資料列與 `u_ex(D)` UTC 時間 < 16:00 的資料列�
 
 overview 為**僅 summary**（無 `--view`）且**僅文字**（無 `--format`）。
 它透過 `--emit-stats` 從 `analyze_iis` 與 `analyze_access` 取得指標
-（DRY — 零重複解析，零重複指標運算）。輸出目錄只寫入
-`overview_summary_<時間戳>.txt`（無 detail 檔案）。
+（DRY — 零重複解析，零重複指標運算）。執行目錄 `<base>/<YYYYMMDD_HHMMSS>/`
+下只寫入 `overview_summary.txt`（無 detail 檔案）。
+
+**單日每小時橫條圖（存取紀錄橫條圖）：** 當 `--date` 或 `--today`
+選取恰好一天時，在總體概況（全局）與分區別各 ■ 區域區塊中各附加
+一個 `存取紀錄橫條圖 (每小時)` 區段。橫條圖統計 NORMAL+ORPHAN 的
+APP_TIME 小時數（UTC+8；單位 = 存取紀錄 = 一筆抵達 APP 的瀏覽器請求）。
+橫軸：`00..LAST` 以零填充。過去單日日期：`LAST=23`（完整 00..23 橫軸）。
+`--today` 時：`LAST = local_hour() - 1`；小時為 0 時：`LAST=-1` →
+輸出 `(今日尚無完整小時資料)` 提示取代橫條圖。
+多日視窗（`--from`/`--to`、`--days`）不渲染橫條圖。
+
+**主機時鐘前提條件與 `TZ` 修正方法：** `local_hour()` 讀取主機時鐘
+（與 `today()` 相同）。**前提條件：** 主機時鐘必須為 UTC+8。在非 UTC+8
+主機上請以 `TZ=Asia/Taipei` 執行 — 此設定同時平移 `today()` 與
+`local_hour()`，使觸發條件與截止保持同步。
+以 `LOG_PARSE_NOW_HOUR=H` 可在腳本或測試中做確定性覆寫。
 
 ### 旗標
 
@@ -212,6 +230,7 @@ bash bin/analyze_overview.sh --log-dir "$LOG_DIR" \
 
 > 完整週報範例：[`../examples/sample-outputs/overview_all_week.txt`](../examples/sample-outputs/overview_all_week.txt)。
 > 單一區域範例：[`../examples/sample-outputs/overview_taipei_week.txt`](../examples/sample-outputs/overview_taipei_week.txt)。
+> 單日範例（含每小時橫條圖）：[`../examples/sample-outputs/overview_all_2026-05-21.txt`](../examples/sample-outputs/overview_all_2026-05-21.txt)。
 
 ---
 
@@ -340,6 +359,27 @@ API_SERVER  APP_SERVER  HOSP_ID  PRSN_ID  CLIENT_IP  PATIENT_ID_AES
 `.txt`，與 `--format` 無關；僅 detail 檔案使用 `.tsv` / `.csv` 副檔名。
 
 > 範例：[`../examples/sample-outputs/access_all_week.tsv`](../examples/sample-outputs/access_all_week.tsv) · [`../examples/sample-outputs/access_all_week.csv`](../examples/sample-outputs/access_all_week.csv)
+
+### IP 歸因檔案（access_ip_counts.tsv）
+
+每次 `analyze_access` 執行均會寫入第三個固定檔案：
+`<base>/<YYYYMMDD_HHMMSS>/access_ip_counts.tsv`。此檔案永遠不輸出至 stdout；
+輸出目錄解析邏輯與 summary/detail 相同。
+
+**內容：** 分析語料庫中 NORMAL+ORPHAN 紀錄的客戶端 IP 計數。
+IP 欄位取自欄 11（`CLIENT_IP`）；空值或 `-` 均歸一為哨兵值 `-`。
+排序：計數降冪，IP 升冪（次排序）。第一行為標頭。空語料庫 → 僅有 1 行標頭。
+
+```
+CLIENT_IP	REQUEST_COUNT
+-	9
+192.168.139.110	3
+```
+
+（以上為 2026-05-21、全區域、`--test-hosts all` 之預期值）。
+預設 `--test-hosts exclude` 模式：`-\t9`（測試主機 IP 已被預先篩除）。
+
+> 範例：[`../examples/sample-outputs/access_ip_counts_all_2026-05-21.tsv`](../examples/sample-outputs/access_ip_counts_all_2026-05-21.tsv)
 
 ---
 
@@ -529,8 +569,8 @@ summary 視圖永遠為文字，與 `--format` 無關（summary 檔案永遠為 
 分析應用程式錯誤日誌與生命週期事件。
 
 此模組**沒有 `--view` 旗標**：主控台永遠顯示 detail 視圖；summary 只寫入
-磁碟（`errors_summary_<時間戳>.txt`）。`errors_summary_<時間戳>.txt` 與
-`errors_detail_<時間戳>.txt` 兩個檔案均永遠寫入輸出目錄。
+磁碟（`errors_summary.txt`）。`errors_summary.txt` 與
+`errors_detail.txt` 兩個檔案均永遠寫入執行子目錄。
 
 ### 旗標
 
@@ -606,7 +646,7 @@ bash bin/analyze_errors.sh --log-dir "$LOG_DIR" \
 
 ### Summary 檔案（僅磁碟）
 
-`errors_summary_<時間戳>.txt` 寫入輸出目錄，但不鏡像至主控台。
+`errors_summary.txt` 寫入執行子目錄，但不鏡像至主控台。
 它包含各區域 / 伺服器的精簡訊號計數：
 
 ```
@@ -636,14 +676,15 @@ bash bin/analyze_errors.sh --log-dir "$LOG_DIR" \
 檔案對寫入共用輸出目錄；所有檔案共用同一個啟動時間戳。
 
 ```
-[共用輸出目錄]
-  overview_summary_<T>.txt
-  iis_summary_<T>.txt
-  iis_detail_<T>.txt          （text 預設；搭配 --format 可為 tsv/csv）
-  access_summary_<T>.txt
-  access_detail_<T>.txt       （或 .tsv / .csv 搭配 --format）
-  errors_summary_<T>.txt      （僅當 errors 在 --modules 中）
-  errors_detail_<T>.txt       （僅當 errors 在 --modules 中）
+[共用輸出目錄]/<T>/
+  overview_summary.txt
+  iis_summary.txt
+  iis_detail.txt              （text 預設；搭配 --format 可為 tsv/csv）
+  access_summary.txt
+  access_detail.txt           （或 .tsv / .csv 搭配 --format）
+  access_ip_counts.tsv
+  errors_summary.txt          （僅當 errors 在 --modules 中）
+  errors_detail.txt           （僅當 errors 在 --modules 中）
 ```
 
 ### 旗標
@@ -775,14 +816,15 @@ bash bin/log_report.sh \
     --from "$START" --to "$END" \
     --modules overview,iis,access,errors \
     --output-dir ./reports/weekly
-# 產出（共用時間戳 T）：
-#   ./reports/weekly/overview_summary_<T>.txt
-#   ./reports/weekly/iis_summary_<T>.txt
-#   ./reports/weekly/iis_detail_<T>.txt
-#   ./reports/weekly/access_summary_<T>.txt
-#   ./reports/weekly/access_detail_<T>.txt
-#   ./reports/weekly/errors_summary_<T>.txt
-#   ./reports/weekly/errors_detail_<T>.txt
+# 產出（子目錄名稱即為時間戳 T）：
+#   ./reports/weekly/<T>/overview_summary.txt
+#   ./reports/weekly/<T>/iis_summary.txt
+#   ./reports/weekly/<T>/iis_detail.txt
+#   ./reports/weekly/<T>/access_summary.txt
+#   ./reports/weekly/<T>/access_detail.txt
+#   ./reports/weekly/<T>/access_ip_counts.tsv
+#   ./reports/weekly/<T>/errors_summary.txt
+#   ./reports/weekly/<T>/errors_detail.txt
 ```
 
 ### 5.5 各角色慢請求稽核（API ≤ 1 秒，APP ≤ 3 秒，全伺服器）

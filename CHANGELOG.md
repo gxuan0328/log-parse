@@ -8,7 +8,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `analyze_overview` — single-day 存取紀錄橫條圖 (每小時) bar chart rendered
+  after 核心功能存取合計 in 總體概況 (global) and after each per-region
+  category block in 分區別, using `agg_access_records` HOUR rows emitted by
+  `analyze_access --emit-stats`. Axis: 00..LAST (today-cap: LAST = local_hour-1
+  when window == today; LAST = -1 → graceful note; past single-day: full 00..23
+  axis; multi-day: no chart). Unit = NORMAL+ORPHAN APP_TIME hours. Rendered
+  via new `fmt_bar` primitive with LC_ALL=C and U+2588 (0xE2 0x96 0x88) block
+  glyphs; proportional to max bucket (40 cells max, min 1 cell when val>0).
+- `lib/fmt_utils.sh` — `fmt_bar [BAR_MAX=40] [LABEL_W=2] [INDENT=6]`:
+  reads label<TAB>count on stdin; LC_ALL=C gawk; reuses `FMT_AWK_WIDTH`;
+  emits `U+2588` bar glyphs as `sprintf "%c%c%c", 226, 150, 136` (never a
+  literal multibyte char in source).
+- `lib/date_utils.sh` — `local_hour()`: returns current HOST-clock hour
+  0-23 (no leading zero; `%-H` avoids the octal trap). Reads the host clock
+  intentionally to stay consistent with `today()` (the overview chart gate
+  and cap therefore read the same clock and can never desync). PRECONDITION:
+  host clock in UTC+8; on a non-UTC+8 host use `TZ=Asia/Taipei` to shift
+  `today()` and `local_hour()` together. `LOG_PARSE_NOW_HOUR` overrides for
+  deterministic tests.
+- `lib/aggregate_utils.sh` — `agg_access_records (RESULT_SORTED...)`: single
+  gawk pass over result_sorted; predicate = `$1=="NORMAL"||$1=="ORPHAN"`;
+  ip key = coalesced `$11` (empty/"-" → "-" sentinel); hour key =
+  `substr($3,12,2)` validated against `/^([01][0-9]|2[0-3])$/` — malformed
+  APP_TIME emits `[WARN]` to stderr and is excluded from hourly count (not
+  silently bucketed to hour 00) while still incrementing ip_count (fail-loud,
+  not silent; matches existing graceful-degradation precedent). END emits
+  `HOUR<TAB>HH<TAB>count` then `IP<TAB>ip<TAB>count`. Single predicate shared
+  by REQ2 (access_ip_counts.tsv) and REQ3 (overview chart): column sum ==
+  hourly total == NORMAL+ORPHAN.
+- `analyze_access` — `access_write_ip_counts()`: writes
+  `access_ip_counts.tsv` (header `CLIENT_IP<TAB>REQUEST_COUNT`, then data
+  rows sorted count-desc / IP-asc) to the run output directory on every REAL
+  run (not `--emit-stats`). Source = `result_sorted` rows with STATUS
+  NORMAL|ORPHAN; `$11` coalesced (empty/"-" → "-" sentinel). Empty corpus →
+  header-only file (1 line). Never written to stdout. Covers
+  `--region` / `all` / `--merge` automatically via `_ACC_SORTED`.
+  Also appends HOUR rows to `access_stats.tsv` in `access_region_stats()`
+  for the overview chart data path.
 - `overview_health_verdict` in `lib/aggregate_utils.sh` — pure, single-source
+  verdict mapping (encapsulates trunc + no-data guard; unit-testable at exact
+  band boundaries): `trunc(NORMAL/TOTAL*100)` >=90 → 正常 — 系統整體運作健康;
+  >=70 → 注意 — 存在異常存取，建議持續監控; <70 → 警告 — 存取異常比例偏高，
+  建議立即調查; TOTAL=0 → 無資料 — 本期間無存取關聯記錄.
+
+### Changed (breaking)
+- `lib/output_utils.sh` + all analyzers — persisted file PATH shape changed:
+  `<base>/<module>_<kind>_<YYYYMMDD_HHMMSS>.<ext>` →
+  `<base>/<YYYYMMDD_HHMMSS>/<module>_<kind>.<ext>`. The run-directory name IS
+  the shared timestamp; per-file TS suffix is dropped; filenames are now
+  stable (`access_summary.txt`, not `access_summary_20260521_133300.txt`).
+  `RUN_BASE_DIR` is a new sanctioned global; `RUN_OUTPUT_DIR = RUN_BASE_DIR/RUN_TS`.
+  External consumers globbing `<base>/<module>_*.<ext>` MUST switch to
+  `<base>/*/<module>_<kind>.<ext>`.
+  `log_report` exports `LOG_PARSE_OUTPUT_DIR=RUN_BASE_DIR` (the base, not the
+  subdir) so children re-derive `<base>/<RUN_TS>` without double-nesting.
+  Sample fixture content changes: `log_report_full_2026-05-21.txt` grows ~72
+  lines (3 single-day hourly charts). New fixtures: `overview_all_2026-05-21.txt`
+  and `access_ip_counts_all_2026-05-21.tsv`.
+  Tests 258 → 267 (+9: A42, A43, A44, G04, G05, H22, H23, H24, H25).
+- `analyze_access` — every REAL run (non `--emit-stats`) now writes a THIRD
+  file `access_ip_counts.tsv` into the run directory (was summary+detail only).
+  Per-run file-count invariant rises by 1 wherever access participates:
+  D17/F08=7, F15/I12=6, F17=8. `--emit-stats` runs write nothing.
+
+### Added — pure, single-source
   verdict mapping (encapsulates trunc + no-data guard; unit-testable at exact
   band boundaries): `trunc(NORMAL/TOTAL*100)` >=90 → 正常 — 系統整體運作健康;
   >=70 → 注意 — 存在異常存取，建議持續監控; <70 → 警告 — 存取異常比例偏高，

@@ -221,9 +221,21 @@ IIS_F_SUMMS=9    # ENDPOINT only: summed time-taken ms (exact cross-server pooli
 # ACCESS_STAT_SCHEMA — row format emitted by analyze_access --emit-stats.
 # Each row: ACCESS <TAB> region <TAB> TAG <TAB> value
 #
-# Tags:
+# Tags (ACCESS-prefixed rows):
 #   NORMAL  ORPHAN  UNVERIFIED  ORPHAN_OK  ORPHAN_FAIL
 #   DELTA_COUNT  DELTA_SUM  DELTA_MIN  DELTA_MAX
+#
+# Additional top-level row (HOUR-prefixed; additive, overview-only):
+#   HOUR <TAB> region <TAB> HH <TAB> count
+#   Emitted by access_region_stats (analyze_access) via agg_access_records.
+#   Inert to all ACCESS-tag consumers ($1=="ACCESS" guards).
+#   HH = two-digit UTC+8 hour extracted from APP_TIME $3 (already UTC+8,
+#   no IIS timezone conversion needed).  Unit = NORMAL+ORPHAN records only
+#   (UNVERIFIED excluded: APP never saw those requests).
+#
+# IP attribution (physical file, not the stats stream):
+#   agg_access_records also emits IP rows; analyze_access pipes them to
+#   access_ip_counts.tsv (real runs only, never stdout).
 ACCESS_STAT_SCHEMA='ACCESS\tregion\tTAG\tvalue'
 
 # Field indices for ACCESS emit-stats rows (1-based, TAB-delimited).
@@ -324,6 +336,61 @@ agg_access_rows() {
             printf "DELTA_MAX\t%g\n",   delta_max+0
         }
     ' "$result_sorted"
+}
+
+# ---------------------------------------------------------------------------
+# agg_access_records — IP + hourly counts from the access result_sorted files
+# ---------------------------------------------------------------------------
+
+# agg_access_records RESULT_SORTED...
+#   Purpose : Aggregate CLIENT_IP request counts and per-hour access counts from
+#             one or more post-correlation result_sorted TSV files in a single
+#             gawk pass.  Predicate: STATUS == NORMAL or ORPHAN (UNVERIFIED is
+#             excluded — the APP server never saw those requests, so counting
+#             them would mis-attribute IP and inflate the hourly chart).
+#   Args    : RESULT_SORTED... — variadic paths to 12-field correlation TSV files.
+#             Schema: $1=STATUS $2=API_TIME $3=APP_TIME $4=DELTA_SEC
+#                     $5=VERIFY_STATUS $6=REQUEST_ID $7=API_SERVER $8=APP_SERVER
+#                     $9=HOSP_ID $10=PRSN_ID $11=CLIENT_IP $12=PATIENT_ID_AES
+#   Output  : TAB-delimited rows on stdout (two groups, order not guaranteed):
+#               HOUR\t<HH>\t<count>   — region-less; caller adds region tag.
+#                                        HH is the two-digit UTC+8 hour extracted
+#                                        from APP_TIME ($3 substr pos 12, len 2).
+#                                        APP_TIME is already UTC+8 (no IIS TZ
+#                                        conversion needed).
+#               IP\t<ip>\t<count>     — CLIENT_IP ($11) coalesced: empty or "-"
+#                                        becomes the sentinel "-" (surfaces the
+#                                        real upstream logging gap; never silently
+#                                        dropped).
+#   Returns / Side effects : none (pure stdout pipeline).
+#   Errors / Notes : Malformed APP_TIME (hour not matching 00-23): a [WARN] line
+#             is printed to /dev/stderr (fail-loud, not silent suppression) and the
+#             record is EXCLUDED from hour_count but STILL counted in ip_count.
+#             This matches the existing graceful precedent for ts_to_epoch->N/A and
+#             the log_warn-for-no-data pattern; dying would abort the whole report
+#             for a single bad timestamp among thousands, which is an expected
+#             upstream-logging failure path.
+#             Column sum of IP counts == column sum of HOUR counts on clean data
+#             (the reconciliation invariant; diverges only on malformed APP_TIME rows).
+agg_access_records() {
+    gawk -F'\t' '
+        $1 == "NORMAL" || $1 == "ORPHAN" {
+            ip = ($11 == "" || $11 == "-") ? "-" : $11
+            ip_count[ip]++
+            hh = substr($3, 12, 2)
+            if (hh ~ /^([01][0-9]|2[0-3])$/) {
+                hour_count[hh]++
+            } else {
+                printf "[WARN] agg_access_records: malformed APP_TIME %s (req %s) excluded from hourly chart\n", $3, $6 > "/dev/stderr"
+            }
+        }
+        END {
+            for (h in hour_count)
+                printf "HOUR\t%s\t%d\n", h, hour_count[h]
+            for (i in ip_count)
+                printf "IP\t%s\t%d\n", i, ip_count[i]
+        }
+    ' "$@"
 }
 
 # ---------------------------------------------------------------------------

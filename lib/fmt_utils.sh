@@ -9,6 +9,9 @@
 #   h2  → per-region / per-server section (▶ prefix)
 #   h3  → sub-section inside h2 (■ prefix, indented)
 #   kv  → label / value row, 40-char label column, indented 2 spaces
+#   bar → horizontal bar chart (fmt_bar); glyph U+2588 (display width 1) emitted
+#         as sprintf("%c%c%c",226,150,136) under LC_ALL=C (byte-safe, never a literal
+#         multi-byte emoji in source).
 
 # ---------------------------------------------------------------------------
 # Separator constants — exposed for callers that want bare rules
@@ -196,10 +199,10 @@ fmt_table_row() {
 #   Output  : footer block on stdout.
 #   Returns / Side effects : none.
 #   Notes   : Uses the shared run timestamp $RUN_TS (set once by persist_init in
-#             output_utils.sh) so a report's footer matches its persisted
-#             filename suffix and is byte-reproducible under a pinned
-#             $LOG_PARSE_RUN_TS. Falls back to wall-clock when RUN_TS is unset
-#             (e.g. fmt_utils sourced outside a CLI run).
+#             output_utils.sh) so a report's footer matches its run-directory name
+#             and is byte-reproducible under a pinned $LOG_PARSE_RUN_TS. Falls
+#             back to wall-clock when RUN_TS is unset (e.g. fmt_utils sourced
+#             outside a CLI run).
 fmt_footer() {
     local gen_ts
     if [[ -n "${RUN_TS:-}" ]]; then
@@ -233,4 +236,53 @@ fmt_pct() {
     local n="$1" d="$2"
     if (( d == 0 )); then echo "N/A"; return; fi
     gawk -v n="$n" -v d="$d" 'BEGIN { printf "%.1f%%\n", (n/d)*100 }'
+}
+
+# fmt_bar [BAR_MAX=40] [LABEL_W=2] [INDENT=6]
+#   Purpose : Render a horizontal bar chart from label<TAB>count pairs on stdin.
+#             Each bar is proportional to the maximum count in the input; the
+#             widest bar spans BAR_MAX cells.  A non-zero count always gets at
+#             least one cell so small values remain visible.
+#   Args    : BAR_MAX — maximum bar width in terminal cells (default 40).
+#             LABEL_W — display-column width reserved for the label (default 2).
+#             INDENT  — leading spaces before each row (default 6).
+#   Output  : one formatted row per input pair on stdout:
+#               <INDENT spaces><label rpadded to LABEL_W>  <4-digit count>  <bar>
+#             Bar glyph: U+2588 FULL BLOCK, emitted as 3-byte UTF-8 sequence
+#             (226 150 136) under LC_ALL=C so byte arithmetic is exact.  Each
+#             glyph has display width 1; BAR_MAX cells = BAR_MAX glyphs.
+#   Returns / Side effects : none (pure stdout pipeline).
+#   Errors / Notes : Reads ALL stdin into a buffer first (two-pass over the
+#             array) to determine mx before rendering; no temp files needed.
+#             Requires FMT_AWK_WIDTH (dwidth/rpad) — sourced from this file.
+#             Must run under LC_ALL=C; enforced by the LC_ALL=C prefix on gawk.
+#             cells = int(val/mx*BAR_MAX + 0.5); floor of 1 cell when val>0 && mx>0.
+fmt_bar() {
+    local bar_max="${1:-40}" label_w="${2:-2}" indent="${3:-6}"
+    LC_ALL=C gawk -F'\t' \
+        -v BAR_MAX="$bar_max" -v LABEL_W="$label_w" -v INDENT="$indent" \
+        "$FMT_AWK_WIDTH"'
+        {
+            lab[NR] = $1
+            val[NR] = $2 + 0
+            if (val[NR] > mx) mx = val[NR]
+            n = NR
+        }
+        END {
+            # U+2588 FULL BLOCK — 3-byte UTF-8: 0xE2 0x96 0x88
+            blk = sprintf("%c%c%c", 226, 150, 136)
+            for (r = 1; r <= n; r++) {
+                v = val[r]
+                if (mx > 0) {
+                    cells = int(v / mx * BAR_MAX + 0.5)
+                    if (v > 0 && cells < 1) cells = 1
+                } else {
+                    cells = 0
+                }
+                bar = ""
+                for (c = 1; c <= cells; c++) bar = bar blk
+                printf "%*s%s  %4d  %s\n", INDENT, "", rpad(lab[r], LABEL_W), v, bar
+            }
+        }
+    '
 }

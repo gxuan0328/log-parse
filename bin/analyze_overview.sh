@@ -88,6 +88,8 @@ OVERVIEW_AWK='
 #             ACC_DC     <n>     (grand DELTA_COUNT)
 #             ACC_DS     <sum>   (grand DELTA_SUM)
 #             ACC_REGION <rid>   <normal>   <orphan>   <unver>
+#             ACC_HOUR   <HH>    <count>    (global hourly count; single-day chart)
+#             ACC_HOUR_REGION <rid> <HH> <count>  (per-region hourly; single-day chart)
 # ----------------------------------------------------------------------------
 FILENAME == iis_file {
     if ($5 == "CATEGORY") {
@@ -99,13 +101,19 @@ FILENAME == iis_file {
     }
     next
 }
-{
+$1 == "ACCESS" {
     region=$2; tag=$3; val=$4+0
     if (tag == "NORMAL")      { acc_norm  += val; acc_rn[region] += val }
     if (tag == "ORPHAN")      { acc_orph  += val; acc_ro[region] += val }
     if (tag == "UNVERIFIED")  { acc_unver += val; acc_ru[region] += val }
     if (tag == "DELTA_COUNT") { acc_dc    += val }
     if (tag == "DELTA_SUM")   { acc_ds    += val }
+    next
+}
+$1 == "HOUR" {
+    acc_hour[$3] += $4+0
+    acc_hour_r[$2,$3] += $4+0
+    next
 }
 END {
     # Emit CAT rows (always all three for stable downstream parsing).
@@ -130,6 +138,12 @@ END {
     printf "ACC_DC\t%d\n",       acc_dc+0
     printf "ACC_DS\t%g\n",       acc_ds+0
     for (r in acc_rn) printf "ACC_REGION\t%s\t%d\t%d\t%d\n", r, acc_rn[r]+0, acc_ro[r]+0, acc_ru[r]+0
+    # Hourly access counts (single-day chart; global then per-region).
+    for (h in acc_hour) printf "ACC_HOUR\t%s\t%d\n", h, acc_hour[h]
+    for (rh in acc_hour_r) {
+        split(rh, _ph, SUBSEP)
+        printf "ACC_HOUR_REGION\t%s\t%s\t%d\n", _ph[1], _ph[2], acc_hour_r[rh]
+    }
 }
 '
 
@@ -241,6 +255,48 @@ _render_cat_rows() {
 }
 
 # ---------------------------------------------------------------------------
+# _render_hour_chart — render an hourly access bar chart for one scope
+# ---------------------------------------------------------------------------
+
+# _render_hour_chart AGG SCOPE LAST
+#   Purpose : Print the 存取紀錄橫條圖 (每小時) bar chart for a given scope.
+#             For global (empty SCOPE) reads ACC_HOUR rows from AGG; for a region
+#             reads ACC_HOUR_REGION rows filtered by SCOPE. Zero-fills hours 00..LAST
+#             so every hour appears even with no traffic.
+#   Args    : AGG   — aggregated agg_out string (multi-line, newline-separated).
+#             SCOPE — region id for per-region chart, or "" for global chart.
+#             LAST  — last hour to include (0-23). -1 means today at hour 0 →
+#                       graceful note "今日尚無完整小時資料" without any bars.
+#   Output  : h3 heading + bar chart (or graceful note) on stdout.
+#   Returns / Side effects : none.
+#   Errors / Notes : Gated by (( _OVW_N_DATES==1 )) in the caller (single-day
+#             only). Past single-day (date != today) -> LAST=23 full axis.
+#             --today at hour N -> LAST=N-1 (hours 00..N-1 only).
+#             Requires fmt_bar (lib/fmt_utils.sh) and FMT_AWK_WIDTH.
+_render_hour_chart() {
+    local agg="$1" scope="$2" last="$3"
+    fmt_h3 "存取紀錄橫條圖 (每小時)"
+    if (( last < 0 )); then
+        printf '      (今日尚無完整小時資料)\n'
+        return
+    fi
+    printf '%s\n' "$agg" \
+        | LC_ALL=C gawk -F'\t' -v scope="$scope" -v last="$last" '
+            scope == "" && $1 == "ACC_HOUR" {
+                c[$2+0] = $3
+            }
+            scope != "" && $1 == "ACC_HOUR_REGION" && $2 == scope {
+                c[$3+0] = $4
+            }
+            END {
+                for (h = 0; h <= last; h++)
+                    printf "%02d\t%d\n", h, c[h]+0
+            }
+        ' \
+        | fmt_bar
+}
+
+# ---------------------------------------------------------------------------
 # overview_render — render the 2-cut management overview to stdout
 # ---------------------------------------------------------------------------
 
@@ -316,6 +372,15 @@ overview_render() {
     local verdict
     verdict=$(overview_health_verdict "$acc_normal" "$acc_total")
 
+    # ── Today-cap for single-day hourly chart (_last = last complete hour) ─────
+    # Past single-day (date != today): full 00-23 axis.
+    # --today: cap at local_hour-1 (hours 00..(local_hour-1) only; LAST=-1 at hour 0).
+    # Multi-day: chart is suppressed by the (( _OVW_N_DATES==1 )) gate in callers.
+    local _last=23
+    if (( _OVW_N_DATES == 1 )) && [[ "$_OVW_DATE_START" == "$(today)" ]]; then
+        _last=$(( 10#$(local_hour) - 1 ))
+    fi
+
     # ═════════════════════════════════════════════════════════════════════════
     # Header
     # ═════════════════════════════════════════════════════════════════════════
@@ -349,6 +414,9 @@ overview_render() {
 影像下載	${_n_c}	${_n_a}
 EOF
     printf "      核心功能存取合計 %s\n" "$(( _g_c + _d_c + _n_c ))"
+    if (( _OVW_N_DATES == 1 )); then
+        _render_hour_chart "$agg_out" "" "$_last"
+    fi
 
     # ═══════════════════════════════════════════════════════════════════════════
     # 分區別 (By Region) — one ■ block per region: a concise N/O/U enumeration
@@ -394,6 +462,9 @@ EOF
 報告摘要	${_dc}	${_da}
 影像下載	${_nc}	${_na}
 EOF
+        if (( _OVW_N_DATES == 1 )); then
+            _render_hour_chart "$agg_out" "$_rid" "$_last"
+        fi
     done
 }
 

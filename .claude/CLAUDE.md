@@ -42,7 +42,7 @@ NOT a daemon. NOT a database. NOT a service. Do not introduce one.
 | `bin/`      | CLI entry points; one file = one command.                            |
 | `lib/`      | Sourced-only helpers (common, date_utils, csv_utils, fmt_utils).     |
 | `conf/`     | `regions.conf` — region ↔ server mapping read by `load_regions`.     |
-| `tests/`    | `run_tests.sh` — single-file regression suite (currently 258 tests). |
+| `tests/`    | `run_tests.sh` — single-file regression suite (currently 267 tests). |
 | `docs/`     | `design.md` + `usage.md` (+ zh-TW). Update both languages together.  |
 | `examples/` | `sample-logs/` (dataset), `sample-outputs/` (expected reports), `*.sh`.|
 | `.claude/`  | Project rules (this file + `rules/` + `skills/`).                    |
@@ -90,7 +90,9 @@ numerics (e.g. `Tests: 108/108`).
 - ❌ `git add -A` / `git add .` in helper scripts — stage explicit paths.
 - ❌ Interactive prompts in CLI paths.
 - ❌ Emojis in source / docstrings / commit messages.
-  (Report-text exceptions: `▶ ■` are intentional for visual scanning.)
+  (Report-text exceptions: `▶ ■` are intentional for visual scanning;
+  U+2588 full-block bar-chart glyph is emitted as `sprintf %c` bytes
+  226/150/136 only — never a literal multibyte emoji char in source.)
 - ❌ Reinventing date math / region loading / CSV extraction / formatting.
 
 ---

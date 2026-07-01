@@ -47,15 +47,16 @@ absent). Override with `--output-dir DIR` or the `LOG_PARSE_OUTPUT_DIR`
 environment variable. Precedence: `--output-dir` flag > `$LOG_PARSE_OUTPUT_DIR`
 > `./log-parse`.
 
-File naming convention: `<module>_<kind>_<TS>.<ext>` where:
-- `<kind>` is `summary` or `detail`
-- `<TS>` is a shared `YYYYmmdd_HHMMSS` launch timestamp (all files of
-  one run share the same suffix)
-- `<ext>` is `txt` for summary (always) and `txt`/`tsv`/`csv` for
-  detail (follows `--format`)
+File layout: `<base>/<YYYYMMDD_HHMMSS>/<module>_<kind>.<ext>` where:
+- `<base>` is the resolved output directory
+- `<YYYYMMDD_HHMMSS>` is the run-directory name (shared launch timestamp;
+  all files of one run land in this single subdir)
+- `<kind>` is `summary`, `detail`, or `ip_counts` (access only)
+- `<ext>` is `txt` for summary (always), `txt`/`tsv`/`csv` for detail,
+  and `tsv` for `access_ip_counts` (follows `--format` for detail only)
 
 Persisted files are always color-free. The `--view` flag controls only
-the console mirror (which view streams to stdout); both files are always
+the console mirror (which view streams to stdout); all files are always
 written. Add `/log-parse/` to `.gitignore` to avoid committing run
 artifacts.
 
@@ -120,8 +121,24 @@ incomplete (fail-soft). Access and .NET app logs are natively UTC+8 and unchange
 Overview is **summary-only** (no `--view`) and **text-only** (no
 `--format`). It sources metrics from `analyze_iis` and `analyze_access`
 via `--emit-stats` (DRY — zero re-parse, zero duplicated metric
-computation). Only the `overview_summary_<TS>.txt` file is written to
-the output directory (no detail file).
+computation). Only `overview_summary.txt` is written to the run directory
+`<base>/<YYYYMMDD_HHMMSS>/` (no detail file).
+
+**Single-day hourly bar chart (存取紀錄橫條圖):** when `--date` or `--today`
+selects exactly one day, a `存取紀錄橫條圖 (每小時)` section is appended
+in both 總體概況 (global) and each ■ region block of 分區別. The chart
+counts NORMAL+ORPHAN APP_TIME hours (UTC+8; unit = access record = one
+browser request that reached the APP server). Axis: `00..LAST` zero-filled.
+For a past single-day date: `LAST=23` (full 00..23 axis). For `--today`:
+`LAST = local_hour() - 1`; at hour 0: `LAST=-1` → graceful note
+`(今日尚無完整小時資料)` instead of bars. Multi-day windows (`--from`/`--to`,
+`--days`) produce no chart.
+
+**Host clock precondition and `TZ` remedy:** `local_hour()` reads the HOST
+clock (same as `today()`). **Precondition:** host clock must be in UTC+8. On
+a non-UTC+8 host run with `TZ=Asia/Taipei` — this shifts both `today()` and
+`local_hour()` together so the gate and cap stay in sync. Override with
+`LOG_PARSE_NOW_HOUR=H` for deterministic scripting or tests.
 
 ### Options
 
@@ -221,6 +238,7 @@ Content rules enforced by the implementation:
 
 > Full weekly sample: [`../examples/sample-outputs/overview_all_week.txt`](../examples/sample-outputs/overview_all_week.txt).
 > Single-region sample: [`../examples/sample-outputs/overview_taipei_week.txt`](../examples/sample-outputs/overview_taipei_week.txt).
+> Single-day sample (with 存取紀錄橫條圖): [`../examples/sample-outputs/overview_all_2026-05-21.txt`](../examples/sample-outputs/overview_all_2026-05-21.txt).
 
 ---
 
@@ -354,6 +372,34 @@ always the first line. The summary file is always `.txt` regardless of
 `--format`; only the detail file uses the `.tsv` / `.csv` extension.
 
 > Samples: [`../examples/sample-outputs/access_all_week.tsv`](../examples/sample-outputs/access_all_week.tsv) · [`../examples/sample-outputs/access_all_week.csv`](../examples/sample-outputs/access_all_week.csv)
+
+### IP attribution file (access_ip_counts.tsv)
+
+Every **real** (non `--emit-stats`) `analyze_access` run writes a third
+file `access_ip_counts.tsv` alongside the summary and detail files under
+the run directory `<base>/<YYYYMMDD_HHMMSS>/`:
+
+- **Header**: `CLIENT_IP<TAB>REQUEST_COUNT`
+- **Data**: one row per unique CLIENT_IP, sorted count descending, IP
+  ascending for tie-breaking.
+- **Unit**: NORMAL+ORPHAN records (same predicate as the overview hourly
+  chart). UNVERIFIED records are excluded (no APP access occurred).
+- **IP coalescing**: empty or `"-"` CLIENT_IP fields → sentinel `"-"`.
+  With `--test-hosts exclude` (default), business CLIENT_IPs that are
+  blank upstream are aggregated under `"-"`.
+- **Never on stdout**: side artifact only; does not appear in the console
+  mirror or in `--emit-stats` output.
+- **Empty corpus**: header-only file (exactly 1 line), no data rows.
+- **`--test-hosts all`** surfaces real IPs (e.g. `192.168.139.110` with
+  count 3 on 2026-05-21). **`--test-hosts only`**: only test-host IPs.
+
+Sample (2026-05-21, all regions, default `--test-hosts exclude`):
+```
+CLIENT_IP	REQUEST_COUNT
+-	9
+```
+
+> Fixture: [`../examples/sample-outputs/access_ip_counts_all_2026-05-21.tsv`](../examples/sample-outputs/access_ip_counts_all_2026-05-21.tsv)
 
 ---
 
@@ -554,8 +600,8 @@ Analyse application error logs and lifecycle events.
 
 This module has **no `--view` flag**: the console always shows the detail
 view, and the summary is written to disk only
-(`errors_summary_<TS>.txt`). Both `errors_summary_<TS>.txt` and
-`errors_detail_<TS>.txt` are always written to the output directory.
+(`errors_summary.txt` under the run directory). Both `errors_summary.txt`
+and `errors_detail.txt` are always written to the run directory.
 
 ### Options
 
@@ -631,9 +677,9 @@ bash bin/analyze_errors.sh --log-dir "$LOG_DIR" \
 
 ### Summary file (disk only)
 
-The `errors_summary_<TS>.txt` file is written to the output directory
-but is not mirrored to the console. It contains compact per-server
-signal counts for each region:
+The `errors_summary.txt` file is written to the run directory
+`<base>/<YYYYMMDD_HHMMSS>/` but is not mirrored to the console.
+It contains compact per-server signal counts for each region:
 
 ```
   Error Analysis Summary
@@ -665,13 +711,15 @@ directory; all files share one launch timestamp.
 
 ```
 [shared output directory]
-  overview_summary_<TS>.txt
-  iis_summary_<TS>.txt
-  iis_detail_<TS>.txt          (text by default; tsv/csv with --format)
-  access_summary_<TS>.txt
-  access_detail_<TS>.txt       (or .tsv / .csv with --format)
-  errors_summary_<TS>.txt      (only when errors is in --modules)
-  errors_detail_<TS>.txt       (only when errors is in --modules)
+  <YYYYMMDD_HHMMSS>/
+    overview_summary.txt
+    iis_summary.txt
+    iis_detail.txt             (text by default; tsv/csv with --format)
+    access_summary.txt
+    access_detail.txt          (or .tsv / .csv with --format)
+    access_ip_counts.tsv       (always written on real access runs)
+    errors_summary.txt         (only when errors is in --modules)
+    errors_detail.txt          (only when errors is in --modules)
 ```
 
 ### Options
@@ -804,14 +852,15 @@ bash bin/log_report.sh \
     --from "$START" --to "$END" \
     --modules overview,iis,access,errors \
     --output-dir ./reports/weekly
-# Produces (one shared timestamp T):
-#   ./reports/weekly/overview_summary_<T>.txt
-#   ./reports/weekly/iis_summary_<T>.txt
-#   ./reports/weekly/iis_detail_<T>.txt
-#   ./reports/weekly/access_summary_<T>.txt
-#   ./reports/weekly/access_detail_<T>.txt
-#   ./reports/weekly/errors_summary_<T>.txt
-#   ./reports/weekly/errors_detail_<T>.txt
+# Produces (one shared run-directory <T>):
+#   ./reports/weekly/<T>/overview_summary.txt
+#   ./reports/weekly/<T>/iis_summary.txt
+#   ./reports/weekly/<T>/iis_detail.txt
+#   ./reports/weekly/<T>/access_summary.txt
+#   ./reports/weekly/<T>/access_detail.txt
+#   ./reports/weekly/<T>/access_ip_counts.tsv
+#   ./reports/weekly/<T>/errors_summary.txt
+#   ./reports/weekly/<T>/errors_detail.txt
 ```
 
 ### 5.5 Per-role slow audit (API ≤ 1 s, APP ≤ 3 s, all servers)

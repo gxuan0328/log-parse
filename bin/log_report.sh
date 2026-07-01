@@ -8,10 +8,11 @@
 # (overview → iis → access → errors).  Modules run as child processes;
 # failure in one cannot poison shared state in another.
 #
-# Always-on persistence (D6): persist_init resolves the output directory
-# once and exports LOG_PARSE_RUN_TS + LOG_PARSE_OUTPUT_DIR so every child
-# writes its own summary+detail pair to the shared dir, all sharing one TS.
-# --output-dir is NOT forwarded as a flag (env carries the resolved dir, C1).
+# Always-on persistence (D6): persist_init resolves <base>/<RUN_TS>/ once and
+# exports LOG_PARSE_RUN_TS + LOG_PARSE_OUTPUT_DIR (the BASE dir, not the subdir)
+# so every child re-derives the same RUN_OUTPUT_DIR = <base>/<RUN_TS> without
+# double-nesting. Files land under <base>/<timestamp>/. --output-dir is NOT
+# forwarded as a flag (env carries the resolved base dir, C1).
 #
 # Unified flags forwarded to children per capability matrix (§4.2):
 #   Common (all modules)  : --log-dir, --region, ${INTERVAL_ARGS[@]}, --conf, --verbose
@@ -78,8 +79,11 @@ Options:
                         Executed in canonical order regardless of input order.
   --view S|D            summary | detail           (default: $OPT_VIEW)
                         Forwarded to iis + access only; summary is format-independent.
-  --output-dir DIR      output directory for persisted files (default: ./log-parse)
-                        Precedence: flag > \$LOG_PARSE_OUTPUT_DIR > ./log-parse (C1)
+  --output-dir DIR      base output directory (default: ./log-parse)
+                        Files land under <base>/<YYYYMMDD_HHMMSS>/ (subdir = run TS).
+                        Precedence: flag > \$LOG_PARSE_OUTPUT_DIR > ./log-parse (C1).
+                        log_report exports the BASE (not the subdir) so children
+                        re-derive the same subdir without double-nesting.
   --conf FILE           regions config file (validated when explicitly supplied)
   --format FMT          text | tsv | csv          (default: text)
                         Forwarded to iis + access; governs detail file only (C10).
@@ -283,7 +287,7 @@ main() {
     # Resolve output dir + timestamp once; export for child processes (D6, C1)
     persist_init "$OPT_OUTPUT_DIR"
     export LOG_PARSE_RUN_TS="$RUN_TS"
-    export LOG_PARSE_OUTPUT_DIR="$RUN_OUTPUT_DIR"
+    export LOG_PARSE_OUTPUT_DIR="$RUN_BASE_DIR"
     log_info "Output dir: $RUN_OUTPUT_DIR  ts: $RUN_TS"
 
     for m in "${ORDERED_MODULES[@]}"; do

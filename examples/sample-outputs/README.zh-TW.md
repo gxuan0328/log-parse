@@ -20,11 +20,12 @@
 
 ## 持久化輸出模型
 
-每次執行均會將報告寫入指定目錄（預設為 `./log-parse/`，可透過 `--output-dir DIR`
-或環境變數 `$LOG_PARSE_OUTPUT_DIR` 覆寫）。執行時產生的檔案名稱含啟動時間戳記：
-`<模組>_<類型>_<YYYYMMDD_HHMMSS>.<副檔名>`。下表中提交的固定檔案採用去除時間戳記
-的描述性名稱。如需產生名稱完全一致的檔案，可設定
-`LOG_PARSE_RUN_TS=20260521_000000`。
+每次執行均會將報告寫入**附時間戳記的子目錄**（輸出基底預設為 `./log-parse/`，
+可透過 `--output-dir DIR` 或環境變數 `$LOG_PARSE_OUTPUT_DIR` 覆寫）。
+佈局：`<base>/<YYYYMMDD_HHMMSS>/<模組>_<類型>.<副檔名>`。
+子目錄名稱即為共用時間戳記；同一次執行的所有檔案均落在同一子目錄中，
+各檔案使用穩定的基本名稱。下表中提交的固定檔案採用去除時間戳記的描述性名稱。
+如需產生子目錄名稱完全一致的輸出，可設定 `LOG_PARSE_RUN_TS=20260521_000000`。
 
 所有輸出皆以 `NO_COLOR=1` 產生，以維持純文字可讀性。於 TTY 即時執行時
 會以對應顏色呈現同樣內容。
@@ -37,10 +38,17 @@
 
 > **IIS UTC+8 日語意。** IIS W3C 日誌以 UTC+0 時間記錄。`--date D`（及 `--from`/`--to`）選取 UTC+8 業務日：讀取 `u_ex(D−1)`（UTC ≥ 16:00）與 `u_ex(D)`（UTC < 16:00）的資料列，涵蓋本地時間 00:00 至 23:59。存取與 .NET 應用程式日誌原生為 UTC+8，不受影響。
 
+**單日每小時橫條圖（存取紀錄橫條圖）。** 當 `--date` 或 `--today` 選取恰好
+一天時，總體概況及每個 ■ 區域區塊均附加 `存取紀錄橫條圖 (每小時)` 區段。
+橫條圖統計 NORMAL+ORPHAN 的 APP_TIME 小時數（UTC+8；單位 = 存取紀錄）。
+過去日期的橫軸為 00..23；`--today` 模式截止於 `LAST = local_hour() - 1`。
+多日視窗不渲染橫條圖。
+
 | 檔案 | 內容說明 | 重新產生指令 |
 |------|----------|-------------|
-| `overview_all_week.txt`               | 管理總覽報告 — 全區域，2026-05-18 → 2026-05-25（8 天）；兩切面版面：▶ 總體概況（存取筆數+%、整體健康判定 警告、■ 核心功能效能：雲端查詢 11/0.11s · 報告摘要 186/0.38s · 影像下載 427/0.93s；合計 624）、▶ 分區別（台北：0/3/0 NORMAL/ORPHAN/UNVERIFIED + 5/71/220 筆數；台中：6/0/0 + 6/115/207 筆數） | `bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --output-dir /tmp/sample` |
-| `overview_taipei_week.txt`            | 管理總覽報告 — 僅台北，2026-05-18 → 2026-05-25；兩切面版面；分區別 台北 區塊與總體概況一致（單一區域範圍之 ROLLUP+明細對稱）；類別：雲端查詢 5/0.02s · 報告摘要 71/0.22s · 影像下載 220/1.48s；合計 296 | `bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --region taipei --output-dir /tmp/sample` |
+| `overview_all_week.txt`               | 管理總覽報告 — 全區域，2026-05-18 → 2026-05-25（8 天）；兩切面版面：▶ 總體概況（存取筆數+%、整體健康判定 警告、■ 核心功能效能：雲端查詢 11/0.11s · 報告摘要 186/0.38s · 影像下載 427/0.93s；合計 624）、▶ 分區別（台北：0/3/0 NORMAL/ORPHAN/UNVERIFIED + 5/71/220 筆數；台中：6/0/0 + 6/115/207 筆數）；**無每小時橫條圖**（多日視窗） | `bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --output-dir /tmp/sample` |
+| `overview_taipei_week.txt`            | 管理總覽報告 — 僅台北，2026-05-18 → 2026-05-25；兩切面版面；分區別 台北 區塊與總體概況一致（單一區域範圍之 ROLLUP+明細對稱）；類別：雲端查詢 5/0.02s · 報告摘要 71/0.22s · 影像下載 220/1.48s；合計 296；**無每小時橫條圖**（多日視窗） | `bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --region taipei --output-dir /tmp/sample` |
+| `overview_all_2026-05-21.txt`         | 管理總覽報告 — 全區域、單日 2026-05-21；版面同週報但在總體概況及每個 ■ 區域區塊中均包含**存取紀錄橫條圖 (每小時)**；橫軸 00..23（過去日期）；基準值：h13=1、h14=4、h15=4（全局/排除測試主機）；橫條以 U+2588 全寬方塊字元渲染（最多 40 格，val>0 時至少 1 格） | `bash bin/analyze_overview.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --date 2026-05-21 --output-dir /tmp/sample` |
 
 ## IIS 分析
 
@@ -70,6 +78,7 @@
 | `access_all_week.tsv`                | TSV 平面輸出（全區域、整週），供下游 ETL / SIEM 進一步處理；確定性 ASC 排序，單一 REQUEST_ID 欄位 | `bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --format tsv --output-dir /tmp/sample` |
 | `access_all_week.csv`                | CSV 平面輸出（全區域、整週），符合 RFC-4180 條件式引號；與 TSV 相同之確定性排序 | `bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --format csv --output-dir /tmp/sample` |
 | `access_all_merged_2026-05-21.txt`   | 跨區域合併交叉比對詳細視圖（所有區域視為單一主機無關語料庫）；合併後 NORMAL 數 >= 各區域加總 | `bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --date 2026-05-21 --merge --output-dir /tmp/sample` |
+| `access_ip_counts_all_2026-05-21.tsv` | IP 歸因檔案 — 常態性第三輸出物；2026-05-21、全區域、預設 `--test-hosts exclude` 之 NORMAL+ORPHAN 客戶端 IP 計數；兩欄：`CLIENT_IP<TAB>REQUEST_COUNT`；排序：計數降冪、IP 升冪；空值 / `-` IP 歸一為哨兵值 `-`；基準值：`-\t9`（9 筆 IP 欄位為空或橫線之記錄） | `bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --date 2026-05-21 --output-dir /tmp/sample` |
 
 ## 應用程式錯誤
 
