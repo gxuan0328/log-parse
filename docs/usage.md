@@ -339,7 +339,8 @@ bash bin/analyze_access.sh --log-dir "$LOG_DIR" \
 
 The detail view shows per-record tables for each category (NORMAL,
 ORPHAN, UNVERIFIED). Each category shows only its relevant columns;
-`PATIENT_ID_AES` is always the trailing column and is never truncated.
+`PATIENT_ID_AES` is never truncated, followed by `BIRTHDAY` (decoded
+date-of-birth, `YYYYMMDD`) as the final column.
 Records within each category are sorted chronologically ascending.
 The NORMAL block footer label is `驗證筆數` (the former `驗證筆數 (有效時間差)` suffix was removed).
 
@@ -358,12 +359,12 @@ The NORMAL block footer label is `驗證筆數` (the former `驗證筆數 (有�
 
 ### Flat output (tsv / csv)
 
-Both formats emit one record per correlation result across 13 tab- or
+Both formats emit one record per correlation result across 14 tab- or
 comma-separated columns in this order:
 
 ```
 REGION  STATUS  API_TIME  APP_TIME  DELTA_SEC  VERIFY_STATUS  REQUEST_ID
-API_SERVER  APP_SERVER  HOSP_ID  PRSN_ID  CLIENT_IP  PATIENT_ID_AES
+API_SERVER  APP_SERVER  HOSP_ID  PRSN_ID  CLIENT_IP  PATIENT_ID_AES  BIRTHDAY
 ```
 
 `csv` uses RFC-4180 conditional quoting: only fields containing `"`, `,`, or
@@ -892,10 +893,16 @@ bash bin/analyze_access.sh \
 | sort -u
 ```
 
-TSV/CSV column reference (13 fields in order):
+TSV/CSV column reference (14 fields in order):
 `REGION(1)` `STATUS(2)` `API_TIME(3)` `APP_TIME(4)` `DELTA_SEC(5)` `VERIFY_STATUS(6)`
 `REQUEST_ID(7)` `API_SERVER(8)` `APP_SERVER(9)` `HOSP_ID(10)` `PRSN_ID(11)`
-`CLIENT_IP(12)` `PATIENT_ID_AES(13)`.
+`CLIENT_IP(12)` `PATIENT_ID_AES(13)` `BIRTHDAY(14)`.
+
+`BIRTHDAY(14)` is the decoded date-of-birth (`YYYYMMDD`, or `-` when absent
+or malformed) from the report-url token's JWT payload — see
+[`design.md`](design.md) §3.1.5 "Internal schema — CORRELATE_AWK output".
+Unlike the AES-encrypted `PATIENT_ID_AES`, this is plaintext PII: handle
+exported or copied detail files with the same care as `PATIENT_ID_AES`.
 
 ### 5.8 Management overview (standalone, Taipei, daily)
 

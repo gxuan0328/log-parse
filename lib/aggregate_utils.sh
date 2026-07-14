@@ -289,10 +289,11 @@ agg_iis_rows() {
 #             at analyze_access.sh:351-353 (agg_access_rows phase — the renders
 #             still use the individual counts in the current phase; these will be
 #             wired in during the access analyzer refactor phase).
-#   Args    : RESULT_SORTED — path to the sorted 12-field correlation TSV file.
+#   Args    : RESULT_SORTED — path to the sorted 13-field correlation TSV file.
 #             Schema: $1=STATUS $2=API_TIME $3=APP_TIME $4=DELTA_SEC
 #                     $5=VERIFY_STATUS $6=REQUEST_ID $7=API_SERVER $8=APP_SERVER
 #                     $9=HOSP_ID $10=PRSN_ID $11=CLIENT_IP $12=PATIENT_ID_AES
+#                     $13=BIRTHDAY (present; not read here)
 #   Output  : TAB-delimited rows on stdout:
 #               NORMAL\t<n>
 #               ORPHAN\t<n>
@@ -348,10 +349,11 @@ agg_access_rows() {
 #             gawk pass.  Predicate: STATUS == NORMAL or ORPHAN (UNVERIFIED is
 #             excluded — the APP server never saw those requests, so counting
 #             them would mis-attribute IP and inflate the hourly chart).
-#   Args    : RESULT_SORTED... — variadic paths to 12-field correlation TSV files.
+#   Args    : RESULT_SORTED... — variadic paths to 13-field correlation TSV files.
 #             Schema: $1=STATUS $2=API_TIME $3=APP_TIME $4=DELTA_SEC
 #                     $5=VERIFY_STATUS $6=REQUEST_ID $7=API_SERVER $8=APP_SERVER
 #                     $9=HOSP_ID $10=PRSN_ID $11=CLIENT_IP $12=PATIENT_ID_AES
+#                     $13=BIRTHDAY (present; not read here)
 #   Output  : TAB-delimited rows on stdout (two groups, order not guaranteed):
 #               HOUR\t<HH>\t<count>   — region-less; caller adds region tag.
 #                                        HH is the two-digit UTC+8 hour extracted

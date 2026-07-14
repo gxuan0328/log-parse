@@ -8,6 +8,7 @@
 #   - skip rows that lack the required join keys,
 #   - return 0 on a missing input file (caller's loop just sees an empty stream).
 #
+# JWT_DOB_FUNC — report-url token payload decoder (extracts dob).
 # Source this file; do not execute directly.
 
 # ---------------------------------------------------------------------------
@@ -52,6 +53,52 @@ csv_col_index() {
 # The two sides of the correlation join meet at:
 #   API.ISSUE_TOKEN (col 9)  ≡  APP.TOKEN (col 2)
 # ---------------------------------------------------------------------------
+JWT_DOB_FUNC='
+# ----------------------------------------------------------------------------
+# Purpose : Decode a report-url JWT (segment 2, base64url) -> "dob" (YYYYMMDD).
+# Input   : token -- compact JWS "<hdr>.<payload>.<sig>"; field1 of the api/app
+#           extract (col9 ISSUE_TOKEN on API side / col2 TOKEN on APP side).
+# Output  : verbatim dob string, or "-" when empty/malformed/absent.
+# Notes   : Pure-gawk base64 (6-bit accumulate) -- no base64/openssl/python
+#           (CLAUDE.md hard-no on new deps). Signature NOT verified (payload is
+#           read for reporting, never trusted for auth). MUST run under LC_ALL=C
+#           so sprintf("%c",byte) emits one exact byte. dob is captured VERBATIM
+#           ([^"]* -- fail-loud on format drift) then structurally sanitized
+#           (TAB/CR/LF stripped) so a value can never break a TSV/CSV row.
+# ----------------------------------------------------------------------------
+function jwt_dob(token,   segn, seg, payload, b64, i, c, p, val, bits, nbits, byte, decoded, m, dob) {
+    if (token == "") return "-"
+    segn = split(token, seg, ".")
+    if (segn < 2) return "-"
+    payload = seg[2]
+    if (payload == "") return "-"
+    gsub(/-/, "+", payload)                 # base64url -> base64 alphabet
+    gsub(/_/, "/", payload)
+    b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    bits = 0; nbits = 0; decoded = ""
+    for (i = 1; i <= length(payload); i++) {
+        c = substr(payload, i, 1)
+        if (c == "=") break                 # padding terminates the stream
+        p = index(b64, c)
+        if (p == 0) continue                # skip any stray non-alphabet byte
+        val = p - 1                          # 0..63
+        bits = bits * 64 + val               # shift-left 6 and OR-in the sextet
+        nbits += 6
+        if (nbits >= 8) {                    # a whole byte is available
+            nbits -= 8
+            byte = int(bits / (2 ^ nbits)) % 256
+            bits = bits % (2 ^ nbits)        # keep low nbits (bounded < 2^13)
+            decoded = decoded sprintf("%c", byte)
+        }
+    }
+    if (match(decoded, /"dob"[[:space:]]*:[[:space:]]*"([^"]*)"/, m)) {
+        dob = m[1]
+        gsub(/[\t\r\n]/, "", dob)            # structural sanitize: never break TSV/CSV
+        return (dob != "") ? dob : "-"
+    }
+    return "-"
+}
+'
 
 # extract_api_records FILE [TH_MODE] [TH_SET]
 #   Purpose : Project the API-issuance side of the join, filtered by test-host mode.

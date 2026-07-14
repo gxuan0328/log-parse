@@ -223,11 +223,11 @@ CORRELATE_AWK='
 #
 # Vars    : api_file = path to api_tsv (used for FILENAME two-file join guard).
 #
-# Output  : One TAB-delimited line per record; 12 fields after STATUS column:
+# Output  : One TAB-delimited line per record; 13 fields after STATUS column:
 #
 #   $1=STATUS  $2=API_TIME  $3=APP_TIME  $4=DELTA_SEC  $5=VERIFY_STATUS
 #   $6=REQUEST_ID  $7=API_SERVER  $8=APP_SERVER
-#   $9=HOSP_ID  $10=PRSN_ID  $11=CLIENT_IP  $12=PATIENT_ID_AES
+#   $9=HOSP_ID  $10=PRSN_ID  $11=CLIENT_IP  $12=PATIENT_ID_AES  $13=BIRTHDAY
 #
 #   NORMAL     -- correlated (API + APP seen)
 #   ORPHAN     -- APP only (no API issuance on record)
@@ -278,6 +278,7 @@ FILENAME == api_file {
     client   = coalesce($7, api_client_ip[tok])
     app_srv  = $8
     app_ts   = $9
+    dob      = jwt_dob(tok)
 
     if (tok in api_time) {
         # NORMAL -- token was issued by the same regional API
@@ -288,12 +289,12 @@ FILENAME == api_file {
                 ? sprintf("%.3f", epoch_app - epoch_api) : "N/A"
         print "NORMAL" "\t" api_ts "\t" app_ts "\t" delta "\t" verify "\t" \
               coalesce(api_req_id[tok], $2) "\t" api_server[tok] "\t" app_srv "\t" \
-              hosp "\t" prsn "\t" client "\t" patient
+              hosp "\t" prsn "\t" client "\t" patient "\t" dob
         app_used[tok] = 1
     } else {
         # ORPHAN -- APP received a token with no API issuance on record
         print "ORPHAN" "\t" "-" "\t" app_ts "\t" "-" "\t" verify "\t" \
-              $2 "\t" "-" "\t" app_srv "\t" hosp "\t" prsn "\t" client "\t" patient
+              $2 "\t" "-" "\t" app_srv "\t" hosp "\t" prsn "\t" client "\t" patient "\t" dob
     }
 }
 
@@ -303,7 +304,7 @@ END {
         if (!(tok in app_used)) {
             print "UNVERIFIED" "\t" api_time[tok] "\t" "-" "\t" "-" "\t" "-" "\t" \
                   api_req_id[tok] "\t" api_server[tok] "\t" "-" "\t" \
-                  api_hosp[tok] "\t" api_prsn[tok] "\t" api_client_ip[tok] "\t" api_patient[tok]
+                  api_hosp[tok] "\t" api_prsn[tok] "\t" api_client_ip[tok] "\t" api_patient[tok] "\t" jwt_dob(tok)
         }
     }
 }
@@ -341,8 +342,8 @@ END { n = asorti(buf, idx, "@ind_str_asc"); for (i = 1; i <= n; i++) print buf[i
 #   Errors / Notes : none; empty inputs produce empty outputs cleanly.
 _run_correlate() {
     local api_tsv="$1" app_tsv="$2" result_tsv="$3" result_sorted="$4"
-    gawk -F'\t' -v OFS='\t' -v api_file="$api_tsv" "$CORRELATE_AWK" \
-        "$api_tsv" "$app_tsv" > "$result_tsv"
+    LC_ALL=C gawk -F'\t' -v OFS='\t' -v api_file="$api_tsv" \
+        "$JWT_DOB_FUNC$CORRELATE_AWK" "$api_tsv" "$app_tsv" > "$result_tsv"
     gawk -F'\t' "$SORT_RECORDS_AWK" "$result_tsv" > "$result_sorted"
 }
 
@@ -380,7 +381,7 @@ render_csv() {
 # render_text_block REGION_LABEL RESULT_SORTED
 #   Purpose : Emit the full text-format analysis block for one correlation corpus.
 #   Args    : REGION_LABEL  -- label for the fmt_h2 section header.
-#             RESULT_SORTED -- sorted 12-field correlation output.
+#             RESULT_SORTED -- sorted 13-field correlation output.
 #   Output  : Human-readable text on stdout; progress on stderr.
 #   Returns / Side effects : none.
 #   Errors / Notes : C_GREY/C_RESET passed via -v; blanked by fmt_set_color_state
@@ -406,16 +407,16 @@ render_text_block() {
     # Schema (result_sorted):
     #   $1=STATUS  $2=API_TIME  $3=APP_TIME  $4=DELTA_SEC  $5=VERIFY_STATUS
     #   $6=REQUEST_ID  $7=API_SERVER  $8=APP_SERVER
-    #   $9=HOSP_ID  $10=PRSN_ID  $11=CLIENT_IP  $12=PATIENT_ID_AES
+    #   $9=HOSP_ID  $10=PRSN_ID  $11=CLIENT_IP  $12=PATIENT_ID_AES  $13=BIRTHDAY
 
     # ── NORMAL records ──────────────────────────────────────────────────────
     if (( n_normal > 0 )); then
         fmt_h3 "正常流程 (NORMAL) — API 簽發後由 APP 驗證"
         gawk -F'\t' -v C_GREY="$C_GREY" -v C_RESET="$C_RESET" '
             BEGIN {
-                printf "    " C_GREY "%-23s  %-23s  %-8s  %-7s  %-13s  %-15s  %-15s  %-12s  %-12s  %-16s  %s" C_RESET "\n",
+                printf "    " C_GREY "%-23s  %-23s  %-8s  %-7s  %-13s  %-15s  %-15s  %-12s  %-12s  %-16s  %-32s  %s" C_RESET "\n",
                     "API_TIME", "APP_TIME", "DELTA", "VERIFY", "REQUEST_ID",
-                    "API_SRV", "APP_SRV", "HOSP_ID", "PRSN_ID", "CLIENT_IP", "PATIENT_ID_AES"
+                    "API_SRV", "APP_SRV", "HOSP_ID", "PRSN_ID", "CLIENT_IP", "PATIENT_ID_AES", "BIRTHDAY"
             }
             $1 != "NORMAL" { next }
             {
@@ -424,8 +425,8 @@ render_text_block() {
                 hosp   = ($9  != "" && $9  != "-") ? $9  : "-"
                 prsn   = ($10 != "" && $10 != "-") ? $10 : "-"
                 client = ($11 != "" && $11 != "-") ? $11 : "-"
-                printf "    %-23s  %-23s  %-8s  %-7s  %-13s  %-15s  %-15s  %-12s  %-12s  %-16s  %s\n",
-                    $2, $3, delta_str, $5, $6, $7, $8, hosp, prsn, client, $12
+                printf "    %-23s  %-23s  %-8s  %-7s  %-13s  %-15s  %-15s  %-12s  %-12s  %-16s  %-32s  %s\n",
+                    $2, $3, delta_str, $5, $6, $7, $8, hosp, prsn, client, $12, $13
             }
         ' "$result_sorted"
 
@@ -457,17 +458,17 @@ render_text_block() {
         fmt_h3 "非正常流程 (ORPHAN) — APP 收到無對應 API 簽發的 Token"
         gawk -F'\t' -v C_GREY="$C_GREY" -v C_RESET="$C_RESET" '
             BEGIN {
-                printf "    " C_GREY "%-23s  %-7s  %-13s  %-15s  %-12s  %-12s  %-16s  %s" C_RESET "\n",
+                printf "    " C_GREY "%-23s  %-7s  %-13s  %-15s  %-12s  %-12s  %-16s  %-32s  %s" C_RESET "\n",
                     "APP_TIME", "VERIFY", "REQUEST_ID", "APP_SRV",
-                    "HOSP_ID", "PRSN_ID", "CLIENT_IP", "PATIENT_ID_AES"
+                    "HOSP_ID", "PRSN_ID", "CLIENT_IP", "PATIENT_ID_AES", "BIRTHDAY"
             }
             $1 != "ORPHAN" { next }
             {
                 hosp   = ($9  != "" && $9  != "-") ? $9  : "-"
                 prsn   = ($10 != "" && $10 != "-") ? $10 : "-"
                 client = ($11 != "" && $11 != "-") ? $11 : "-"
-                printf "    %-23s  %-7s  %-13s  %-15s  %-12s  %-12s  %-16s  %s\n",
-                    $3, $5, $6, $8, hosp, prsn, client, $12
+                printf "    %-23s  %-7s  %-13s  %-15s  %-12s  %-12s  %-16s  %-32s  %s\n",
+                    $3, $5, $6, $8, hosp, prsn, client, $12, $13
             }
         ' "$result_sorted"
 
@@ -491,17 +492,17 @@ render_text_block() {
         fmt_h3 "未被驗證 (UNVERIFIED) — API 簽發但 APP 從未收到驗證請求"
         gawk -F'\t' -v C_GREY="$C_GREY" -v C_RESET="$C_RESET" '
             BEGIN {
-                printf "    " C_GREY "%-23s  %-13s  %-15s  %-12s  %-12s  %-16s  %s" C_RESET "\n",
+                printf "    " C_GREY "%-23s  %-13s  %-15s  %-12s  %-12s  %-16s  %-32s  %s" C_RESET "\n",
                     "API_TIME", "REQUEST_ID", "API_SRV",
-                    "HOSP_ID", "PRSN_ID", "CLIENT_IP", "PATIENT_ID_AES"
+                    "HOSP_ID", "PRSN_ID", "CLIENT_IP", "PATIENT_ID_AES", "BIRTHDAY"
             }
             $1 != "UNVERIFIED" { next }
             {
                 hosp   = ($9  != "" && $9  != "-") ? $9  : "-"
                 prsn   = ($10 != "" && $10 != "-") ? $10 : "-"
                 client = ($11 != "" && $11 != "-") ? $11 : "-"
-                printf "    %-23s  %-13s  %-15s  %-12s  %-12s  %-16s  %s\n",
-                    $2, $6, $7, hosp, prsn, client, $12
+                printf "    %-23s  %-13s  %-15s  %-12s  %-12s  %-16s  %-32s  %s\n",
+                    $2, $6, $7, hosp, prsn, client, $12, $13
             }
         ' "$result_sorted"
     fi
@@ -517,7 +518,7 @@ render_text_block() {
 #             ${WORK_TMPDIR}/access_stats.tsv. Called once per corpus after
 #             correlation + sort pre-pass complete. No second correlation.
 #   Args    : REGION        -- region id (or "merged") for the stats prefix.
-#             RESULT_SORTED -- path to the sorted 12-field correlation TSV.
+#             RESULT_SORTED -- path to the sorted 13-field correlation TSV.
 #   Output  : nothing on stdout; appends to ${WORK_TMPDIR}/access_stats.tsv.
 #   Returns / Side effects : appends to access_stats.tsv.
 #   Errors / Notes : agg_access_rows handles empty RESULT_SORTED gracefully.
@@ -717,13 +718,13 @@ access_render_detail() {
     local i
     case "$OPT_FORMAT" in
         tsv)
-            printf 'REGION\tSTATUS\tAPI_TIME\tAPP_TIME\tDELTA_SEC\tVERIFY_STATUS\tREQUEST_ID\tAPI_SERVER\tAPP_SERVER\tHOSP_ID\tPRSN_ID\tCLIENT_IP\tPATIENT_ID_AES\n'
+            printf 'REGION\tSTATUS\tAPI_TIME\tAPP_TIME\tDELTA_SEC\tVERIFY_STATUS\tREQUEST_ID\tAPI_SERVER\tAPP_SERVER\tHOSP_ID\tPRSN_ID\tCLIENT_IP\tPATIENT_ID_AES\tBIRTHDAY\n'
             for i in "${!_ACC_SORTED[@]}"; do
                 render_tsv "${_ACC_RNAMES[$i]}" "${_ACC_SORTED[$i]}"
             done
             ;;
         csv)
-            printf 'REGION,STATUS,API_TIME,APP_TIME,DELTA_SEC,VERIFY_STATUS,REQUEST_ID,API_SERVER,APP_SERVER,HOSP_ID,PRSN_ID,CLIENT_IP,PATIENT_ID_AES\n'
+            printf 'REGION,STATUS,API_TIME,APP_TIME,DELTA_SEC,VERIFY_STATUS,REQUEST_ID,API_SERVER,APP_SERVER,HOSP_ID,PRSN_ID,CLIENT_IP,PATIENT_ID_AES,BIRTHDAY\n'
             for i in "${!_ACC_SORTED[@]}"; do
                 render_csv "${_ACC_RNAMES[$i]}" "${_ACC_SORTED[$i]}"
             done

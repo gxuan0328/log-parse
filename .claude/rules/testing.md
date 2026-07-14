@@ -9,7 +9,7 @@ Loaded when editing `tests/run_tests.sh` or any new test file.
 
 ## Single source of truth
 
-`tests/run_tests.sh` is the only regression suite. Currently 267 tests
+`tests/run_tests.sh` is the only regression suite. Currently 275 tests
 across eleven sections (A access · B iis · C errors · D log_report ·
 E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
 J test-host/health · K timezone+core-function).
@@ -29,7 +29,7 @@ Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
 
 `<SectionLetter><2-digit-id>`, sequential within a section:
 
-- A01–A44  `analyze_access` (A42: IP file exists + counts; A43: empty corpus header-only; A44: stdout isolation + emit-stats no-create)
+- A01–A52  `analyze_access` (A42: IP file exists + counts; A43: empty corpus header-only; A44: stdout isolation + emit-stats no-create; A45–A52: BIRTHDAY (JWT dob) trailing column — header/value positive, decoder sentinel + positive/pretty-space/dobby-trap boundary, field-index + summary/ip_counts non-breaking regression)
 - B01–B40  `analyze_iis` (B39: Top-端點 avg; B40: rank-fix)
 - C01–C25  `analyze_errors`
 - D01–D35  `log_report`

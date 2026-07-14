@@ -14,10 +14,10 @@
 
 
     ■ 非正常流程 (ORPHAN) — APP 收到無對應 API 簽發的 Token
-    APP_TIME                 VERIFY   REQUEST_ID     APP_SRV          HOSP_ID       PRSN_ID       CLIENT_IP         PATIENT_ID_AES
-    2026-05-21 15:16:35.342  OK       40000336-0003-ff00-b63f-84710c7967bb  10.21.3.36       -             -             -                 2EDEBACB75D9FA547F2018E13E695AF1
-    2026-05-21 15:19:53.610  OK       400001ce-0007-fd00-b63f-84710c7967bb  10.21.3.35       -             -             -                 2EDEBACB75D9FA547F2018E13E695AF1
-    2026-05-21 15:28:17.947  OK       40000092-0005-fe00-b63f-84710c7967bb  10.21.3.36       -             -             -                 2EDEBACB75D9FA547F2018E13E695AF1
+    APP_TIME                 VERIFY   REQUEST_ID     APP_SRV          HOSP_ID       PRSN_ID       CLIENT_IP         PATIENT_ID_AES                    BIRTHDAY
+    2026-05-21 15:16:35.342  OK       40000336-0003-ff00-b63f-84710c7967bb  10.21.3.36       -             -             -                 2EDEBACB75D9FA547F2018E13E695AF1  19560711
+    2026-05-21 15:19:53.610  OK       400001ce-0007-fd00-b63f-84710c7967bb  10.21.3.35       -             -             -                 2EDEBACB75D9FA547F2018E13E695AF1  19560711
+    2026-05-21 15:28:17.947  OK       40000092-0005-fe00-b63f-84710c7967bb  10.21.3.36       -             -             -                 2EDEBACB75D9FA547F2018E13E695AF1  19560711
 
     ORPHAN 驗證結果                         3 (成功) / 0 (失敗)
     >> [WARN] 存在可能來自其他區域或重播的有效 Token

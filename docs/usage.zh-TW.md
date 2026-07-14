@@ -328,7 +328,8 @@ bash bin/analyze_access.sh --log-dir "$LOG_DIR" \
 ### Detail 視圖（text）
 
 detail 視圖依類別（NORMAL、ORPHAN、UNVERIFIED）分別顯示逐筆紀錄表格。
-各類別僅顯示其相關欄位；`PATIENT_ID_AES` 永遠為最後一欄且從不截斷。
+各類別僅顯示其相關欄位；`PATIENT_ID_AES` 從不截斷，其後接續
+`BIRTHDAY`（解碼後之出生日期，`YYYYMMDD`）作為最後一欄。
 各類別內紀錄依主要時間鍵升冪排序。
 NORMAL 區塊底部標籤為 `驗證筆數`（原 `驗證筆數 (有效時間差)` 的括號後綴已移除）。
 
@@ -347,11 +348,11 @@ NORMAL 區塊底部標籤為 `驗證筆數`（原 `驗證筆數 (有效時間差
 
 ### 平面輸出（tsv / csv）
 
-兩種格式均以 13 個欄位輸出每筆關聯結果，欄位順序如下：
+兩種格式均以 14 個欄位輸出每筆關聯結果，欄位順序如下：
 
 ```
 REGION  STATUS  API_TIME  APP_TIME  DELTA_SEC  VERIFY_STATUS  REQUEST_ID
-API_SERVER  APP_SERVER  HOSP_ID  PRSN_ID  CLIENT_IP  PATIENT_ID_AES
+API_SERVER  APP_SERVER  HOSP_ID  PRSN_ID  CLIENT_IP  PATIENT_ID_AES  BIRTHDAY
 ```
 
 `csv` 使用 RFC-4180 條件式引號：僅含 `"`、`,` 或換行之欄位才加引號；
@@ -856,10 +857,16 @@ bash bin/analyze_access.sh \
 | sort -u
 ```
 
-TSV/CSV 欄位參考（共 13 欄，依序）：
+TSV/CSV 欄位參考（共 14 欄，依序）：
 `REGION(1)` `STATUS(2)` `API_TIME(3)` `APP_TIME(4)` `DELTA_SEC(5)` `VERIFY_STATUS(6)`
 `REQUEST_ID(7)` `API_SERVER(8)` `APP_SERVER(9)` `HOSP_ID(10)` `PRSN_ID(11)`
-`CLIENT_IP(12)` `PATIENT_ID_AES(13)`。
+`CLIENT_IP(12)` `PATIENT_ID_AES(13)` `BIRTHDAY(14)`。
+
+`BIRTHDAY(14)` 為報告連結 Token 之 JWT payload 解碼所得之出生日期
+（`YYYYMMDD`；缺失或格式異常時為 `-`）——詳見
+[`design.zh-TW.md`](design.zh-TW.md) §3.1.5「內部 schema — CORRELATE_AWK
+輸出」。與 AES 加密之 `PATIENT_ID_AES` 不同，此欄位為明文 PII：匯出或
+複製 detail 檔案時，請以與 `PATIENT_ID_AES` 相同之標準謹慎處理。
 
 ### 5.8 獨立管理總覽（台北，單日）
 

@@ -5,7 +5,7 @@
 # and error handling. Baselines are derived from the examples/sample-logs/LUNG-CANCER-REPORT-LOG
 # sample data included in the project (dates 2026-05-18 ~ 2026-05-25).
 #
-# Total: 267 tests across eleven sections (A access · B iis · C errors · D log_report ·
+# Total: 275 tests across eleven sections (A access · B iis · C errors · D log_report ·
 #        E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
 #        J test-host/health · K timezone+core-function).
 # Note: Sections J and K exist beyond I; K13/K14 are intentionally vacant (gap preserved).
@@ -168,6 +168,10 @@ done
 #   taipei  range 21~25: Total=3   NORMAL=0  ORPHAN=3
 #   taichung 2026-05-21: Total=6   NORMAL=6  ORPHAN=0  UNVERIFIED=0
 #   taichung 2026-05-25: (無 CSV — 乾淨空輸出)
+#   BIRTHDAY (JWT dob, field 14 of tsv/csv, trailing column of text tables):
+#     taichung NORMAL  PATIENT_ID_AES=B67EDA342C22CD73F88571E0E54CFE81 -> 19700404
+#     taichung NORMAL  PATIENT_ID_AES=EBD71A864A0F7E6A355827754B89259E -> 19410712
+#     taipei   ORPHAN  PATIENT_ID_AES=2EDEBACB75D9FA547F2018E13E695AF1 -> 19560711
 # ─────────────────────────────────────────────────────────────────────────────
 
 section "A  analyze_access.sh — 存取日誌交叉比對"
@@ -1196,6 +1200,114 @@ if [[ "$_a44_no_rc" -eq 0 && "$_a44_emit_cnt" -eq 0 ]]; then
     _pass "A44  stdout 不含 REQUEST_COUNT; --emit-stats 無持久化檔案"
 else
     _fail "A44  stdout 不含 REQUEST_COUNT; --emit-stats 無持久化檔案 [rc_in_stdout=$_a44_no_rc emit_files=$_a44_emit_cnt]"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section A (continued) — A45–A52  BIRTHDAY (JWT dob) 附加欄位
+# Baselines: --date 2026-05-21 --region all (default --test-hosts exclude, 9 records):
+#   taichung NORMAL PATIENT_ID_AES B67EDA...->19700404 (x3), EBD71A...->19410712 (x3)
+#   taipei   ORPHAN PATIENT_ID_AES 2EDEBACB...->19560711 (x3)
+#   BIRTHDAY is the trailing column: tsv/csv field 14 ($13 after REGION strip);
+#   text tables append it after PATIENT_ID_AES (now fixed %-32s for a stable start col).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# shellcheck source=/dev/null
+source "${PROJECT_DIR}/lib/csv_utils.sh"
+
+# A45: --format tsv header 附加 BIRTHDAY (NF=14, $14=BIRTHDAY)
+out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --format tsv 2>/dev/null)
+_a45_hdr=$(printf '%s\n' "$out" | head -1)
+_a45_nf=$(printf '%s\n' "$_a45_hdr" | gawk -F'\t' '{print NF}')
+_a45_f14=$(printf '%s\n' "$_a45_hdr" | gawk -F'\t' '{print $14}')
+if [[ "$_a45_nf" == "14" && "$_a45_f14" == "BIRTHDAY" ]]; then
+    _pass "A45  access --format tsv header NF=14 且 \$14=BIRTHDAY"
+else
+    _fail "A45  access --format tsv header 不符 [nf=$_a45_nf f14=$_a45_f14]"
+fi
+
+# A46: tsv NORMAL BIRTHDAY 值 — taichung B67EDA...=19700404, EBD71A...=19410712
+out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taichung --format tsv 2>/dev/null)
+_a46_b67=$(printf '%s\n' "$out" | gawk -F'\t' '$13=="B67EDA342C22CD73F88571E0E54CFE81"{print $14; exit}')
+_a46_ebd=$(printf '%s\n' "$out" | gawk -F'\t' '$13=="EBD71A864A0F7E6A355827754B89259E"{print $14; exit}')
+if [[ "$_a46_b67" == "19700404" && "$_a46_ebd" == "19410712" ]]; then
+    _pass "A46  access taichung NORMAL BIRTHDAY: B67EDA...=19700404, EBD71A...=19410712"
+else
+    _fail "A46  access taichung NORMAL BIRTHDAY 不符 [B67EDA=$_a46_b67 EBD71A=$_a46_ebd]"
+fi
+
+# A47: tsv ORPHAN BIRTHDAY 值 — taipei 2EDEBACB...=19560711
+out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region taipei --format tsv 2>/dev/null)
+_a47_2ede=$(printf '%s\n' "$out" | gawk -F'\t' '$13=="2EDEBACB75D9FA547F2018E13E695AF1"{print $14; exit}')
+_eq A47 "access taipei ORPHAN BIRTHDAY: 2EDEBACB...=19560711" "$_a47_2ede" "19560711"
+
+# A48: text detail (all regions) 含 BIRTHDAY 標頭 + NORMAL dob 19410712 + ORPHAN dob 19560711
+out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null)
+if printf '%s\n' "$out" | grep -qF "BIRTHDAY" && \
+   printf '%s\n' "$out" | grep -qF "19410712" && \
+   printf '%s\n' "$out" | grep -qF "19560711"; then
+    _pass "A48  access text detail 含 BIRTHDAY 標頭 + dob 19410712(NORMAL) + 19560711(ORPHAN)"
+else
+    _fail "A48  access text detail 缺少 BIRTHDAY 標頭或 dob 值"
+fi
+
+# A49: jwt_dob 邊界 — 空字串/非JWT/無dob claim/dob空值 均回傳 "-" 哨兵
+# 修正版 harness：$JWT_DOB_FUNC 與 BEGIN 程式以「相鄰字串」串接成單一 gawk 參數
+# (gawk "$JWT_DOB_FUNC" 'BEGIN{...}' 會把 BEGIN{...} 誤判為檔名 — 絕不可用此寫法)。
+_a49_out=$(LC_ALL=C gawk "$JWT_DOB_FUNC"'BEGIN {
+    n = 0
+    if (jwt_dob("") != "-") n++
+    if (jwt_dob("notajwt") != "-") n++
+    if (jwt_dob("h.eyJmb28iOiJiYXIifQ.s") != "-") n++
+    if (jwt_dob("h.eyJkb2IiOiIifQ.s") != "-") n++
+    print n
+}' </dev/null)
+_eq A49 "jwt_dob 邊界: 空字串/非JWT/無dob claim/dob空值 均回傳 - (0 個例外)" "$_a49_out" "0"
+
+# A50: jwt_dob 正向 — 真實長 token (6-bit overflow 縮減路徑) + pretty-space + dobby-trap
+_a50_apicsv="${LOG_DIR}/10.1.73.37/app/2026-05-21/app-access-2026-05-21.csv"
+_a50_tok=$(gawk -F',' 'NR==2{print $9}' "$_a50_apicsv")
+_a50_real=$(LC_ALL=C gawk -v TOK="$_a50_tok" "$JWT_DOB_FUNC"'BEGIN{ print jwt_dob(TOK) }' </dev/null)
+_a50_pretty=$(LC_ALL=C gawk "$JWT_DOB_FUNC"'BEGIN{ print jwt_dob("h.eyJkb2IiIDogIjE5OTkwOTA5In0.s") }' </dev/null)
+_a50_dobby=$(LC_ALL=C gawk "$JWT_DOB_FUNC"'BEGIN{ print jwt_dob("h.eyJkb2JieSI6IngiLCJkb2IiOiIyMDAwMTIzMSJ9.s") }' </dev/null)
+if [[ "$_a50_real" == "19700404" && "$_a50_pretty" == "19990909" && "$_a50_dobby" == "20001231" ]]; then
+    _pass "A50  jwt_dob 正向: 真實token(req 4000031c)=19700404, pretty-space=19990909, dobby-trap=20001231"
+else
+    _fail "A50  jwt_dob 正向不符 [real=$_a50_real pretty=$_a50_pretty dobby=$_a50_dobby]"
+fi
+
+# A51: 欄位索引不變 (append 而非 insert) — header $2/$7/$13 位置不變 + 全部列 NF=14
+out=$(bash "$ACCESS" --log-dir "$LOG_DIR" --from 2026-05-18 --to 2026-05-25 --format tsv 2>/dev/null)
+_a51_hdr=$(printf '%s\n' "$out" | head -1)
+_a51_h2=$(printf '%s\n' "$_a51_hdr" | gawk -F'\t' '{print $2}')
+_a51_h7=$(printf '%s\n' "$_a51_hdr" | gawk -F'\t' '{print $7}')
+_a51_h13=$(printf '%s\n' "$_a51_hdr" | gawk -F'\t' '{print $13}')
+_a51_hnf=$(printf '%s\n' "$_a51_hdr" | gawk -F'\t' '{print NF}')
+_a51_baddata=$(printf '%s\n' "$out" | tail -n +2 | gawk -F'\t' 'NF!=14{c++} END{print c+0}')
+if [[ "$_a51_h2" == "STATUS" && "$_a51_h7" == "REQUEST_ID" && "$_a51_h13" == "PATIENT_ID_AES" \
+      && "$_a51_hnf" == "14" && "$_a51_baddata" == "0" ]]; then
+    _pass "A51  欄位索引不變: \$2=STATUS \$7=REQUEST_ID \$13=PATIENT_ID_AES; header+全部資料列 NF=14"
+else
+    _fail "A51  欄位索引/NF 不符 [h2=$_a51_h2 h7=$_a51_h7 h13=$_a51_h13 hnf=$_a51_hnf baddata_rows=$_a51_baddata]"
+fi
+
+# A52: csv header/NF=14 一致 + summary 不含 BIRTHDAY (NORMAL=6) + access_ip_counts.tsv 不變 ('-'<TAB>9)
+_a52_csv=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv 2>/dev/null)
+_a52_csvhdr=$(printf '%s\n' "$_a52_csv" | head -1)
+_a52_csv_ok=0
+if [[ "$_a52_csvhdr" == *",PATIENT_ID_AES,BIRTHDAY" ]]; then _a52_csv_ok=1; fi
+_a52_csv_baddata=$(printf '%s\n' "$_a52_csv" | tail -n +2 | gawk -F',' 'NF!=14{c++} END{print c+0}')
+_a52_sum=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --view summary 2>/dev/null)
+_a52_sum_normal=$(printf '%s\n' "$_a52_sum" | grep "NORMAL  (正常流程)" | awk '{print $(NF-1)}')
+TMPD_A52=$(mktemp -d /tmp/lp_a52.XXXXXX)
+bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_A52" >/dev/null 2>&1
+_a52_ipfile=$(ls "$TMPD_A52"/*/access_ip_counts.tsv 2>/dev/null | head -1)
+_a52_ipline=$(gawk -F'\t' '$1=="-"{print $1"\t"$2; exit}' "$_a52_ipfile" 2>/dev/null)
+rm -rf "$TMPD_A52"
+if [[ "$_a52_csv_ok" == "1" && "$_a52_csv_baddata" == "0" && "$_a52_sum_normal" == "6" \
+      && "$_a52_ipline" == $'-\t9' ]] && ! printf '%s\n' "$_a52_sum" | grep -qF "BIRTHDAY"; then
+    _pass "A52  csv header/NF=14 一致; summary 不含 BIRTHDAY 且 NORMAL=6; access_ip_counts.tsv 仍為 '-<TAB>9'"
+else
+    _fail "A52  regression 不符 [csv_ok=$_a52_csv_ok csv_bad=$_a52_csv_baddata sum_normal=$_a52_sum_normal ipline=$_a52_ipline]"
 fi
 
 # C22: errors 重啟表 (含 UNMATCHED CJK 列) 第三欄對齊

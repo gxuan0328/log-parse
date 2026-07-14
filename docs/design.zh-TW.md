@@ -493,6 +493,11 @@ CSV 欄位（含表頭）：
 | 9    | `ISSUE_TOKEN`   | API 簽發之 URL Token（APP 端為空）                  |
 | 10   | `REQUEST_TIME`  | `YYYY-MM-DD HH:MM:SS.mmm`                           |
 
+`TOKEN` / `ISSUE_TOKEN` 為 API 伺服器針對病患報告連結（report-url）核發之
+compact JWS（JWT）：`<header>.<payload>.<signature>`，其 base64url 編碼之
+payload（第 2 段）攜帶 `pid`、`dob`、`typ`、`hospId`、`prsnId`、`clientIp`
+等 claim。§3.1.5 說明如何將 `dob` claim 解碼為 `BIRTHDAY` 輸出欄位。
+
 #### 3.1.3 比對邏輯
 
 **聯結鍵**：`API.ISSUE_TOKEN (col 9)` ≡ `APP.TOKEN (col 2)`。
@@ -533,9 +538,9 @@ unverified 殘留紀錄。
 
 #### 3.1.5 內部 schema — CORRELATE_AWK 輸出
 
-雙檔 gawk 聯結每筆紀錄產生 12 個 TAB 分隔欄位。欄位順序遵循「時間 →
+雙檔 gawk 聯結每筆紀錄產生 13 個 TAB 分隔欄位。欄位順序遵循「時間 →
 結果 → 身分 → 伺服器 → 病患」，將時間排序鍵置於前段，可變寬度之
-`PATIENT_ID_AES` 置於末段。
+`PATIENT_ID_AES` 與 `BIRTHDAY` 置於末段。
 
 | # | 欄位 | NORMAL | ORPHAN | UNVERIFIED |
 |---|------|--------|--------|------------|
@@ -551,17 +556,49 @@ unverified 殘留紀錄。
 | $10 | `PRSN_ID` | coalesced | coalesced | `api_prsn` |
 | $11 | `CLIENT_IP` | coalesced | coalesced | `api_client_ip` |
 | $12 | `PATIENT_ID_AES` | coalesced（完整） | coalesced（完整） | `api_patient`（完整） |
+| $13 | `BIRTHDAY` | `jwt_dob(tok)` | `jwt_dob(tok)` | `jwt_dob(tok)` |
 
 `REQUEST_ID` 合併原先之 `API_REQUEST_ID` 與 `APP_REQUEST_ID`；合併規則為
 「優先取 API id，回退取 APP id」。三種類別均包含 `PRSN_ID` 與 `CLIENT_IP`。
-`PATIENT_ID_AES` 完整輸出，先前之 `substr(…, 1, 16)"..."` 截斷已移除。`-`
-表示該類別中不存在之欄位。
+`PATIENT_ID_AES` 完整輸出，先前之 `substr(…, 1, 16)"..."` 截斷已移除。
+`BIRTHDAY` 以 VERBATIM 方式輸出 8 位數 `YYYYMMDD` 字串，缺失時為 `-`
+哨兵值——詳見下方說明。`-` 表示該類別中不存在之欄位。
+
+**BIRTHDAY 解碼 — report-url JWT payload。** `$13` 為解碼所得，並非讀取
+自 CSV 欄位。`tok`——比對聯結鍵（API `ISSUE_TOKEN` col 9 / APP `TOKEN`
+col 2，§3.1.2）——為 compact JWS `<header>.<payload>.<signature>`。
+`jwt_dob(tok)`（一個可前置串接之 gawk 函式字串常數 `JWT_DOB_FUNC`，定義於
+`lib/csv_utils.sh`，與 `common.sh` 之 `TH_FILTER_FUNC` 相同模式）以純
+gawk 6-bit 累加器對第 2 段進行 base64url 解碼，並以正規表示式擷取 `"dob"`
+claim——不呼叫 `base64` / `openssl` / `python` 子行程，符合本工具零新增
+執行期依賴之原則。`_run_correlate` 在 `LC_ALL=C` 之下執行整個
+`CORRELATE_AWK`（前置串接 `JWT_DOB_FUNC`）步驟，使 `sprintf("%c", byte)`
+無論呼叫端 shell 之 locale 為何，皆精確輸出一個位元組——與 `FMT_AWK_WIDTH`
+子區塊及 `access_render_summary` 已採用之 `LC_ALL=C` 慣例相同。JWT
+**簽章不驗證**：payload 僅供報表讀取，絕不作為驗證或授權之依據。
+
+`dob` 以**逐字（verbatim）**方式擷取（`[^"]*`——無 `/^[0-9]{8}$/` 格式
+關卡），僅進行*結構性*淨化：移除 `TAB` / `CR` / `LF`，確保該值永遠不會
+拆散 TSV/CSV 資料列。隨附範例資料集中每個 token 均解碼為 8 位數
+`YYYYMMDD` 字串；若上游 token 未來攜帶不符格式之 `dob`，逐字輸出會讓此
+偏移於 `BIRTHDAY` 欄位中可見浮現，而非靜默地摺疊為 `-` 哨兵值（對應
+CLAUDE.md 快速失敗／禁止靜默抑制之原則）。當 token 為空字串、dot-segment
+少於兩段、payload 段為空、或解碼後 payload 不含 `dob` claim（或其值為空）
+時，`jwt_dob` 回傳 `-` 哨兵值——與其他欄位缺失時使用之哨兵值相同。
+
+**PII 注意事項。** 與 AES 加密之 `PATIENT_ID_AES` 不同，`BIRTHDAY` 為明文
+出生日期——屬真正的個人識別資訊（PII）。`analyze_access.sh` 為內部、經
+授權之唯讀診斷工具；持久化之 `access_detail.*` 檔案繼承
+`<base>/<RUN_TS>/` 之檔案系統權限，應以與 `PATIENT_ID_AES` 相同之謹慎
+程度處理。`BIRTHDAY` 未套用任何額外加密或遮蔽。
 
 #### 3.1.6 決定性排序前置步驟
 
 CORRELATE_AWK 執行完畢後，由單一共用 gawk 步驟（`sort_records`）將全部
-12 欄紀錄排序為 `result_sorted`，再由各渲染器讀取。此步驟確保 text、tsv、
-csv 三種格式共享同一組位元組穩定（byte-stable）的輸出順序。
+13 欄紀錄排序為 `result_sorted`，再由各渲染器讀取。此步驟確保 text、tsv、
+csv 三種格式共享同一組位元組穩定（byte-stable）的輸出順序。`BIRTHDAY`
+（$13）不在下方複合排序鍵範圍內，故其新增不影響排序結果——已驗證新輸出
+去除末端欄位後，與新增前之 12 欄排序結果逐位元組相同。
 
 **複合排序鍵（四層）：**
 
@@ -592,40 +629,49 @@ csv 三種格式共享同一組位元組穩定（byte-stable）的輸出順序�
 #### 3.1.8 文字輸出 — 各類別欄位（detail 視圖）
 
 每個類別僅顯示其實際存在之欄位；對該類別不存在之欄位一律省略。所有類
-別均包含 `PRSN_ID`、`CLIENT_IP`，以及完整未截斷之 `PATIENT_ID_AES` 作為
-末端可變寬度欄位。每個類別印出一列灰色表頭。紀錄依 §3.1.6 之決定性升冪
-順序排列。
+別均包含 `PRSN_ID`、`CLIENT_IP`、固定寬度 `%-32s` 欄位之完整未截斷
+`PATIENT_ID_AES`，以及作為末端可變寬度欄位之 `BIRTHDAY`。每個類別印出
+一列灰色表頭。紀錄依 §3.1.6 之決定性升冪順序排列。
 
 共用欄位寬度：`TIME=23 · SERVER=15 · DELTA=8 · VERIFY=7 ·
-REQID=13 · HOSP=12 · PRSN=12 · CLIENT=16`。
+REQID=13 · HOSP=12 · PRSN=12 · CLIENT=16 · PATIENT=32`。
 
 **NORMAL** — 以雙時間欄開頭，含時間差與驗證狀態：
 `API_TIME, APP_TIME, DELTA, VERIFY, REQUEST_ID, API_SRV, APP_SRV, HOSP_ID,
-PRSN_ID, CLIENT_IP, PATIENT_ID_AES`。
+PRSN_ID, CLIENT_IP, PATIENT_ID_AES, BIRTHDAY`。
 DELTA 格式為 `%.1fs`（夾鉗 ≥ 0），不存在時顯示 `N/A`。後接時間差統計：
 有效筆數、平均、最短、最長。
 
 **ORPHAN** — 以 `APP_TIME` 開頭（無 `API_TIME`、`API_SERVER`、`DELTA`）：
 `APP_TIME, VERIFY, REQUEST_ID, APP_SRV, HOSP_ID, PRSN_ID, CLIENT_IP,
-PATIENT_ID_AES`。
+PATIENT_ID_AES, BIRTHDAY`。
 後接驗證結果摘要；若任一 ORPHAN 之 `VERIFY=OK`，加附警示訊息。
 
 **UNVERIFIED** — 以 `API_TIME` 開頭（無 `APP_TIME`、`APP_SERVER`、`DELTA`、
 `VERIFY`）：
-`API_TIME, REQUEST_ID, API_SRV, HOSP_ID, PRSN_ID, CLIENT_IP, PATIENT_ID_AES`。
+`API_TIME, REQUEST_ID, API_SRV, HOSP_ID, PRSN_ID, CLIENT_IP, PATIENT_ID_AES,
+BIRTHDAY`。
 
-`PATIENT_ID_AES` 欄位永遠在末端，於窄終端可能折行。不套用任何截斷。
+`PATIENT_ID_AES` 固定佔用 `%-32s` 欄位，`BIRTHDAY` 接續其後成為末端欄位；
+資料列自 `PATIENT_ID_AES` 起維持內部一致之欄位起點，與 12 欄輸出時期已
+存在之 `REQUEST_ID` 後方水平位移相同（36 字元 `REQUEST_ID` UUID 會溢出
+其 `%-13s` 欄位，故任一類別之表頭與資料列本就不會垂直對齊——此為既有偏移，
+與 `BIRTHDAY` 之新增無關且未受其影響）。`BIRTHDAY` 現為末端欄位，於窄
+終端可能折行。兩欄皆不套用任何截斷。
 
 #### 3.1.9 機器可讀輸出 — `tsv` 與 `csv`（detail 視圖）
 
 兩種格式均為 `result_sorted` 之平坦輸出（與 text 共享 §3.1.6 之決定性
 順序）。每列在最前方加上 `REGION` 欄（區域名稱，`--merge` 時值為
-`merged`）。13 欄 schema：
+`merged`）。14 欄 schema：
 
 ```
 REGION  STATUS  API_TIME  APP_TIME  DELTA_SEC  VERIFY_STATUS  REQUEST_ID
-API_SERVER  APP_SERVER  HOSP_ID  PRSN_ID  CLIENT_IP  PATIENT_ID_AES
+API_SERVER  APP_SERVER  HOSP_ID  PRSN_ID  CLIENT_IP  PATIENT_ID_AES  BIRTHDAY
 ```
+
+`PATIENT_ID_AES` 仍為第 13 欄；`BIRTHDAY` 為新增之第 14 欄——讀取固定
+第 1‥13 欄之外部解析器不受此次新增影響。
 
 - **`--format tsv`** — TAB 分隔，不加引號。
 - **`--format csv`** — 逗號分隔，RFC-4180 條件式引號（透過

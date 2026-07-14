@@ -51,6 +51,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   band boundaries): `trunc(NORMAL/TOTAL*100)` >=90 → 正常 — 系統整體運作健康;
   >=70 → 注意 — 存在異常存取，建議持續監控; <70 → 警告 — 存取異常比例偏高，
   建議立即調查; TOTAL=0 → 無資料 — 本期間無存取關聯記錄.
+- `analyze_access` — `BIRTHDAY` appended as the new last detail column
+  (text/tsv/csv), decoded from the report-url JWT `dob` claim via a new
+  pure-gawk base64url decoder (`JWT_DOB_FUNC`, `lib/csv_utils.sh`);
+  `_run_correlate`'s `CORRELATE_AWK` pass now runs under `LC_ALL=C` so
+  `sprintf("%c", byte)` decodes byte-exact regardless of the invoking shell's
+  locale. `BIRTHDAY` is emitted VERBATIM as `YYYYMMDD` with a `-` sentinel for
+  an absent/empty/malformed token (fail-loud: never silently coerced — see
+  `docs/design.md` §3.1.5). Additive last column — `PATIENT_ID_AES` stays
+  field 13, `BIRTHDAY` is the new field 14 — non-breaking (MINOR). The JWT
+  signature is **not** verified (payload read for reporting only, never
+  trusted for auth). PII note: `BIRTHDAY` is plaintext date-of-birth, unlike
+  the AES-encrypted `PATIENT_ID_AES`; `analyze_access.sh` remains an
+  internal, authorized, read-only tool.
+  Tests 267 → 275 (+8: A45–A52).
 
 ### Changed (breaking)
 - `lib/output_utils.sh` + all analyzers — persisted file PATH shape changed:
