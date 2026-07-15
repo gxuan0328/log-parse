@@ -13,6 +13,10 @@ Makefile text eol=lf
 examples/sample-logs/** -text
 examples/sample-outputs/** -text
 
+# report-export baseline fixtures are byte-exact: source-log.csv keeps its
+# CRLF (the verified input contract) and the .xlsx template is binary.
+report-export/template/** -text
+
 # Documentation
 *.md       text eol=lf
 *.zh-TW.md text eol=lf
