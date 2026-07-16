@@ -1087,7 +1087,7 @@ fixtures**（expected records.csv、交付值快照）入庫作回歸基準（�
 **docker/example fixtures**：`docker/example/state/records.csv`
 （seed，位元組同 `expected_records_e2e1.csv`）+
 `docker/example/input/week-2026-07-13.csv`（this-week 14 欄 CRLF 輸
-入）為 E2E-7 與 [`usage.md`](usage.md) 手動可重複示範共用的固定
+入）為 E2E-7 與 [`usage.md`](usage.md)「開箱即用快速驗證」手動示範共用的固定
 fixtures；byte-exact 由 repo-root `.gitattributes` 的
 `report-export/docker/example/** -text` 規則保證（this-week 輸入保
 留 CRLF、seed state 保留 LF，不受 repo 預設 `* text=auto eol=lf` 正

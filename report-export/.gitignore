@@ -14,3 +14,13 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# Quickstart demo runtime scratch (docs/usage.md「開箱即用快速驗證」,
+# docker/example/README.md). The committed docker/example/{input,state}
+# fixtures are the pristine SOURCE; the quickstart copies the seed into
+# docker/example/run/state and writes the deliverable to
+# docker/example/run/output, so a demo run never mutates the committed
+# fixtures nor drops output/.lock/runs.jsonl into the committed tree
+# (design.md §4.7.7 pristine-fixture guarantee). This is the sole in-repo
+# runtime location and is never committed.
+docker/example/run/

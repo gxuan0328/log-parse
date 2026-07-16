@@ -87,9 +87,31 @@ docs/usage.md「HOST 權限前置條件」）；`--network none`/`--read-only`/
 `TZ=Asia/Taipei`），安全敏感站點可自行加回，詳見
 [`docs/usage.md`](docs/usage.md)「每週單一指令執行」。
 
-想不用準備自己的資料就先看看效果？見
-[`docs/usage.md`](docs/usage.md)「可重複示範」，直接用入庫的
-`docker/example/` 固定 fixtures 跑一次。
+### 開箱即用快速驗證（`docker/example`）
+
+不想先準備自己的資料？CWD 切到 `report-export/docker/`，直接用入庫
+的 `docker/example/` 固定 fixtures 跑一次——輸出寫進 `.gitignore`
+排除的 `example/run/` scratch，入庫的 `example/input/`＋
+`example/state/records.csv` 全程保持乾淨、不受影響：
+
+```bash
+cd report-export/docker
+mkdir -p example/run/state example/run/output
+cp example/state/records.csv example/run/state/    # protect the committed seed
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD/example/input:/data/input:ro" \
+  -v "$PWD/example/run/state:/data/state" \
+  -v "$PWD/example/run/output:/data/output" \
+  report-export:1.0.0 \
+  /data/input/week-2026-07-13.csv
+```
+
+預期結果：stdout JSON `new_records=4`／`state_total=23`／
+`unique_ips=12`／`batch_seq=2`；交付檔「調閱紀錄」第 21-24 列整列黃
+底、第 2-20 列無底色。`docker compose` 版本、完整 12 列院所分析對照
+表、重跑／重置步驟，見
+[`docker/example/README.md`](docker/example/README.md) 與
+[`docs/usage.md`](docs/usage.md)「開箱即用快速驗證」。
 
 執行成功時 stdout 會印出一行 JSON 摘要（新增筆數、去重跳過數、唯一 IP
 數等），stderr 印出結構化日誌；exit code `0` 代表成功（詳見
@@ -107,8 +129,11 @@ docs/usage.md「HOST 權限前置條件」）；`--network none`/`--read-only`/
 
 `{out_dir}`/`{state_dir}` 由你透過 `-v`/`--state-dir`/`--out-dir` 指
 向自己選定的目錄（容器內固定掛載點為 `/data/output`/`/data/state`）；
-`docker/example/` 是入庫的固定示範 fixtures，不受 `.gitignore` 影
-響，見 [`docs/usage.md`](docs/usage.md)「可重複示範」。
+`docker/example/input/`＋`docker/example/state/records.csv` 是入庫的
+固定示範 fixtures，不受 `.gitignore` 影響；其 `example/run/` 執行期
+scratch 則相反、已被 `.gitignore` 排除，見
+[`docker/example/README.md`](docker/example/README.md) 與
+[`docs/usage.md`](docs/usage.md)「開箱即用快速驗證」。
 
 ---
 
@@ -149,7 +174,7 @@ report-export/
 ├─ tools/export_hosp_table.py  # 一次性 dev/ops 匯出工具（不進執行期映像）
 ├─ tests/                   # 單元 + 端對端測試
 ├─ docker/                  # Dockerfile + docker-compose.yml
-│  └─ example/              # 入庫可重複示範 fixtures（seed state + this-week 輸入，見 docs/usage.md「可重複示範」）
+│  └─ example/              # 入庫開箱即用快速驗證 fixtures（seed state + this-week 輸入，見 docs/usage.md「開箱即用快速驗證」）
 └─ docs/                    # design.md + usage.md + data-fidelity.md（zh-TW）
 ```
 

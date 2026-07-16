@@ -683,6 +683,18 @@ def test_e2e7_docker_example_scenario_demonstrates_weekly_vs_total(tmp_path: Pat
     assert rows_by_ip["10.243.129.44"][3].value == "-"
     assert rows_by_ip["10.243.129.44"][4].value == 1
 
+    # REQ4 (design.md §3.7.3 per-run 黃底, §4.7.7): this run's 4 imported
+    # batch-2 rows ALL carry the solid yellow highlight; every one of the
+    # 19 pre-existing batch-1 seed rows carries NO fill. This is the exact
+    # observation the docker/example quickstart tells the operator to
+    # verify by eye, so the demo scenario asserts it explicitly (same
+    # check as E2E-3/E2E-4).
+    records_sheet = load_workbook(summary.deliverable)["調閱紀錄"]
+    assert records_sheet.max_row == 1 + summary.state_total  # header + 23 rows
+    assert _highlighted_rows(records_sheet) == [21, 22, 23, 24]  # the 4 week batch-2 rows
+    for row_idx in range(2, 21):  # all 19 seed batch-1 rows: no fill
+        assert records_sheet.cell(row=row_idx, column=1).fill.patternType is None
+
     # The committed seed state itself must stay untouched by this run
     # (this test only ever wrote to the tmp_path copy).
     assert _DOCKER_EXAMPLE_SEED_STATE.read_bytes() == _EXPECTED_RECORDS_E2E1.read_bytes()

@@ -198,7 +198,7 @@ left/right/top=Side('thin'))`；各欄寬依現有資料＋表頭字串顯示寬
 
 **院所分析（首見序，TOTAL ACCESS 合計 19）**：單一批次首次執行（19 列皆
 `BATCH_ID=1`）時 `WEEKLY ACCESS` 每列皆等於下表 `TOTAL ACCESS`，無 `-`
-出現；多批次案例見 [`usage.md`](usage.md)「可重複示範」一節。
+出現；多批次案例見 [`usage.md`](usage.md)「開箱即用快速驗證」一節。
 
 | # | CLIENT IP | HOSP_ID | HOSP_ABBR | TOTAL ACCESS（單一批次時 WEEKLY 亦同此值） |
 |---|-----------|---------|-----------|-------|

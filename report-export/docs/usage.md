@@ -98,7 +98,7 @@ docker run --rm --user "$(id -u):$(id -g)" \
 `--user "$(id -u):$(id -g)"` 為唯二功能性必要旗標，見下方「每週單一
 指令執行」；安全敏感站點的選配硬化旗標亦見同節。）
 
-想不用準備自己的資料就先看看效果？見下方「可重複示範」，直接用入庫
+想不用準備自己的資料就先看看效果？見下方「開箱即用快速驗證」，直接用入庫
 的 `docker/example/` 固定 fixtures 跑一次。
 
 ### stdout 摘要
@@ -523,42 +523,85 @@ exit 3 時的人工排除步驟：
 
 ---
 
-## 可重複示範（`docker/example`）
+## 開箱即用快速驗證（`docker/example`，CWD = `report-export/docker`）
 
 `report-export/docker/example/` 入庫了一組固定的 seed state + this-week
-輸入，讓你**不需要準備任何自己的資料**就能實際跑一次，親眼看到院所
-分析的 `WEEKLY ACCESS`／`TOTAL ACCESS`／`-` 三種情形（design.md
-§4.7.7、§7.2 E2E-7）。這組 fixtures 也是 `tests/e2e/test_end_to_end.py`
-之 `test_e2e7_docker_example_scenario_demonstrates_weekly_vs_total`
-驅動的同一份資料——手動跑一次與自動化測試斷言的是同一組數字。
-`docker/example/` 本身是**入庫 fixture（來源）**，示範時把 seed
-state 複製進你自己另外指定的 state/output 目錄，不會、也不需要修改
-`docker/example/` 本身。
+輸入，讓你**不需要準備任何自己的資料**就能實際跑一次，同時驗證兩件
+事：(1) 院所分析的 `WEEKLY ACCESS`／`TOTAL ACCESS`／`-` 三種情形
+（design.md §4.7.7、§7.2 E2E-7）；(2) 調閱紀錄的**本批整列黃底**
+（design.md §3.7.3）——本次匯入的 4 列全部黃底，既有的 19 列 seed
+全部無底色。這組 fixtures 與 `tests/e2e/test_end_to_end.py` 之
+`test_e2e7_docker_example_scenario_demonstrates_weekly_vs_total` 驅動
+的是同一份資料，手動跑一次與自動化測試斷言的是同一組數字。
+
+**入庫（來源）／執行期（`run/` scratch）分離**：`docker/example/input/`
+與 `docker/example/state/records.csv` 是**入庫、pristine 的固定
+fixtures**（本節任何指令都不會、也不能修改它們）；
+`docker/example/run/`（`state/`、`output/` 兩個子目錄）是
+**`.gitignore` 排除的執行期 scratch**，由下方指令的 `mkdir -p` 建
+立、`cp` 把 seed state 複製進去，容器只讀寫這個 `run/` 副本——因此
+本節可無限次重複執行，每次都從同一份 seed 起步；要重跑一份乾淨的，
+見下方「重跑／重置」。
+
+### 形式一：docker run
 
 ```bash
-cd report-export
-
-# 1. 選一個(暫時的也可以)你自己的 state/output 目錄
-export HOST_STATE_DIR="$(mktemp -d)"
-export HOST_OUTPUT_DIR="$(mktemp -d)"
-
-# 2. 把入庫的 seed state 複製進你的 state 目錄
-cp docker/example/state/records.csv "$HOST_STATE_DIR/records.csv"
-
-# 3. 執行（this-week 輸入直接從入庫的 docker/example/input/ 唯讀掛
-#    載，不需要另外複製一份 input 目錄）
+cd report-export/docker
+mkdir -p example/run/state example/run/output
+cp example/state/records.csv example/run/state/    # protect the committed seed
 docker run --rm --user "$(id -u):$(id -g)" \
-  -v "$PWD/docker/example/input:/data/input:ro" \
-  -v "$HOST_STATE_DIR:/data/state" \
-  -v "$HOST_OUTPUT_DIR:/data/output" \
+  -v "$PWD/example/input:/data/input:ro" \
+  -v "$PWD/example/run/state:/data/state" \
+  -v "$PWD/example/run/output:/data/output" \
   report-export:1.0.0 \
   /data/input/week-2026-07-13.csv
+
+# Reset between runs (committed fixtures are never touched):
+#   rm -rf example/run
 ```
 
-執行後開啟 `$HOST_OUTPUT_DIR/{今日日期}_連線紀錄.xlsx` 的「院所分
-析」sheet（此時已是**5 欄**：`CLIENT IP, HOSP_ID, HOSP_ABBR, WEEKLY
-ACCESS, TOTAL ACCESS`），應觀察到 12 列、`state_total` 23、三種
-WEEKLY ACCESS 情形齊備：
+（映像若尚未建置，先於 `report-export/` 執行 `docker build -t
+report-export:1.0.0 -f docker/Dockerfile .`；見上方「建置映像」。）
+
+### 形式二：docker compose
+
+```bash
+cd report-export/docker
+mkdir -p example/run/state example/run/output
+cp example/state/records.csv example/run/state/    # protect the committed seed
+HOST_INPUT_DIR="$PWD/example/input" \
+HOST_STATE_DIR="$PWD/example/run/state" \
+HOST_OUTPUT_DIR="$PWD/example/run/output" \
+DOCKER_UID=$(id -u) DOCKER_GID=$(id -g) \
+  docker compose run --rm report-export /data/input/week-2026-07-13.csv
+
+# `docker compose` (no -f) auto-discovers docker-compose.yml in CWD (report-export/docker/);
+# its `build.context: ..` resolves to report-export/. No compose-file edit needed.
+# Reset between runs:  rm -rf example/run
+```
+
+CWD 就在 `report-export/docker/`（`docker-compose.yml` 所在目錄），
+所以這裡的 `docker compose` 不需要 `-f` 就能自動找到這份 compose
+檔；其 `build.context: ..` 相對 `docker/` 解析回 `report-export/`，
+因此**不需要修改 `docker-compose.yml` 本身**即可套用這組 example
+路徑。
+
+### 預期結果
+
+stdout 摘要（各欄位意義見上方「stdout 摘要」）關鍵欄位：
+
+| 欄位 | 值 |
+|------|-----|
+| `new_records` | `4` |
+| `state_total` | `23` |
+| `unique_ips` | `12` |
+| `batch_seq` | `2` |
+| `rows_in` / `normal` | `4` / `4` |
+| `dropped_nonnormal` / `skipped_cross_state` / `skipped_intra_batch` / `unmapped_hosp_ids` / `unknown_status_skipped` | 皆 `0` |
+| `run_date` / `deliverable` | 容器今日業務日（`TZ=Asia/Taipei`），交付檔名隨之而定 |
+
+交付檔 `example/run/output/{今日日期}_連線紀錄.xlsx` 的「院所分析」
+sheet（12 列）：
 
 | CLIENT IP | HOSP_ABBR | WEEKLY ACCESS | TOTAL ACCESS | 情形 |
 |-----------|-----------|----------------|----------------|------|
@@ -567,8 +610,25 @@ WEEKLY ACCESS 情形齊備：
 | `10.245.1.125` | 秀傳醫院 | `2` | `9` | 既有 IP、本週亦有新列——WEEKLY < TOTAL |
 | 其餘 9 個 IP（如 `10.243.129.44` 門諾醫院） | — | `-` | `1` | 本週無存取（僅存在於 seed 批次）——WEEKLY 顯示 `-` |
 
-`docker/example/state/records.csv`（seed，19 列，皆 `BATCH_ID=1`）與
-`docker/example/input/week-2026-07-13.csv`（this-week，4 列全新
-REQUEST_ID）本身**入庫、不受 `.gitignore` 影響**（見 design.md
-§4.7.7），可重複執行以上步驟任意次——每次都從同一份 seed 起步（只
-要每次重新複製一份乾淨的 `$HOST_STATE_DIR`），結果完全相同。
+（即 WEEKLY = `['-','-','-','-','-','-',1,'-',2,'-','-',1]`、
+TOTAL = `[1,1,1,1,1,1,4,1,9,1,1,1]`，首見序為 11 個 seed IP + 1 個
+本週全新 IP。）
+
+「調閱紀錄」sheet（表頭 + 23 列）：
+
+- **第 21-24 列**（本批 4 列，`BATCH_ID=2`）**整列黃底 `FFFFFF00`**；
+  **第 2-20 列**（19 列 seed，`BATCH_ID=1`）**皆無底色**
+  （`fill.patternType is None`）——這正是 E2E-7 以
+  `_highlighted_rows(records_sheet) == [21, 22, 23, 24]`
+  明確斷言的同一個觀察（design.md §3.7.3、§4.7.7）。
+
+### 重跑／重置
+
+```bash
+cd report-export/docker   # 若尚未在此目錄
+rm -rf example/run
+```
+
+`docker/example/input/`、`docker/example/state/records.csv` 兩個入庫
+fixture 全程不受影響——`rm -rf example/run` 之後即回到最初的乾淨狀
+態，可再次從「形式一」或「形式二」重新開始。
