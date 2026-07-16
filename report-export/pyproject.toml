@@ -1,0 +1,90 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "report-export"
+description = "Independent weekly Excel connection-log report automation for LUNG-CANCER-REPORT (design.md)."
+dynamic = ["version"]
+requires-python = ">=3.12"
+dependencies = [
+    "openpyxl==3.1.5",
+]
+
+[project.scripts]
+report-export = "report_export.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "report_export.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["report_export*"]
+
+# --------------------------------------------------------------------------
+# ruff (lint) -- CI stage 1
+# --------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "A",   # flake8-builtins
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "S",   # flake8-bandit (security; CWE-aligned per project ethos)
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "S101", # `assert` -- selected globally so production code is nudged toward
+            # typed exceptions instead, then re-permitted for tests below.
+]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest's idiomatic assertion style; tests are not the fail-fast boundary.
+"tests/**/*.py" = ["S101"]
+
+# --------------------------------------------------------------------------
+# mypy --strict (analyze) -- CI stage 2
+# --------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+warn_unused_configs = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+# openpyxl ships no py.typed marker and no stub package is installed
+# (design.md §3.1: pure-Python, only runtime dep); treat it as untyped
+# at the boundary instead of failing the whole run.
+module = "openpyxl.*"
+ignore_missing_imports = true
+
+# --------------------------------------------------------------------------
+# pytest + coverage (test) -- CI stage 3
+# --------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+
+[tool.coverage.run]
+source = ["src/report_export"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]

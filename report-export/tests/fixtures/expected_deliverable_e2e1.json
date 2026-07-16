@@ -1,0 +1,1990 @@
+{
+  "調閱紀錄": [
+    [
+      {
+        "value": "DATE",
+        "data_type": "s",
+        "number_format": "General",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFE2EFDA"
+        }
+      },
+      {
+        "value": "TIME",
+        "data_type": "s",
+        "number_format": "General",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFE2EFDA"
+        }
+      },
+      {
+        "value": "CLIENT IP",
+        "data_type": "s",
+        "number_format": "General",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFE2EFDA"
+        }
+      },
+      {
+        "value": "SERVER IP",
+        "data_type": "s",
+        "number_format": "General",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFE2EFDA"
+        }
+      },
+      {
+        "value": "HOSP_ID",
+        "data_type": "s",
+        "number_format": "General",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFE2EFDA"
+        }
+      },
+      {
+        "value": "HOSP_ABBR",
+        "data_type": "s",
+        "number_format": "General",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFE2EFDA"
+        }
+      },
+      {
+        "value": "PRSN_ID",
+        "data_type": "s",
+        "number_format": "General",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFE2EFDA"
+        }
+      },
+      {
+        "value": "BIRTHDAY",
+        "data_type": "s",
+        "number_format": "General",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFE2EFDA"
+        }
+      },
+      {
+        "value": "PATIENT ID AES",
+        "data_type": "s",
+        "number_format": "General",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFE2EFDA"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-05T16:03:34.359000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-05T16:03:34.359000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.243.129.44",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.21.3.35",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "1145010038",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "門諾醫院",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "21B026FA29B9A716C23AEB10D3F04A63",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19560711",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2EDEBACB75D9FA547F2018E13E695AF1",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-07T09:35:42.410000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-07T09:35:42.410000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.249.8.10",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.21.3.35",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "1101150011",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "新光醫院",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "C19E60ACF1C8E00FF894C9ED4B029214",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19511201",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "9AEE975389D653BA1E9728DA96AA7598",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-07T11:15:54.841000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-07T11:15:54.841000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.249.10.249",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.21.3.36",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "1301170017",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "台北醫大",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "65530033359CFF810BB7399398FF07A6",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19540218",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "6DFA9A3842DE9E40CF56DF6814B424E6",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-08T13:32:52.307000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-08T13:32:52.307000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.238.3.1",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.21.3.36",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "1532061065",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "大園敏盛",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "A5CE2FF85C7D42183E07CFC4DDF6B356",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19511110",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "C0735A60C3A825951E820BCFE92E45A9",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-08T15:23:26.013000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-08T15:23:26.013000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.241.189.173",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.21.3.36",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "3831014971",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "晨軒中醫",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "D70C625F40A40B4AE2594472240AE1AE",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19540915",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "1D06A393772858F1169B3F588F58CAF2",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-09T15:53:17.650000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-09T15:53:17.650000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.241.93.164",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.21.3.35",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "1111060015",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "基隆長庚",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "96A345AB5E83934ED778D2FDBB5A27FC",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19490102",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "ED1557363E5A3397F5E4F55C71F53DB7",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-04T08:03:16.521000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-04T08:03:16.521000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "192.168.117.104",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.1.72.35",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "3501200000",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "臺北虛擬診",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "BB77CD8C2EB45F35C6D6E10A89A92065",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19560711",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2EDEBACB75D9FA547F2018E13E695AF1",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-04T08:03:42.130000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-04T08:03:42.130000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "192.168.117.104",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.1.72.35",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "3501200000",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "臺北虛擬診",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "BB77CD8C2EB45F35C6D6E10A89A92065",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19560711",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2EDEBACB75D9FA547F2018E13E695AF1",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-04T08:04:09.104000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-04T08:04:09.104000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "192.168.117.104",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.1.72.36",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "3501200000",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "臺北虛擬診",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "BB77CD8C2EB45F35C6D6E10A89A92065",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19560711",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2EDEBACB75D9FA547F2018E13E695AF1",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-04T10:32:18.126000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-04T10:32:18.126000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.251.166.61",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.1.72.36",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "3505070032",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "誼仁診所",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "532C7831A878042974B519EC7FD79778",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19590611",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "197578FFB54C4EF95A6E448A1188A82A",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-06T14:44:03.476000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-06T14:44:03.476000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.245.1.125",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.1.72.35",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "0937010019",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "秀傳醫院",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "6CF7D3153F5987A4FF233BF6D358EF87",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19560711",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2EDEBACB75D9FA547F2018E13E695AF1",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-06T14:45:24.053000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-06T14:45:24.053000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.245.1.125",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.1.72.36",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "0937010019",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "秀傳醫院",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "65B891B1B206050758738D8C8AD94662",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19560711",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2EDEBACB75D9FA547F2018E13E695AF1",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-09T09:59:37.861000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-09T09:59:37.861000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.245.11.141",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.1.72.35",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "1137080017",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "彰基二林醫",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "35B9C419AD4B4990DF9E5C8FCCC65D3D",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19640408",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "FC96A159DFDFC172978F6E0385F2194F",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-09T14:27:37.253000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-09T14:27:37.253000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.245.1.125",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.1.72.35",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "0937010019",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "秀傳醫院",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "65B891B1B206050758738D8C8AD94662",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19560711",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2EDEBACB75D9FA547F2018E13E695AF1",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-09T14:31:19.825000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-09T14:31:19.825000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.245.1.125",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.1.72.35",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "0937010019",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "秀傳醫院",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "65B891B1B206050758738D8C8AD94662",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19560711",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2EDEBACB75D9FA547F2018E13E695AF1",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-09T14:37:37.701000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-09T14:37:37.701000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.245.1.125",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.1.72.36",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "0937010019",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "秀傳醫院",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "65B891B1B206050758738D8C8AD94662",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19560711",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2EDEBACB75D9FA547F2018E13E695AF1",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-09T14:47:25.396000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-09T14:47:25.396000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.245.1.125",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.1.72.35",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "0937010019",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "秀傳醫院",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "65B891B1B206050758738D8C8AD94662",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19560711",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2EDEBACB75D9FA547F2018E13E695AF1",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-09T14:48:37.214000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-09T14:48:37.214000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.245.1.125",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.1.72.36",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "0937010019",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "秀傳醫院",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "65B891B1B206050758738D8C8AD94662",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19560711",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2EDEBACB75D9FA547F2018E13E695AF1",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ],
+    [
+      {
+        "value": "2026-07-09T16:40:45.813000",
+        "data_type": "d",
+        "number_format": "yyyy\\-mm\\-dd;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "2026-07-09T16:40:45.813000",
+        "data_type": "d",
+        "number_format": "h:mm:ss;@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.238.23.241",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "10.1.72.36",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "1503190020",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "長安醫院",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "6D684B205D082296D5B125E48F1B21A7",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "19380228",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      },
+      {
+        "value": "6A9542AC432FF061D24B327AA08E9268",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFFFFF00"
+        }
+      }
+    ]
+  ],
+  "院所分析": [
+    [
+      {
+        "value": "CLIENT IP",
+        "data_type": "s",
+        "number_format": "General",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFE2EFDA"
+        }
+      },
+      {
+        "value": "HOSP_ID",
+        "data_type": "s",
+        "number_format": "General",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFE2EFDA"
+        }
+      },
+      {
+        "value": "HOSP_ABBR",
+        "data_type": "s",
+        "number_format": "General",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFE2EFDA"
+        }
+      },
+      {
+        "value": "COUNT",
+        "data_type": "s",
+        "number_format": "General",
+        "fill": {
+          "patternType": "solid",
+          "fgColor": "FFE2EFDA"
+        }
+      }
+    ],
+    [
+      {
+        "value": "10.243.129.44",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "1145010038",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "門諾醫院",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": 1,
+        "data_type": "n",
+        "number_format": "General",
+        "fill": null
+      }
+    ],
+    [
+      {
+        "value": "10.249.8.10",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "1101150011",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "新光醫院",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": 1,
+        "data_type": "n",
+        "number_format": "General",
+        "fill": null
+      }
+    ],
+    [
+      {
+        "value": "10.249.10.249",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "1301170017",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "台北醫大",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": 1,
+        "data_type": "n",
+        "number_format": "General",
+        "fill": null
+      }
+    ],
+    [
+      {
+        "value": "10.238.3.1",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "1532061065",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "大園敏盛",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": 1,
+        "data_type": "n",
+        "number_format": "General",
+        "fill": null
+      }
+    ],
+    [
+      {
+        "value": "10.241.189.173",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "3831014971",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "晨軒中醫",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": 1,
+        "data_type": "n",
+        "number_format": "General",
+        "fill": null
+      }
+    ],
+    [
+      {
+        "value": "10.241.93.164",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "1111060015",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "基隆長庚",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": 1,
+        "data_type": "n",
+        "number_format": "General",
+        "fill": null
+      }
+    ],
+    [
+      {
+        "value": "192.168.117.104",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "3501200000",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "臺北虛擬診",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": 3,
+        "data_type": "n",
+        "number_format": "General",
+        "fill": null
+      }
+    ],
+    [
+      {
+        "value": "10.251.166.61",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "3505070032",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "誼仁診所",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": 1,
+        "data_type": "n",
+        "number_format": "General",
+        "fill": null
+      }
+    ],
+    [
+      {
+        "value": "10.245.1.125",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "0937010019",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "秀傳醫院",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": 7,
+        "data_type": "n",
+        "number_format": "General",
+        "fill": null
+      }
+    ],
+    [
+      {
+        "value": "10.245.11.141",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "1137080017",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "彰基二林醫",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": 1,
+        "data_type": "n",
+        "number_format": "General",
+        "fill": null
+      }
+    ],
+    [
+      {
+        "value": "10.238.23.241",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "1503190020",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": "長安醫院",
+        "data_type": "s",
+        "number_format": "@",
+        "fill": null
+      },
+      {
+        "value": 1,
+        "data_type": "n",
+        "number_format": "General",
+        "fill": null
+      }
+    ]
+  ]
+}

@@ -297,7 +297,6 @@ BATCH_ID, REQUEST_ID, APP_TIME_ISO, CLIENT_IP, SERVER_IP, HOSP_ID, HOSP_ABBR, PR
 ```
 
 - **為何內嵌而非獨立 manifest**：草稿以獨立 `state.manifest.json` 存 sha256，導致「records.csv 已 os.replace、manifest 尚未更新」的視窗——崩潰後下次載入會把**完整無誤的 state 誤判為毀損**並 exit 3，且復原 .bak 反而丟棄已提交批次。改為將 record_count + sha256 內嵌 records.csv，**單一 `os.replace` 原子涵蓋資料與其完整性描述子**，跨檔不一致視窗徹底消失（`os.replace` 保證 records.csv 永非半寫）。
-- `state.manifest.json` **降為非權威性資訊 sidecar**（僅存 `schema_version`, `last_run_date`, `tool_version`, `record_count` 供人閱讀），**不再用於完整性 gating**——避免任何跨檔提交造成 brick。
 - 讀取器先分離 `#META` 尾列再 csv-parse 前段；records.csv 為機器託管，文件明訂勿手改。
 
 ### 6.4 載入時 crash-tolerant 復原（完整的 state 絕不被誤判為毀損；內建、無旗標）
@@ -463,9 +462,11 @@ BATCH_ID, REQUEST_ID, APP_TIME_ISO, CLIENT_IP, SERVER_IP, HOSP_ID, HOSP_ABBR, PR
 - **runtime**：`FROM python:3.12-slim`；`COPY --from=builder` venv；`COPY src/ /app/src/`；`COPY reference/hosp_id_map.csv.gz reference/hosp_id_map.manifest.json /app/reference/`（捆綁查表，自由入映像）。
 - dev 相依（pytest/coverage/ruff/mypy）置 `requirements-dev.txt`，**不進**執行期映像。build context = `report-export/`，`-f docker/Dockerfile`。
 
-### 10.3 `.dockerignore`
+### 10.3 `docker/Dockerfile.dockerignore`
 
 排除 `template/`（2.3MB xlsx + 輸入 fixture；已入庫作基線，執行期映像不需要）、`state/`、`output/`、`inbox/`、`tests/`、`docs/`、`tools/`、`.git`、`__pycache__`。
+
+**命名細節**：BuildKit 僅在 context root（`report-export/`，對齊本檔 `docker build -f docker/Dockerfile .` 的呼叫方式）辨識純檔名 `.dockerignore`；Dockerfile 本身位於子目錄 `docker/` 時，BuildKit 改採「與該 Dockerfile 同名」慣例 `<Dockerfile 檔名>.dockerignore`，故實際檔名為 `docker/Dockerfile.dockerignore`——若誤放一個 `docker/.dockerignore`，會被靜默略過、不排除任何內容。
 
 ### 10.4 寫入權限可攜性（HIGH）
 
@@ -678,7 +679,7 @@ report-export/
 │  ├─ hosp_id_map.csv.gz          # 精簡查表（全 TEXT）
 │  └─ hosp_id_map.manifest.json   # sha256/rows/key_len_hist/dup/blank/exported_utc/tool_version
 ├─ state/                         # 執行期 canonical state（.gitignore）
-│  └─ (執行後：records.csv[含尾列] / state.manifest.json[非權威] / records.csv.bak / runs.jsonl / .lock)
+│  └─ (執行後：records.csv[含尾列] / records.csv.bak / runs.jsonl / .lock)
 ├─ output/                        # 執行期交付檔（.gitignore）
 ├─ inbox/                         # 選配：每週輸入投放區（.gitignore）
 ├─ tools/                         # dev/ops 一次性（不進執行期映像）
@@ -690,13 +691,13 @@ report-export/
 │  └─ e2e/                        # test_end_to_end.py（E2E-1..6）
 ├─ docker/
 │  ├─ Dockerfile                  # 多階段、python:3.12-slim digest pin、非 root、venv、烘焙 HOSP 查表
-│  ├─ .dockerignore               # 排除 template/、state/、output/、inbox/、tests/、docs/、tools/、.git
+│  ├─ Dockerfile.dockerignore     # 排除 template/、state/、output/、inbox/、tests/、docs/、tools/、.git
 │  └─ docker-compose.yml          # 選配：預接卷（含 --user 註記）
 ├─ docs/
 │  ├─ design.md                   # 本設計文件（交付物；本檔）
 │  ├─ usage.zh-TW.md              # CLI/Docker 使用與維運 runbook（含 host 權限前置、NAS 鎖注意）
 │  └─ data-fidelity.zh-TW.md      # 型別/格式契約表（zh-TW）
-└─ template/                      # 入庫基線：連線紀錄模板.xlsx + source-log.csv（.dockerignore 排除、不進映像）
+└─ template/                      # 入庫基線：連線紀錄模板.xlsx + source-log.csv（Dockerfile.dockerignore 排除、不進映像）
 ```
 
 ---
@@ -714,7 +715,7 @@ report-export/
 | **4. 聚合 + xlsx** | `aggregate`（首見序、first-HOSP、COUNT）；`xlsx_writer`（2 sheet 純值、型別/numFmt、最新批次黃底、表頭 RGB、同日消歧）。 | `test_aggregate`（COUNT=[…]=19）/`test_xlsx_writer` 綠；§8.6 保真斷言全過。 |
 | **5. 管線 + CLI** | `pipeline`（串接、接受內部 run_date）；`cli`（精瘦：INPUT + --state-dir/--out-dir、退出碼、stdout JSON）。 | `test_pipeline`/`test_cli` 綠；退出碼對應例外；未知旗標→exit 1。 |
 | **6. E2E + 預期輸出入庫** | `tests/e2e/`（E2E-1..6）；產生並入庫預期輸出快照。 | E2E-1..6 全綠；coverage ≥ 80%；預期輸出 fixtures 入庫。 |
-| **7. Docker** | 多階段 Dockerfile（digest pin、非 root、`--user` 可攜、烘焙查表）；.dockerignore；compose（選配）。 | `docker build` 成功；容器內 `--network none --user $(id -u):$(id -g)` 跑 E2E-1 smoke 綠；trivy 掃描。 |
+| **7. Docker** | 多階段 Dockerfile（digest pin、非 root、`--user` 可攜、烘焙查表）；Dockerfile.dockerignore；compose（選配）。 | `docker build` 成功；容器內 `--network none --user $(id -u):$(id -g)` 跑 E2E-1 smoke 綠；trivy 掃描。 |
 | **8. 文件** | `docs/design.md`（本檔）、`usage.zh-TW.md`（含 host 權限前置、NAS 鎖）、`data-fidelity.zh-TW.md`、`README.md`。 | 文件與程式行為一致；runbook 可依樣執行。 |
 
 ---

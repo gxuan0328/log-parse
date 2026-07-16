@@ -1,0 +1,17 @@
+# Runtime-generated, machine-owned (design.md §9.5): never commit.
+state/
+output/
+inbox/
+
+# Python / tooling
+.venv/
+__pycache__/
+*.egg-info/
+
+# Dev-tool caches (supplements the required list above; same rationale --
+# machine-generated, never meant to be committed).
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/

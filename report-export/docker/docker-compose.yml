@@ -1,0 +1,58 @@
+# report-export Docker Compose convenience wrapper (docs/design.md
+# §10.6-§10.7). OPTIONAL: the canonical, documented invocation is a
+# plain `docker run` (design.md §10.7); this file only pre-wires the
+# three bind mounts + the hardening flags from that same example so a
+# weekly run reduces to one `docker compose run` line.
+#
+# IMPORTANT -- host bind-mount writability (design.md §10.4, HIGH):
+# this container must run as the uid:gid that OWNS the host
+# state/output directories, or every write fails with EACCES the first
+# time a fresh (caller-owned) host directory is used. Compose does NOT
+# read your shell's real uid/gid automatically, and `${UID}`/`${GID}`
+# are NOT usable for this: `UID` is a readonly/special shell variable
+# in bash, so `export UID=$(id -u)` fails outright. Pass distinctly
+# named variables instead, every time you invoke this file:
+#
+#   mkdir -p ../inbox ../state ../output
+#   cp /path/to/this-weeks-export.csv ../inbox/
+#   DOCKER_UID=$(id -u) DOCKER_GID=$(id -g) \
+#     docker compose -f docker/docker-compose.yml run --rm report-export \
+#       /data/input/this-weeks-export.csv
+#
+# (build once beforehand with `docker build -t report-export:1.0.0 -f
+# docker/Dockerfile .` from report-export/, or let `docker compose run`
+# build it on first use.)
+
+services:
+  report-export:
+    image: report-export:1.0.0
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    # See the IMPORTANT note above -- these defaults (1000:1000) are a
+    # dev-box convenience only; always override via DOCKER_UID/DOCKER_GID.
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    network_mode: "none"
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      TZ: Asia/Taipei
+    volumes:
+      # Weekly raw 14-column input CSV (design.md §10.6) -- read-only.
+      - type: bind
+        source: ../inbox
+        target: /data/input
+        read_only: true
+      # Canonical state -- read-write; single source of truth
+      # (design.md §6.1). Must be writable by DOCKER_UID:DOCKER_GID.
+      - type: bind
+        source: ../state
+        target: /data/state
+      # Deliverable xlsx output -- read-write.
+      - type: bind
+        source: ../output
+        target: /data/output
+    # No `command:` here on purpose -- the input CSV filename changes
+    # every week, so it is supplied on the `docker compose run ...`
+    # command line, not baked into this file.

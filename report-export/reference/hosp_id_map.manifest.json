@@ -1,0 +1,13 @@
+{
+  "blank_abbr": 0,
+  "dup_keys": 0,
+  "exported_utc": "2026-07-15T11:32:30Z",
+  "key_len_hist": {
+    "10": 93781
+  },
+  "leading_zero": 531,
+  "row_count": 93781,
+  "sha256": "e95c66acb48dfffb0f5108337a5ec491a520654393d1e8a1d90ad62a556200e3",
+  "source": "/mnt/c/Users/gxuan/OneDrive/桌面/Project/log-parse/report-export/template/連線紀錄模板.xlsx",
+  "tool_version": "1.0.0"
+}

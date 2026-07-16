@@ -17,6 +17,10 @@ examples/sample-outputs/** -text
 # CRLF (the verified input contract) and the .xlsx template is binary.
 report-export/template/** -text
 
+# report-export test fixtures are byte-exact too (CRLF CSV inputs + expected
+# output snapshots) — the suite was validated against these exact bytes.
+report-export/tests/fixtures/** -text
+
 # Documentation
 *.md       text eol=lf
 *.zh-TW.md text eol=lf

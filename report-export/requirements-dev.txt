@@ -1,0 +1,7 @@
+# Dev-only tooling (design.md §15). Never installed into the runtime
+# Docker image -- see docker/.dockerignore (a later phase).
+# Floor-pinned to the versions this codebase is validated against.
+pytest>=9.1
+coverage>=7.15
+mypy>=2.3
+ruff>=0.15

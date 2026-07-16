@@ -1,0 +1,57 @@
+# report-export Docker build-context exclusions (docs/design.md §10.3).
+#
+# NAMING NOTE (deviation from docs/design.md §15's literal tree, which
+# lists this file as `docker/.dockerignore`): BuildKit only honours a
+# plain `.dockerignore` when it sits in the CONTEXT ROOT (report-export/,
+# per the documented `docker build -f docker/Dockerfile .` invocation),
+# never next to a Dockerfile that lives in a subdirectory -- a
+# `docker/.dockerignore` file is silently never read and would exclude
+# nothing. The correct BuildKit convention for a non-root Dockerfile is
+# `<dockerfile-basename>.dockerignore`, co-located with that Dockerfile
+# -- i.e. exactly this file. Verified empirically against this
+# project's own `docker build -t report-export:1.0.0 -f docker/Dockerfile .`
+# invocation before adopting this name. This is the single ignore file
+# for this build; there is no second, non-functional `.dockerignore`
+# copy left behind to drift out of sync with it.
+#
+# Rationale for the exclusions below: keep the build context small and
+# keep dev-only, runtime-generated, or already-baselined-elsewhere
+# content out of the image entirely. Nothing here is read by any COPY
+# in docker/Dockerfile -- every COPY instruction names its sources
+# explicitly, so these patterns are a build-context-size / hygiene
+# control, not a correctness dependency.
+
+# Input template + e2e fixture baseline (2.3MB xlsx + source-log.csv):
+# already checked in as a traceable baseline (design.md §9.5); the
+# runtime image never reads it (only tests/tools do).
+template/
+
+# Runtime-generated, machine-owned, per-run state (design.md §6, §9.5)
+# -- never baked into an image; always host bind-mounted (design.md
+# §10.6). Matches the top-level .gitignore.
+state/
+output/
+inbox/
+
+# Dev-only: tests, docs, and the one-off HOSP-table export tool never
+# ship in the runtime image (design.md §9.3, §10.2, §10.3).
+tests/
+docs/
+tools/
+
+# VCS and Docker's own convenience files.
+.git/
+.github/
+.gitignore
+.gitattributes
+
+# Python / tooling litter (mirrors the top-level .gitignore).
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
