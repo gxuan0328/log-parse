@@ -1,5 +1,5 @@
-"""Unit tests for report_export.xlsx_writer (design.md §12.1
-test_xlsx_writer, §8, §8.6 fidelity read-back)."""
+"""Unit tests for report_export.xlsx_writer (design.md §7.1
+test_xlsx_writer, §3.7, §3.7.6 fidelity read-back)."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def _save_and_reload(workbook: Workbook, tmp_path: Path, name: str = "out.xlsx")
 
 # --------------------------------------------------------------------
 # Workbook shape: exactly 2 sheets, zero formulas, exact headers
-# (design.md §8.1, §8.6)
+# (design.md §3.7.1, §3.7.6)
 # --------------------------------------------------------------------
 
 
@@ -118,7 +118,7 @@ def test_workbook_contains_no_reference_sheets() -> None:
 
 
 # --------------------------------------------------------------------
-# §8.6 fidelity read-back: A2==B2 datetime, number_format, TEXT types
+# §3.7.6 fidelity read-back: A2==B2 datetime, number_format, TEXT types
 # --------------------------------------------------------------------
 
 
@@ -145,7 +145,7 @@ def test_time_cell_number_format_contains_hmm(tmp_path: Path) -> None:
 
 
 def test_no_millisecond_precision_is_lost_without_fractional_seconds(tmp_path: Path) -> None:
-    # design.md §5 S4: no-ms APP_TIME is an accepted, compatible format.
+    # design.md §3.8 S4: no-ms APP_TIME is an accepted, compatible format.
     workbook = xlsx_writer.build_workbook(
         [_record(app_time_iso="2026-07-05 16:03:34")], []
     )
@@ -209,7 +209,7 @@ def test_weekly_and_total_access_columns_round_trip_as_int(tmp_path: Path) -> No
 
 
 def test_weekly_access_zero_renders_as_dash_string(tmp_path: Path) -> None:
-    # design.md §4.3 REQ3b: "本周無存取紀錄之院所則填入 -" -- the MODEL stays
+    # design.md §3.1.3 REQ3b: "本周無存取紀錄之院所則填入 -" -- the MODEL stays
     # numeric (weekly_access=0), but the rendered cell is the "-" string.
     workbook = xlsx_writer.build_workbook([], [_report_row(weekly_access=0, total_access=1)])
     reloaded = _save_and_reload(workbook, tmp_path)
@@ -222,7 +222,7 @@ def test_weekly_access_zero_renders_as_dash_string(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------
-# Row ordering / content preserved verbatim (design.md §8.3, §4.3)
+# Row ordering / content preserved verbatim (design.md §3.7.3, §3.1.3)
 # --------------------------------------------------------------------
 
 
@@ -249,7 +249,7 @@ def test_empty_state_and_report_rows_produce_header_only_sheets() -> None:
 
 
 # --------------------------------------------------------------------
-# Yellow highlight -- latest batch only (design.md §6.5, §8.3, §2.9)
+# Yellow highlight -- latest batch only (design.md §3.7.3, §1.5.9)
 # --------------------------------------------------------------------
 
 
@@ -303,7 +303,7 @@ def test_empty_full_state_produces_no_highlighted_rows() -> None:
 
 
 # --------------------------------------------------------------------
-# Header style (design.md §8.5)
+# Header style (design.md §3.7.5)
 # --------------------------------------------------------------------
 
 
@@ -318,7 +318,7 @@ def test_header_cells_have_explicit_green_fill() -> None:
     workbook = xlsx_writer.build_workbook([], [])
     cell = workbook["調閱紀錄"]["A1"]
     assert cell.fill.patternType == "solid"
-    # 8-hex with explicit FF alpha (design.md §2.9 gotcha): a bare
+    # 8-hex with explicit FF alpha (design.md §1.5.9 gotcha): a bare
     # 6-hex 'E2EFDA' round-trips as '00E2EFDA' (alpha=00, invisible).
     assert cell.fill.fgColor.rgb == "FFE2EFDA"
 
@@ -332,7 +332,7 @@ def test_both_sheet_headers_are_styled() -> None:
 
 # --------------------------------------------------------------------
 # REQ1 formatting: center alignment, thin data borders, thick header
-# bottom border, auto-fit column widths (design.md §8.3-§8.5, §8.6)
+# bottom border, auto-fit column widths (design.md §3.7.3-§3.7.5, §3.7.6)
 # --------------------------------------------------------------------
 
 
@@ -358,7 +358,7 @@ def test_every_header_cell_is_centered_with_thick_bottom_border_on_both_sheets()
             assert cell.alignment.horizontal == "center"
             assert cell.alignment.vertical == "center"
             assert cell.border.bottom.style == "thick"
-            # design.md §8.5: thin sides/top are cosmetic grid
+            # design.md §3.7.5: thin sides/top are cosmetic grid
             # continuity with the data rows below -- the REQUIRED
             # emphasis is the thick bottom border.
             assert cell.border.left.style == "thin"
@@ -380,10 +380,10 @@ def test_yellow_fill_and_thin_border_and_center_coexist_on_latest_batch_rows() -
 
 
 def test_column_widths_match_e2e1_anchors_on_a_representative_state() -> None:
-    # design.md §8.3/§8.4 REQ1d: width = round(max(display_width(header),
+    # design.md §3.7.3/§3.7.4 REQ1d: width = round(max(display_width(header),
     # max(display_width(rendered data))) * 1.2, 2). A SINGLE record/row
     # whose fields already hit the same per-column maxima as the real
-    # 19-row/11-IP E2E-1 anchor state (design.md §2.1/§2.2) reproduces
+    # 19-row/11-IP E2E-1 anchor state (design.md §1.5.1/§1.5.2) reproduces
     # the EXACT same widths, since max() over a superset can never
     # exceed max() over a subset that already holds the maximal value.
     record = _record(
@@ -423,7 +423,7 @@ def test_column_widths_match_e2e1_anchors_on_a_representative_state() -> None:
 
 
 def test_column_widths_are_header_based_on_empty_sheets() -> None:
-    # design.md §8.3 REQ1d: a header-only (0 data row) sheet still
+    # design.md §3.7.3 REQ1d: a header-only (0 data row) sheet still
     # gets a sensible, header-derived width -- never a crash, never 0.
     workbook = xlsx_writer.build_workbook([], [])
     records_sheet = workbook["調閱紀錄"]
@@ -433,7 +433,7 @@ def test_column_widths_are_header_based_on_empty_sheets() -> None:
 
 
 # --------------------------------------------------------------------
-# resolve_filename() -- same-day disambiguation (design.md §8.2)
+# resolve_filename() -- same-day disambiguation (design.md §3.7.2)
 # --------------------------------------------------------------------
 
 
@@ -490,7 +490,7 @@ def test_resolve_filename_existing_file_but_no_runs_logged_disambiguates_safely(
 
 
 # --------------------------------------------------------------------
-# write() -- tmp write + fsync, no rename (design.md §5 S8)
+# write() -- tmp write + fsync, no rename (design.md §3.8 S8)
 # --------------------------------------------------------------------
 
 
@@ -520,7 +520,7 @@ def test_write_tmp_file_is_a_valid_readable_workbook(tmp_path: Path) -> None:
     )
     # openpyxl.load_workbook() gates on a `.xlsx`-family extension when
     # given a path, so a `.tmp`-suffixed path must be opened as a
-    # file-like object instead (design.md §5 S8: the tmp file is a
+    # file-like object instead (design.md §3.8 S8: the tmp file is a
     # genuine, fully-written xlsx -- only its name differs).
     with tmp_file.open("rb") as fh:
         reloaded = load_workbook(fh)
@@ -594,7 +594,7 @@ def test_ensure_out_dir_wraps_unexpected_mkdir_failure_as_write_error(
 
 # --------------------------------------------------------------------
 # _parse_app_time_iso fail-loud guard (design.md: never silently
-# mis-render a corrupted records.csv, §9.5 R7)
+# mis-render a corrupted records.csv, §4.7.7 R7)
 # --------------------------------------------------------------------
 
 

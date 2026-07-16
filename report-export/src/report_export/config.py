@@ -1,5 +1,5 @@
 """Frozen runtime configuration + path validation
-(design.md §3.2 config, §5 S0, §11).
+(design.md §2.3 config, §3.8 S0, §3.9).
 
 `Config` is the single source of truth for the three filesystem
 locations the pipeline touches: the INPUT CSV, `state_dir`, and
@@ -9,13 +9,13 @@ pipeline ever sees it -- a defence-in-depth mitigation for CWE-22
 (path traversal) at the CLI boundary. Existence/writability of the
 resolved paths is deliberately NOT checked here: that belongs to the
 module that actually touches the filesystem (csv_reader for INPUT,
-state.py/xlsx_writer for state_dir/out_dir -- design.md §13-19).
+state.py/xlsx_writer for state_dir/out_dir -- design.md §6-19).
 
 `state_dir`/`out_dir` default to the exact paths the Docker image
-mounts (design.md §10.6 Volumes, §10.7 entrypoint example), so the
+mounts (design.md §4.7.5 Volumes, §4.7.6 entrypoint example), so the
 standard containerized invocation needs no flags at all. Host-direct
 execution must override both explicitly via `--state-dir`/`--out-dir`
-(design.md §11 CLI table).
+(design.md §3.9 CLI table).
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ from report_export.errors import UsageError
 
 __all__ = ["DEFAULT_OUT_DIR", "DEFAULT_STATE_DIR", "Config"]
 
-#: Container mount points (design.md §10.6); baked-in CLI defaults so
-#: the standard `docker run` invocation (§10.7) never needs
+#: Container mount points (design.md §4.7.5); baked-in CLI defaults so
+#: the standard `docker run` invocation (§4.7.6) never needs
 #: `--state-dir`/`--out-dir`. Host-direct runs must override both.
 DEFAULT_STATE_DIR: Final[Path] = Path("/data/state")
 DEFAULT_OUT_DIR: Final[Path] = Path("/data/output")
@@ -56,12 +56,12 @@ def _normalize_path(raw: Path, *, label: str) -> Path:
 
 @dataclass(frozen=True, slots=True)
 class Config:
-    """Runtime configuration for one pipeline run (design.md §5 S0).
+    """Runtime configuration for one pipeline run (design.md §3.8 S0).
 
-    Built directly from the CLI's three arguments (design.md §11):
+    Built directly from the CLI's three arguments (design.md §3.9):
     `INPUT` (required, positional) and the optional
     `--state-dir`/`--out-dir` overrides. Every other pipeline behaviour
-    is baked-in (§11.1) and intentionally has no `Config` field.
+    is baked-in (§3.9.1) and intentionally has no `Config` field.
     """
 
     input_path: Path

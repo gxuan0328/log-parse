@@ -21,7 +21,7 @@ report-export/template/** -text
 # output snapshots) — the suite was validated against these exact bytes.
 report-export/tests/fixtures/** -text
 
-# report-export committed docker/example/ demo scenario (REQ4) is byte-exact
+# report-export committed docker/example/ demo scenario is byte-exact
 # too: the this-week input keeps its CRLF, and the seed state records.csv
 # keeps its LF — otherwise the repo-wide `* text=auto eol=lf` default would
 # normalise the CRLF input away on a Windows checkout.

@@ -109,6 +109,13 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   └── *.sh                 情境驅動腳本
 ├── tests/
 │   └── run_tests.sh         258 項功能測試套件
+├── report-export/           獨立 Python 子工具：週報 xlsx 匯出
+│   ├── src/report_export/   套件本體（純函式核心 + I/O 邊界）
+│   ├── docs/                design.md · usage.md · data-fidelity.md（zh-TW）
+│   ├── reference/           內建 HOSP_ID→HOSP_ABBR 對照表（gz）
+│   ├── docker/              Dockerfile + compose + 入庫 example/ 示範
+│   ├── tests/               391 項 pytest 套件（單元 + e2e）
+│   └── README.md            子工具快速上手（zh-TW）
 ├── .claude/
 │   ├── CLAUDE.md            核心慣例（每個 session 自動載入）
 │   ├── rules/               路徑範圍細項慣例（按需載入）
@@ -158,6 +165,24 @@ make test            # 執行 tests/run_tests.sh
 
 ---
 
+## 附屬子工具 — report-export
+
+獨立、與 log-parse 完全解耦的 Python 子工具，將每週「連線紀錄」Excel
+交付自動化；讀入 `analyze_access --format csv` 的 14 欄 CSV、過濾
+`STATUS=NORMAL`、以 `REQUEST_ID` 去重累積進自管 canonical CSV
+state，每次執行皆重生 2-sheet 純值 `.xlsx`（調閱紀錄 + 院所分析）。
+
+[![report-export tests](https://img.shields.io/badge/tests-391%2F391-brightgreen)](report-export/tests/)
+[![report-export coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](report-export/pyproject.toml)
+
+不共用上述 bash/gawk 工具組任何程式碼；透過 Docker 或 Python 3.12+ 獨
+立執行，與本儲存庫其餘部分完全解耦。快速上手見
+[`report-export/README.md`](report-export/README.md)；完整設計與操作
+參考見 [`report-export/docs/`](report-export/docs/)（`design.md` /
+`usage.md` / `data-fidelity.md`，zh-TW）。
+
+---
+
 ## 文件導覽
 
 | 文件                                                              | 適用對象            | 內容主旨                                  |
@@ -166,6 +191,7 @@ make test            # 執行 tests/run_tests.sh
 | [`docs/usage.md`](docs/usage.md) · [中文](docs/usage.zh-TW.md)    | 系統營運 / SRE      | 每個旗標的完整參考與可貼上的範例命令      |
 | [`.claude/CLAUDE.md`](.claude/CLAUDE.md)                          | AI 助理與開發人員   | 程式碼慣例、bash 寫法、awk 模板           |
 | [`CHANGELOG.md`](CHANGELOG.md)                                    | 所有人              | 版本紀錄（Keep a Changelog 格式）         |
+| [`report-export/README.md`](report-export/README.md)              | 維運（週報 xlsx 匯出） | 獨立 Python 子工具；NORMAL→去重→2-sheet xlsx；zh-TW 文件 |
 
 ---
 

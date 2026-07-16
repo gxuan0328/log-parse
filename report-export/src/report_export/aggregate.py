@@ -1,11 +1,11 @@
-"""Recompute 院所分析 from the full persisted state (design.md §3.2
-aggregate, §4.3, §5 S7, §8.4, §12.1).
+"""Recompute 院所分析 from the full persisted state (design.md §2.3
+aggregate, §3.1.3, §3.8 S7, §3.7.4, §7.1).
 
 Pure function: no I/O, no mutation of `full_state`. Every run rebuilds
 院所分析 from scratch out of the COMPLETE state (existing rows plus
 this run's newly appended batch) -- there is no incremental/delta
 aggregation path, mirroring how xlsx_writer rebuilds the whole 調閱紀錄
-sheet from state on every run (design.md §6.5 per-run reset
+sheet from state on every run (design.md §4.1 per-run reset
 semantics).
 """
 
@@ -21,12 +21,12 @@ logger = logging.getLogger(__name__)
 
 
 def build(full_state: list[StateRecord]) -> list[ReportRow]:
-    """Rebuild 院所分析 from `full_state` (design.md §4.3, §2.2, §2.3).
+    """Rebuild 院所分析 from `full_state` (design.md §3.1.3, §1.5.2, §1.5.3).
 
     Semantics mirror the template's Excel 365 dynamic-array formulas,
     evaluated against 調閱紀錄 ITSELF -- never the 93k reference master
-    (design.md §2.3), plus the tool's own WEEKLY/TOTAL split (design.md
-    §4.3 REQ3, which has no template formula to mirror -- the template
+    (design.md §1.5.3), plus the tool's own WEEKLY/TOTAL split (design.md
+    §3.1.3 REQ3, which has no template formula to mirror -- the template
     only ever had a single COUNT column):
 
         A  UNIQUE(FILTER(CLIENT_IP, CLIENT_IP<>""))   -- first-seen order
@@ -43,9 +43,9 @@ def build(full_state: list[StateRecord]) -> list[ReportRow]:
     more than one distinct HOSP_ID keeps the first-seen row's
     HOSP_ID/HOSP_ABBR (matching XLOOKUP first-match) and logs one
     WARNING naming the IP and the full set of conflicting HOSP_IDs
-    (design.md §13-11) -- a data-quality signal, never a fail-fast
+    (design.md §6-11) -- a data-quality signal, never a fail-fast
     condition: dedup only ever keys on REQUEST_ID, never HOSP_ID
-    (design.md §7.4).
+    (design.md §3.4.4).
     """
     max_batch_id = max((record.batch_id for record in full_state), default=0)
 

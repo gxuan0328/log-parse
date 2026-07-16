@@ -1,5 +1,5 @@
-"""Unit tests for report_export.statelock (design.md §12.1 test_state
-flock/O_EXCL bullets, §6.6, §13-13).
+"""Unit tests for report_export.statelock (design.md §7.1 test_state
+flock/O_EXCL bullets, §4.4, §6-13).
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def test_lock_busy_error_names_the_lock_path(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------
-# O_CREAT|O_EXCL sentinel fallback (design.md §6.6): forced by
+# O_CREAT|O_EXCL sentinel fallback (design.md §4.4): forced by
 # monkeypatching fcntl.flock to simulate an fs that does not honour it.
 # --------------------------------------------------------------------
 
@@ -147,7 +147,7 @@ def test_reacquire_after_sentinel_release_succeeds(
 
 
 # --------------------------------------------------------------------
-# Stale sentinel reclamation (design.md §6.6)
+# Stale sentinel reclamation (design.md §4.4)
 # --------------------------------------------------------------------
 
 
@@ -272,7 +272,7 @@ def test_ensure_dir_wraps_unexpected_mkdir_failure_as_write_error(
 
 
 # --------------------------------------------------------------------
-# Race-condition edges in stale-sentinel reclamation (design.md §6.6)
+# Race-condition edges in stale-sentinel reclamation (design.md §4.4)
 # --------------------------------------------------------------------
 
 

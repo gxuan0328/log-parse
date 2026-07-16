@@ -1,10 +1,10 @@
 # report-export Docker Compose convenience wrapper (docs/design.md
-# §10.6-§10.7). OPTIONAL: the canonical, documented invocation is a
-# plain `docker run` (design.md §10.7); this file only pre-wires the
+# §4.7.5-§4.7.6). OPTIONAL: the canonical, documented invocation is a
+# plain `docker run` (design.md §4.7.6); this file only pre-wires the
 # three bind mounts from that same example so a weekly run reduces to
 # one `docker compose run` line.
 #
-# IMPORTANT -- host bind-mount writability (design.md §10.4, HIGH):
+# IMPORTANT -- host bind-mount writability (design.md §4.7.3, HIGH):
 # this container must run as the uid:gid that OWNS the host
 # state/output directories, or every write fails with EACCES the first
 # time a fresh (caller-owned) host directory is used. Compose does NOT
@@ -13,8 +13,11 @@
 # in bash, so `export UID=$(id -u)` fails outright. Pass distinctly
 # named variables instead, every time you invoke this file:
 #
-#   mkdir -p docker/inbox docker/state docker/output
-#   cp /path/to/this-weeks-export.csv docker/inbox/
+#   export HOST_INPUT_DIR=/path/to/your/input-dir    # user-defined
+#   export HOST_STATE_DIR=/path/to/your/state-dir    # user-defined
+#   export HOST_OUTPUT_DIR=/path/to/your/output-dir  # user-defined
+#   mkdir -p "$HOST_INPUT_DIR" "$HOST_STATE_DIR" "$HOST_OUTPUT_DIR"
+#   cp /path/to/this-weeks-export.csv "$HOST_INPUT_DIR/"
 #   DOCKER_UID=$(id -u) DOCKER_GID=$(id -g) \
 #     docker compose -f docker/docker-compose.yml run --rm report-export \
 #       /data/input/this-weeks-export.csv
@@ -27,9 +30,9 @@
 # may additionally pass `--network none`/`network_mode: "none"`,
 # `--read-only`/`read_only: true`, and a `/tmp` tmpfs on top of this
 # base file -- none of the three affect the deliverable's output, only
-# defense-in-depth (design.md §10.5). `TZ=Asia/Taipei` is deliberately
+# defense-in-depth (design.md §4.7.4). `TZ=Asia/Taipei` is deliberately
 # NOT set here either: the image already bakes `ENV TZ=Asia/Taipei`
-# (design.md §10.5), so an explicit override would be redundant.
+# (design.md §4.7.4), so an explicit override would be redundant.
 
 services:
   report-export:
@@ -41,19 +44,21 @@ services:
     # dev-box convenience only; always override via DOCKER_UID/DOCKER_GID.
     user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     volumes:
-      # Weekly raw 14-column input CSV (design.md §10.6) -- read-only.
+      # Weekly raw 14-column input CSV (design.md §4.7.5) -- read-only.
+      # HOST_INPUT_DIR is user-defined; the ":?" form fails fast with a
+      # clear message instead of silently falling back to a guessed path.
       - type: bind
-        source: ./inbox
+        source: ${HOST_INPUT_DIR:?set HOST_INPUT_DIR to this week's input directory}
         target: /data/input
         read_only: true
       # Canonical state -- read-write; single source of truth
-      # (design.md §6.1). Must be writable by DOCKER_UID:DOCKER_GID.
+      # (design.md §3.5.1). Must be writable by DOCKER_UID:DOCKER_GID.
       - type: bind
-        source: ./state
+        source: ${HOST_STATE_DIR:?set HOST_STATE_DIR to your canonical state directory}
         target: /data/state
       # Deliverable xlsx output -- read-write.
       - type: bind
-        source: ./output
+        source: ${HOST_OUTPUT_DIR:?set HOST_OUTPUT_DIR to your deliverable output directory}
         target: /data/output
     # No `command:` here on purpose -- the input CSV filename changes
     # every week, so it is supplied on the `docker compose run ...`

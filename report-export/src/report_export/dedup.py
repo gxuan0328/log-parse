@@ -1,11 +1,11 @@
 """REQUEST_ID dedup: cross-state + intra-batch, warn-skip (design.md
-§3.2 dedup, §7, §12.1).
+§2.3 dedup, §3.4, §7.1).
 
 A duplicate REQUEST_ID is an EXPECTED outcome of re-running the same
-weekly input (idempotent re-ingest, design.md §6.5) or of two
+weekly input (idempotent re-ingest, design.md §4.1) or of two
 overlapping batches -- never a fail-fast condition. Every duplicate is
 WARN-logged (REQUEST_ID + source line number) and skipped; the process
-exit code stays 0 (design.md §7.3: warn-skip is the only strategy,
+exit code stays 0 (design.md §3.4.3: warn-skip is the only strategy,
 baked in, no `--on-duplicate` flag).
 """
 
@@ -24,7 +24,7 @@ def apply(
     rows: list[tuple[int, TransformedRecord]], existing_request_ids: set[str]
 ) -> tuple[list[TransformedRecord], int, int]:
     """Drop rows whose REQUEST_ID already exists in state or earlier in
-    this same batch (design.md §7.2).
+    this same batch (design.md §3.4.2).
 
     `existing_request_ids` is read-only here: this function only
     queries it, never mutates it -- state.py owns the authoritative

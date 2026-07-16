@@ -101,11 +101,21 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── regions.conf         Region ↔ server mapping
 │   └── test_hosts.conf      QA / health-probe client IPs (filter with --test-hosts)
 ├── docs/
-│   ├── design.md            Architecture & data-flow specification
-│   └── usage.md             Full CLI reference & worked examples
-├── examples/                Sample outputs & scripted scenarios
+│   ├── design.md / design.zh-TW.md   Architecture & data-flow specification
+│   └── usage.md  / usage.zh-TW.md    Full CLI reference & worked examples
+├── examples/
+│   ├── sample-logs/         Bundled sample log dataset
+│   ├── sample-outputs/      Sample rendered reports
+│   └── *.sh                 Scenario-driving scripts
 ├── tests/
 │   └── run_tests.sh         258-test functional suite
+├── report-export/           Independent Python subtool: weekly xlsx export
+│   ├── src/report_export/   Package (pure-function core + I/O boundary)
+│   ├── docs/                design.md · usage.md · data-fidelity.md (zh-TW)
+│   ├── reference/           Bundled HOSP_ID→HOSP_ABBR lookup (gz)
+│   ├── docker/              Dockerfile + compose + committed example/ demo
+│   ├── tests/               391-test pytest suite (unit + e2e)
+│   └── README.md            Subtool quick start (zh-TW)
 ├── .claude/
 │   ├── CLAUDE.md            Core conventions (auto-loaded every session)
 │   ├── rules/               Path-scoped detailed conventions (loaded on demand)
@@ -156,6 +166,27 @@ simulations. Baselines are derived from the bundled
 
 ---
 
+## Companion subtool — report-export
+
+An independent, self-contained Python subtool that automates the weekly
+連線紀錄 (connection-log) Excel deliverable — replacing the manual
+copy-paste-into-template workflow. It consumes the 14-column CSV produced
+by `analyze_access --format csv`, filters to `STATUS=NORMAL`, deduplicates
+by `REQUEST_ID` into its own canonical CSV state, and regenerates a
+2-sheet pure-value `.xlsx` (調閱紀錄 + 院所分析) on every run.
+
+[![report-export tests](https://img.shields.io/badge/tests-391%2F391-brightgreen)](report-export/tests/)
+[![report-export coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](report-export/pyproject.toml)
+
+It shares **no code** with the bash/gawk toolkit above and runs via Docker
+or Python 3.12+, entirely independently of everything else in this
+repository. See [`report-export/README.md`](report-export/README.md) for
+quick start, and [`report-export/docs/`](report-export/docs/)
+(`design.md` / `usage.md` / `data-fidelity.md`, zh-TW) for the full design
+and operations reference.
+
+---
+
 ## Documentation
 
 | Document                            | Audience           | Purpose                                                    |
@@ -164,6 +195,7 @@ simulations. Baselines are derived from the bundled
 | [`docs/usage.md`](docs/usage.md)    | Operators / SREs   | Every CLI flag with copy-pasteable examples                |
 | [`.claude/CLAUDE.md`](.claude/CLAUDE.md) | AI assistants & devs | Coding conventions, bash idioms, awk patterns            |
 | [`CHANGELOG.md`](CHANGELOG.md)      | Everyone           | Release history (Keep a Changelog format)                  |
+| [`report-export/README.md`](report-export/README.md) | Ops (weekly xlsx export) | Independent Python subtool; NORMAL→dedup→2-sheet xlsx; zh-TW docs |
 
 ---
 

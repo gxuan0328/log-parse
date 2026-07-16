@@ -1,4 +1,4 @@
-"""Unit tests for report_export.models (design.md §4.1-§4.3, §6.2)."""
+"""Unit tests for report_export.models (design.md §3.1.1-§3.1.3, §3.5.2)."""
 
 from __future__ import annotations
 

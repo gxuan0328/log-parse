@@ -1,10 +1,10 @@
-"""HOSP_ID -> HOSP_ABBR lookup table (design.md §3.2 lookup, §9.2, §5 S1).
+"""HOSP_ID -> HOSP_ABBR lookup table (design.md §2.3 lookup, §3.3, §3.8 S1).
 
 Loads the pre-exported `reference/hosp_id_map.csv.gz` (produced by the
 one-off dev tool `tools/export_hosp_table.py`) into an in-memory dict.
 This module never reads the 93,781-row source xlsx at runtime -- that
 workbook is a dev/ops-only input to the export tool; the 2.3MB master
-file must never be used as a runtime lookup source (design.md §9.1, §9.3).
+file must never be used as a runtime lookup source (design.md §3.3).
 """
 
 from __future__ import annotations
@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 
 EXPECTED_HEADER: Final[tuple[str, str]] = ("HOSP_ID", "HOSP_ABBR")
 
-#: Sanity-check thresholds (design.md §5 S1: sanity-check anomalies are
+#: Sanity-check thresholds (design.md §3.8 S1: sanity-check anomalies are
 #: WARN-only, tolerating master-table evolution). The real table is
-#: ~93.8k rows with 10-char keys (design.md §2.8); a large deviation is
+#: ~93.8k rows with 10-char keys (design.md §1.5.8); a large deviation is
 #: a signal the source master table changed shape, not a reason to
 #: fail the run.
 _EXPECTED_KEY_LEN: Final[int] = 10
@@ -39,11 +39,11 @@ def load(path: Path) -> dict[str, str]:
 
     Every value is read as `str` via `csv.reader` (never `csv.DictReader`
     with type inference), so leading-zero HOSP_IDs -- 531 of the
-    93,781 keys, design.md §2.8 -- survive verbatim.
+    93,781 keys, design.md §1.5.8 -- survive verbatim.
 
     Sanity checks (row count floor, key length, duplicate keys) are
     WARN-only: the source master table is allowed to evolve (design.md
-    §5 S1, §17 R2). Only a missing/unreadable/malformed-header file is
+    §3.8 S1, §8 R2). Only a missing/unreadable/malformed-header file is
     fail-fast.
 
     Raises:
@@ -62,7 +62,7 @@ def load(path: Path) -> dict[str, str]:
 
 
 def get(table: Mapping[str, str], hosp_id: str) -> str:
-    """IFERROR / XLOOKUP-not-found semantics: unmapped `hosp_id` -> `""` (design.md §9.2)."""
+    """IFERROR / XLOOKUP-not-found semantics: unmapped `hosp_id` -> `""` (design.md §3.3)."""
     return table.get(hosp_id, "")
 
 

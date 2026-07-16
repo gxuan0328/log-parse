@@ -1,4 +1,5 @@
-"""Unit tests for report_export.aggregate (design.md §12.1 test_aggregate, §2.2, §2.3, §4.3)."""
+"""Unit tests for report_export.aggregate (design.md §7.1 test_aggregate,
+§1.5.2, §1.5.3, §3.1.3)."""
 
 from __future__ import annotations
 
@@ -27,7 +28,7 @@ def _record(
     )
 
 
-# design.md §2.2: the 19 NORMAL rows of template/source-log.csv, in
+# design.md §1.5.2: the 19 NORMAL rows of template/source-log.csv, in
 # first-seen CLIENT_IP order -- this module's landed anchor values.
 _ANCHOR_TABLE: tuple[tuple[str, str, str, int], ...] = (
     ("10.243.129.44", "1145010038", "門諾醫院", 1),
@@ -55,7 +56,7 @@ def _anchor_full_state() -> list[StateRecord]:
 
 
 # --------------------------------------------------------------------
-# Landed anchors (design.md §2.2)
+# Landed anchors (design.md §1.5.2)
 # --------------------------------------------------------------------
 
 
@@ -70,7 +71,7 @@ def test_anchor_first_seen_order_matches_template() -> None:
 
 
 def test_anchor_counts_match_template() -> None:
-    # design.md §2.2/§4.3 REQ3: a single-batch state (all rows
+    # design.md §1.5.2/§3.1.3 REQ3: a single-batch state (all rows
     # BATCH_ID=1) means every row IS in the latest batch -- WEEKLY
     # ACCESS equals TOTAL ACCESS equals the old COUNT column for every
     # IP, and no "-" appears anywhere.
@@ -102,7 +103,7 @@ def test_anchor_taipei_virtual_clinic_count_is_3() -> None:
 
 
 def test_anchor_orphan_excluded_ip_count_is_1() -> None:
-    # design.md §2.2/§13-9: 10.243.129.44's ORPHAN row (source-log.csv
+    # design.md §1.5.2/§6-9: 10.243.129.44's ORPHAN row (source-log.csv
     # row 8, same IP) never reaches state -- proven by TOTAL ACCESS
     # staying at 1, not 2.
     rows = aggregate.build(_anchor_full_state())
@@ -123,7 +124,7 @@ def test_anchor_row_shape_matches_report_row() -> None:
 
 
 # --------------------------------------------------------------------
-# First-seen semantics (design.md §2.3, §4.3: XLOOKUP first-match
+# First-seen semantics (design.md §1.5.3, §3.1.3: XLOOKUP first-match
 # against 調閱紀錄 itself, never the 93k reference master)
 # --------------------------------------------------------------------
 
@@ -156,7 +157,7 @@ def test_preserves_first_seen_order_across_batches() -> None:
     rows = aggregate.build(records)
     assert [row.client_ip for row in rows] == ["10.1.1.1", "10.2.2.2"]
     assert [row.total_access for row in rows] == [2, 1]
-    # design.md §4.3 REQ3: WEEKLY ACCESS only counts batch_id==max(2).
+    # design.md §3.1.3 REQ3: WEEKLY ACCESS only counts batch_id==max(2).
     # 10.1.1.1 has 1 row in batch 2 (weekly<total); 10.2.2.2 has NONE in
     # batch 2 -- it only exists in the now-older batch 1 -> weekly_access=0.
     assert [row.weekly_access for row in rows] == [1, 0]
@@ -168,7 +169,7 @@ def test_hosp_abbr_unmapped_carries_through_as_empty_string() -> None:
 
 
 # --------------------------------------------------------------------
-# Multiple distinct HOSP_ID for one CLIENT IP (design.md §13-11):
+# Multiple distinct HOSP_ID for one CLIENT IP (design.md §6-11):
 # first-seen wins, WARN logged
 # --------------------------------------------------------------------
 
@@ -207,14 +208,14 @@ def test_single_hosp_id_per_ip_does_not_warn(caplog: pytest.LogCaptureFixture) -
 
 
 # --------------------------------------------------------------------
-# WEEKLY ACCESS vs TOTAL ACCESS (design.md §4.3 REQ3): weekly counts
+# WEEKLY ACCESS vs TOTAL ACCESS (design.md §3.1.3 REQ3): weekly counts
 # only rows whose batch_id == max(BATCH_ID) in the full state; total
 # counts every row regardless of batch.
 # --------------------------------------------------------------------
 
 
 def test_single_batch_state_has_weekly_equal_total_for_all_ips() -> None:
-    # design.md §12.2 E2E-1: a first-ever ingest is a single batch, so
+    # design.md §7.2 E2E-1: a first-ever ingest is a single batch, so
     # every row belongs to the (sole, and therefore latest) batch --
     # WEEKLY ACCESS == TOTAL ACCESS everywhere, never 0.
     rows = aggregate.build(_anchor_full_state())
@@ -260,7 +261,7 @@ def test_idempotent_rerun_max_batch_id_unchanged_keeps_weekly_semantics() -> Non
     # A 0-new-records idempotent rerun never appends a new BATCH_ID --
     # aggregate.build() is still called with the SAME full_state, so
     # max_batch_id (and therefore which rows count as "weekly") is
-    # unchanged run over run (design.md §6.5 per-run reset semantics).
+    # unchanged run over run (design.md §4.1 per-run reset semantics).
     records = [
         _record(1, "a", "10.1.1.1", "1111111111", "A"),
         _record(2, "b", "10.2.2.2", "2222222222", "B"),

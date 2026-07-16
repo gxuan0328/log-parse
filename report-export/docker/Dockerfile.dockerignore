@@ -1,6 +1,6 @@
-# report-export Docker build-context exclusions (docs/design.md §10.3).
+# report-export Docker build-context exclusions (docs/design.md §4.7.2).
 #
-# NAMING NOTE (deviation from docs/design.md §15's literal tree, which
+# NAMING NOTE (deviation from an earlier design draft's directory tree, which
 # lists this file as `docker/.dockerignore`): BuildKit only honours a
 # plain `.dockerignore` when it sits in the CONTEXT ROOT (report-export/,
 # per the documented `docker build -f docker/Dockerfile .` invocation),
@@ -22,13 +22,13 @@
 # control, not a correctness dependency.
 
 # Input template + e2e fixture baseline (2.3MB xlsx + source-log.csv):
-# already checked in as a traceable baseline (design.md §9.5); the
+# already checked in as a traceable baseline (design.md §4.7.7); the
 # runtime image never reads it (only tests/tools do).
 template/
 
-# Runtime-generated, machine-owned, per-run state (design.md §6, §9.5)
+# Runtime-generated, machine-owned, per-run state (design.md §3.5, §4.7.7)
 # -- never baked into an image; always host bind-mounted (design.md
-# §10.6). Matches the top-level .gitignore (both the top-level and the
+# §4.7.5). Matches the top-level .gitignore (both the top-level and the
 # REQ2-relocated docker/{inbox,state,output}/ runtime dirs -- these
 # patterns are unanchored, so they already match at any depth, but the
 # docker/ paths are listed explicitly too for readability).
@@ -39,13 +39,13 @@ docker/inbox/
 docker/state/
 docker/output/
 
-# Committed REQ4 demo fixtures (docker/example/**, design.md §9.5) --
+# Committed REQ4 demo fixtures (docker/example/**, design.md §4.7.7) --
 # input, docs and tools/tests-driven fixtures, never read by any COPY
 # in this Dockerfile; keep the build context small.
 docker/example/
 
 # Dev-only: tests, docs, and the one-off HOSP-table export tool never
-# ship in the runtime image (design.md §9.3, §10.2, §10.3).
+# ship in the runtime image (design.md §3.3, §4.7.1, §4.7.2).
 tests/
 docs/
 tools/

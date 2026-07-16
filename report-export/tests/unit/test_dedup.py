@@ -1,4 +1,4 @@
-"""Unit tests for report_export.dedup (design.md §12.1 test_dedup, §7)."""
+"""Unit tests for report_export.dedup (design.md §7.1 test_dedup, §3.4)."""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def test_empty_batch_returns_empty() -> None:
 
 
 # --------------------------------------------------------------------
-# Cross-state duplicates (design.md §7.2)
+# Cross-state duplicates (design.md §3.4.2)
 # --------------------------------------------------------------------
 
 
@@ -72,7 +72,7 @@ def test_cross_state_duplicate_logs_warning_with_request_id_and_line(
 
 
 def test_rerun_of_same_input_yields_zero_new_records() -> None:
-    # design.md §12.1/§13-4: re-ingesting an identical batch is fully
+    # design.md §7.1/§6-4: re-ingesting an identical batch is fully
     # idempotent -- every REQUEST_ID is already in state.
     rows = [(2, _record("a")), (3, _record("b")), (4, _record("c"))]
     existing_ids = {"a", "b", "c"}
@@ -89,7 +89,7 @@ def test_existing_request_ids_is_not_mutated() -> None:
 
 
 # --------------------------------------------------------------------
-# Intra-batch duplicates (design.md §7.2, §13-5: keep first occurrence)
+# Intra-batch duplicates (design.md §3.4.2, §6-5: keep first occurrence)
 # --------------------------------------------------------------------
 
 
@@ -133,7 +133,7 @@ def test_repeat_of_a_cross_state_duplicate_is_counted_as_intra_not_cross() -> No
 
 
 # --------------------------------------------------------------------
-# Mixed scenario + exit-code contract (design.md §7.3: always warn-skip, never raises)
+# Mixed scenario + exit-code contract (design.md §3.4.3: always warn-skip, never raises)
 # --------------------------------------------------------------------
 
 
@@ -153,7 +153,7 @@ def test_mixed_new_intra_and_cross_duplicates_in_one_batch() -> None:
 
 
 def test_apply_never_raises_on_duplicates() -> None:
-    # design.md §7.3: warn-skip is the only strategy; duplicates never
+    # design.md §3.4.3: warn-skip is the only strategy; duplicates never
     # escalate to an exception (exit code stays 0 at the CLI layer).
     rows = [(2, _record("dup")), (3, _record("dup"))]
     dedup.apply(rows, existing_request_ids={"dup"})  # must not raise

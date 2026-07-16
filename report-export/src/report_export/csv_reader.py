@@ -1,11 +1,11 @@
-"""Read + validate the 14-column input CSV (design.md §3.2 csv_reader,
-§5 S3, §12.1, §13-15).
+"""Read + validate the 14-column input CSV (design.md §2.3 csv_reader,
+§3.8 S3, §7.1, §6-15).
 
 Boundary module: the only place that opens/reads `INPUT`. Validates the
 exact header contract (name + order), a strict 14-column count on every
 data row, and known-STATUS enum membership; normalizes stray-whitespace
 dash sentinels. Deliberately never parses APP_TIME (or any other value)
-here -- that is transform.py's job (design.md §5 S4/S5): every `InputRow`
+here -- that is transform.py's job (design.md §3.8 S4/S5): every `InputRow`
 field this module produces is still an opaque `str`.
 """
 
@@ -24,7 +24,7 @@ __all__ = ["EXPECTED_HEADER", "read"]
 
 logger = logging.getLogger(__name__)
 
-#: design.md §4.1 columns A-N, exact literal header row (name + order).
+#: design.md §3.1.1 columns A-N, exact literal header row (name + order).
 EXPECTED_HEADER: Final[tuple[str, ...]] = (
     "REGION",
     "STATUS",
@@ -43,9 +43,9 @@ EXPECTED_HEADER: Final[tuple[str, ...]] = (
 )
 _EXPECTED_COLS: Final[int] = len(EXPECTED_HEADER)
 
-#: design.md §4.1: "-" marks an absent/inapplicable value. A field may
+#: design.md §3.1.1: "-" marks an absent/inapplicable value. A field may
 #: carry stray whitespace around it from upstream tooling; normalize
-#: any such variant to the canonical sentinel (design.md §5 S3).
+#: any such variant to the canonical sentinel (design.md §3.8 S3).
 _DASH_SENTINEL: Final[str] = "-"
 
 _KNOWN_STATUSES: Final[frozenset[str]] = frozenset(member.value for member in Status)
@@ -65,14 +65,14 @@ def read(path: Path) -> tuple[list[tuple[int, InputRow]], int]:
     (2 = the first row after the header) with its parsed `InputRow`,
     order preserved. Downstream stages (transform.py) need that
     original line number to report "line+col" validation errors
-    (design.md §5 S4, §11.3) -- `InputRow` itself cannot carry it,
+    (design.md §3.8 S4, §4.3) -- `InputRow` itself cannot carry it,
     since its 14 fields are fixed to the CSV contract (design.md
-    §4.1) and this project's field-order tests pin that shape exactly.
+    §3.1.1) and this project's field-order tests pin that shape exactly.
 
     `unknown_status_skipped` counts data rows dropped because STATUS
     (after `.strip().upper()`) matched none of
     NORMAL/ORPHAN/UNVERIFIED; each such row is also WARN-logged with
-    its line number and NOT included in `numbered_rows` (design.md §5
+    its line number and NOT included in `numbered_rows` (design.md §3.8
     S3).
 
     Raises:
@@ -80,8 +80,8 @@ def read(path: Path) -> tuple[list[tuple[int, InputRow]], int]:
             (exit 2); the header row is missing or does not match the
             14-column contract exactly, name and order (exit 2, lists
             expected vs. got); any data row does not have exactly 14
-            columns (exit 2, names the line number) (design.md §5 S3,
-            §13-15).
+            columns (exit 2, names the line number) (design.md §3.8 S3,
+            §6-15).
     """
     try:
         with path.open(newline="", encoding="utf-8-sig") as fh:
@@ -126,7 +126,7 @@ def _read_data_rows(reader: Iterator[list[str]]) -> tuple[list[tuple[int, InputR
 def _normalize_dash(field: str) -> str:
     """Collapse stray-whitespace dashes (`" - "`, `"-\\t"`, ...) to the
     canonical `-` sentinel; every other value is returned byte-for-byte
-    unchanged (design.md §5 S3 dash normalization) -- this is
+    unchanged (design.md §3.8 S3 dash normalization) -- this is
     deliberately narrower than a general `.strip()`, which would
     silently mask malformed data in non-dash fields.
     """

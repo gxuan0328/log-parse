@@ -1,5 +1,5 @@
-"""Unit tests for report_export.transform (design.md §12.1 test_transform,
-§5 S4/S5, §7.4, §13-4, §13-7, §13-8).
+"""Unit tests for report_export.transform (design.md §7.1 test_transform,
+§3.8 S4/S5, §3.4.4, §6-4, §6-7, §6-8).
 """
 
 from __future__ import annotations
@@ -40,12 +40,12 @@ def _row(line_no: int = 2, **overrides: str) -> tuple[int, InputRow]:
 
 
 # --------------------------------------------------------------------
-# filter_normal -- Excel `=` case-insensitive STATUS filter (design.md §5 S4)
+# filter_normal -- Excel `=` case-insensitive STATUS filter (design.md §3.8 S4)
 # --------------------------------------------------------------------
 
 
 def test_real_fixture_filters_25_rows_down_to_19_normal() -> None:
-    # design.md §2.1 e2e row-count anchor: 25 input rows -> 19 NORMAL.
+    # design.md §1.5.1 e2e row-count anchor: 25 input rows -> 19 NORMAL.
     all_rows, _ = csv_reader.read(SOURCE_LOG_PATH)
     assert len(all_rows) == 25
     normal_rows = transform.filter_normal(all_rows)
@@ -89,7 +89,7 @@ def test_filter_normal_does_not_mutate_input() -> None:
 
 
 # --------------------------------------------------------------------
-# project -- APP_TIME validation + 9-field projection (design.md §5 S5)
+# project -- APP_TIME validation + 9-field projection (design.md §3.8 S5)
 # --------------------------------------------------------------------
 
 
@@ -170,7 +170,7 @@ def test_project_is_pure_does_not_mutate_hosp_table() -> None:
 
 
 # --------------------------------------------------------------------
-# End-to-end against the real 19 NORMAL rows (design.md §12.2 invariant)
+# End-to-end against the real 19 NORMAL rows (design.md §7.2 invariant)
 # --------------------------------------------------------------------
 
 
@@ -182,7 +182,7 @@ def test_real_fixture_all_19_normal_rows_project_without_error() -> None:
 
 
 def test_real_fixture_orphan_row_excluded_before_project() -> None:
-    # design.md §13-9: the ORPHAN row (line 8, CLIENT_IP 10.243.129.44)
+    # design.md §6-9: the ORPHAN row (line 8, CLIENT_IP 10.243.129.44)
     # has a valid APP_TIME but a dash API_TIME; it must never reach
     # project() at all because filter_normal() already dropped it.
     all_rows, _ = csv_reader.read(SOURCE_LOG_PATH)
@@ -193,7 +193,7 @@ def test_real_fixture_orphan_row_excluded_before_project() -> None:
 
 # --------------------------------------------------------------------
 # NORMAL-row contract violations -> InputValidationError exit 2
-# (design.md §5 S4, §13-8)
+# (design.md §3.8 S4, §6-8)
 # --------------------------------------------------------------------
 
 
@@ -231,7 +231,7 @@ def test_app_time_error_message_reports_line_number_only() -> None:
 
 
 def test_missing_request_id_on_normal_row_raises() -> None:
-    # design.md §7.4/§13-4: blank/missing REQUEST_ID on a NORMAL row is
+    # design.md §3.4.4/§6-4: blank/missing REQUEST_ID on a NORMAL row is
     # an input-contract violation, never silently accepted as a
     # synthetic dedup key.
     rows = [_row(request_id="")]

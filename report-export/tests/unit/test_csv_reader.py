@@ -1,5 +1,5 @@
-"""Unit tests for report_export.csv_reader (design.md §12.1 test_csv_reader,
-§5 S3, §13-15).
+"""Unit tests for report_export.csv_reader (design.md §7.1 test_csv_reader,
+§3.8 S3, §6-15).
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from report_export.errors import InputValidationError
 from report_export.models import InputRow
 
 # report-export/template/source-log.csv -- the real, checked-in e2e
-# fixture (design.md §2.6: 25 data rows, CRLF, no BOM, no trailing
+# fixture (design.md §1.5.6: 25 data rows, CRLF, no BOM, no trailing
 # newline on the last line).
 TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "template"
 SOURCE_LOG_PATH = TEMPLATE_DIR / "source-log.csv"
@@ -66,7 +66,7 @@ def test_real_fixture_line_numbers_start_at_2() -> None:
 
 
 def test_real_fixture_status_counts_match_design_anchor() -> None:
-    # design.md §2.1: NORMAL 19 / ORPHAN 1 / UNVERIFIED 5.
+    # design.md §1.5.1: NORMAL 19 / ORPHAN 1 / UNVERIFIED 5.
     rows, _ = csv_reader.read(SOURCE_LOG_PATH)
     statuses = [row.status for _, row in rows]
     assert statuses.count("NORMAL") == 19
@@ -75,7 +75,7 @@ def test_real_fixture_status_counts_match_design_anchor() -> None:
 
 
 def test_real_fixture_crlf_last_field_has_no_trailing_cr() -> None:
-    # design.md §2.6/§5 S3/§12.1: CRLF input read with newline="" must
+    # design.md §1.5.6/§3.8 S3/§7.1: CRLF input read with newline="" must
     # not leave a trailing \r on the last column of any row.
     rows, _ = csv_reader.read(SOURCE_LOG_PATH)
     for _, row in rows:
@@ -85,7 +85,7 @@ def test_real_fixture_crlf_last_field_has_no_trailing_cr() -> None:
 
 def test_real_fixture_last_row_has_no_trailing_newline_artifact() -> None:
     # source-log.csv's last physical line has no trailing newline at
-    # all (design.md §2.6) -- confirm the last row still parses cleanly.
+    # all (design.md §1.5.6) -- confirm the last row still parses cleanly.
     rows, _ = csv_reader.read(SOURCE_LOG_PATH)
     last_line_no, last_row = rows[-1]
     assert last_line_no == 26
@@ -100,7 +100,7 @@ def test_real_fixture_preserves_leading_zero_hosp_id() -> None:
 
 
 # --------------------------------------------------------------------
-# Header validation (design.md §5 S3: exact name + order, 14 columns)
+# Header validation (design.md §3.8 S3: exact name + order, 14 columns)
 # --------------------------------------------------------------------
 
 
@@ -159,7 +159,7 @@ def test_directory_as_input_raises_input_validation_error(tmp_path: Path) -> Non
 
 
 # --------------------------------------------------------------------
-# Strict 14-column row validation (design.md §5 S3: line number on mismatch)
+# Strict 14-column row validation (design.md §3.8 S3: line number on mismatch)
 # --------------------------------------------------------------------
 
 
@@ -195,7 +195,7 @@ def test_quoted_field_containing_comma_counts_as_one_column(tmp_path: Path) -> N
 
 
 # --------------------------------------------------------------------
-# STATUS: unknown value -> WARN + skip + count (design.md §5 S3)
+# STATUS: unknown value -> WARN + skip + count (design.md §3.8 S3)
 # --------------------------------------------------------------------
 
 
@@ -238,7 +238,7 @@ def test_orphan_and_unverified_are_known_statuses(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------
-# Dash sentinel normalization (design.md §5 S3)
+# Dash sentinel normalization (design.md §3.8 S3)
 # --------------------------------------------------------------------
 
 
@@ -258,7 +258,7 @@ def test_bare_dash_is_left_unchanged(tmp_path: Path) -> None:
 
 def test_non_dash_field_is_never_stripped(tmp_path: Path) -> None:
     # Only the dash sentinel is normalized -- every other value passes
-    # through byte-for-byte, whitespace included (design.md §5 S3: not
+    # through byte-for-byte, whitespace included (design.md §3.8 S3: not
     # a general .strip(), a narrow dash-only normalization).
     path = tmp_path / "not_dash.csv"
     _write_csv(path, HEADER_LINE, _data_row(REGION=" 台北 "))
@@ -267,7 +267,7 @@ def test_non_dash_field_is_never_stripped(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------
-# Encoding (design.md §5 S3: utf-8-sig; §13-15: strict decode errors)
+# Encoding (design.md §3.8 S3: utf-8-sig; §6-15: strict decode errors)
 # --------------------------------------------------------------------
 
 

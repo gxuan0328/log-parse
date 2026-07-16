@@ -1,15 +1,15 @@
 """Wire S0-S10 into one pipeline run, returning a `RunSummary`
-(design.md §3.2 pipeline, §5, §12.1).
+(design.md §2.3 pipeline, §3.8, §7.1).
 
 The sole effectful orchestrator: every stage function it calls is
 either a pure transform (`transform`/`aggregate`) or a narrowly-scoped
 I/O boundary module (`csv_reader`/`lookup`/`state`/`statelock`/
 `xlsx_writer`). `run()` accepts internal `run_date`/`reference_path`
-parameters purely as test seams (design.md §3.4, §11.1) -- the CLI
+parameters purely as test seams (design.md §2.4, §3.9.1) -- the CLI
 itself never exposes a `--run-date` (or `--reference`) flag; production
 callers always take the defaults (today's date under the container's
 TZ=Asia/Taipei, and the reference table bundled next to the installed
-package, design.md §5 S0-S1, §9.2, §10.2).
+package, design.md §3.8 S0-S1, §3.3, §4.7.1).
 """
 
 from __future__ import annotations
@@ -40,14 +40,14 @@ __all__ = ["RunSummary", "run"]
 
 logger = logging.getLogger(__name__)
 
-#: design.md §9.2/§10.2: the bundled reference table lives one
+#: design.md §3.3/§4.7.1: the bundled reference table lives one
 #: directory above the installed package -- `report-export/reference/`
 #: on a host editable install (this file resolves to
 #: `.../report-export/src/report_export/pipeline.py`), or
 #: `/app/reference/` inside the Docker image (which `COPY`s `src/` and
-#: `reference/` as siblings under `/app`, design.md §10.2). Computed
+#: `reference/` as siblings under `/app`, design.md §4.7.1). Computed
 #: relative to this module's own file so no CLI flag or environment
-#: variable is needed (design.md §11 lean CLI, YAGNI).
+#: variable is needed (design.md §3.9 lean CLI, YAGNI).
 _PACKAGE_ROOT: Final[Path] = Path(__file__).resolve().parent.parent.parent
 _DEFAULT_REFERENCE_PATH: Final[Path] = _PACKAGE_ROOT / "reference" / "hosp_id_map.csv.gz"
 
@@ -58,9 +58,9 @@ _RUN_DATE_FMT: Final[str] = "%Y-%m-%d"
 
 @dataclass(frozen=True, slots=True)
 class RunSummary:
-    """The pipeline's single stdout-JSON-serializable result (design.md §11.2).
+    """The pipeline's single stdout-JSON-serializable result (design.md §3.9.2).
 
-    Field names are exactly the §11.2 stdout JSON keys -- `cli.py`
+    Field names are exactly the §3.9.2 stdout JSON keys -- `cli.py`
     serializes this via `dataclasses.asdict()` with no renaming.
     """
 
@@ -84,19 +84,19 @@ class RunSummary:
 def run(
     config: Config, *, run_date: date | None = None, reference_path: Path | None = None
 ) -> RunSummary:
-    """Execute one full ingest+report run (design.md §5 S0-S9).
+    """Execute one full ingest+report run (design.md §3.8 S0-S9).
 
     `run_date` defaults to `date.today()` (the container's
-    TZ=Asia/Taipei "today", design.md §5 S0) and `reference_path`
+    TZ=Asia/Taipei "today", design.md §3.8 S0) and `reference_path`
     defaults to the bundled `hosp_id_map.csv.gz` -- both parameters
     exist purely as test seams, never exposed as CLI flags (design.md
-    §11.1).
+    §3.9.1).
 
     Raises:
         InputValidationError, ReferenceError, StateIntegrityError,
         LockBusyError, WriteError: propagated unmodified from whichever
         stage boundary raised them -- `cli.py` is the sole catcher
-        (design.md §11.4).
+        (design.md §4.2).
     """
     resolved_run_date = run_date if run_date is not None else date.today()
     resolved_reference_path = (
@@ -140,7 +140,7 @@ def _run_locked(config: Config, *, run_date: date, reference_path: Path) -> RunS
     full_state = load_result.existing + new_state_records
     report_rows = aggregate.build(full_state)
 
-    # design.md §6.5: the deliverable's yellow highlight always falls on
+    # design.md §4.1: the deliverable's yellow highlight always falls on
     # `max(batch_id in full_state)` -- `batch_seq` in the summary/audit
     # trail mirrors that SAME quantity, so it always names whichever
     # batch is actually current in (and highlighted in) this run's
@@ -159,7 +159,7 @@ def _run_locked(config: Config, *, run_date: date, reference_path: Path) -> RunS
         input_sha256=input_sha256,
     )
 
-    if new_state_records:  # S9.1 -- 0-new is a no-op, idempotent (design.md §5 S9)
+    if new_state_records:  # S9.1 -- 0-new is a no-op, idempotent (design.md §3.8 S9)
         state.commit(config.state_dir, full_state)
     _replace_deliverable(tmp_path, final_path)  # S9.2
 
@@ -202,10 +202,10 @@ def _build_run_record(
     summary: RunSummary,
     new_state_records: list[StateRecord],
 ) -> dict[str, object]:
-    """Build one `runs.jsonl` audit record (design.md §6.7).
+    """Build one `runs.jsonl` audit record (design.md §3.5.6).
 
-    Field names here are the §6.7 audit-trail schema, deliberately
-    distinct from `RunSummary`'s §11.2 stdout-JSON field names (e.g.
+    Field names here are the §3.5.6 audit-trail schema, deliberately
+    distinct from `RunSummary`'s §3.9.2 stdout-JSON field names (e.g.
     `skipped_cross` here vs `skipped_cross_state` there) -- each
     section of design.md defines its own field names and both are
     reproduced exactly as specified.

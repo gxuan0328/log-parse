@@ -1,4 +1,4 @@
-"""Unit tests for report_export.config (design.md §3.2 config, §5 S0, §11, CWE-22)."""
+"""Unit tests for report_export.config (design.md §2.3 config, §3.8 S0, §3.9, CWE-22)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from report_export.errors import UsageError
 
 
 def test_defaults_match_design_doc_container_mount_points() -> None:
-    # design.md §10.6 Volumes / §10.7 entrypoint example: the standard
+    # design.md §4.7.5 Volumes / §4.7.6 entrypoint example: the standard
     # `docker run` invocation passes no --state-dir/--out-dir at all.
     assert Path("/data/state") == DEFAULT_STATE_DIR
     assert Path("/data/output") == DEFAULT_OUT_DIR

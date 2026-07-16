@@ -22,7 +22,7 @@
   （`records.csv`，單一真實來源）。
 - 由完整 state 重新產生一份 2-sheet 純值交付 xlsx：「調閱紀錄」（累積明
   細，本次新增批次整列黃底）與「院所分析」（按 CLIENT IP 聚合的院所統
-  計）。
+  計，含 WEEKLY ACCESS 本週存取數 + TOTAL ACCESS 歷史累計）。
 - 相同輸入重跑**冪等**：不會重複追加、不會破壞既有 state，會產生等價
   的交付檔。
 
@@ -32,7 +32,7 @@ bash/gawk CLI 共用任何程式碼或設定——兩者完全解耦，各自獨
 **PII**：關係人已確認本工具處理的所有欄位皆可正常操作與記錄，**不**含
 資料遮罩、靜態加密或合規緩解機制；安全姿態聚焦於一般工程衛生（非 root
 容器、唯讀根檔案系統、無網路、hash 鎖定依賴）。詳見
-[`docs/design.md`](docs/design.md) 第 14 章。
+[`docs/design.md`](docs/design.md) §4.6。
 
 ---
 
@@ -59,52 +59,56 @@ bash/gawk CLI 共用任何程式碼或設定——兩者完全解耦，各自獨
 ```bash
 cd report-export
 
-# 1. 建置映像（僅需一次；主檔或依賴更新後才需重建，見 docs/usage.zh-TW.md §8）
+# 1. 建置映像（僅需一次；主檔或依賴更新後才需重建，見 docs/usage.md
+#    「參考主檔（HOSP_ID對照表）更新程序」）
 docker build -t report-export:1.0.0 -f docker/Dockerfile .
 
-# 2. 準備目錄（僅需一次；務必由「將要執行 docker run 的你」建立，
-#    否則會撞上 host 權限前置條件，見 docs/usage.zh-TW.md §4）
-mkdir -p docker/inbox docker/state docker/output
+# 2. 準備你自己的資料目錄（僅需一次；哪裡都可以，只要存在且可寫；
+#    務必由「將要執行 docker run 的你」建立，否則會撞上 host 權限前
+#    置條件，見 docs/usage.md「HOST 權限前置條件」）
+export HOST_INPUT_DIR=/path/to/your/input-dir
+export HOST_STATE_DIR=/path/to/your/state-dir
+export HOST_OUTPUT_DIR=/path/to/your/output-dir
+mkdir -p "$HOST_INPUT_DIR" "$HOST_STATE_DIR" "$HOST_OUTPUT_DIR"
 
-# 3. 每週：把本週輸入 CSV 放進 docker/inbox/，然後一行指令
-cp /path/to/this-weeks-export.csv docker/inbox/week-2026-07-13.csv
+# 3. 每週：把本週輸入 CSV 放進 HOST_INPUT_DIR，然後一行指令
+cp /path/to/this-weeks-export.csv "$HOST_INPUT_DIR/week-2026-07-13.csv"
 docker run --rm --user "$(id -u):$(id -g)" \
-  -v "$PWD/docker/inbox:/data/input:ro" \
-  -v "$PWD/docker/state:/data/state" \
-  -v "$PWD/docker/output:/data/output" \
+  -v "$HOST_INPUT_DIR:/data/input:ro" \
+  -v "$HOST_STATE_DIR:/data/state" \
+  -v "$HOST_OUTPUT_DIR:/data/output" \
   report-export:1.0.0 \
   /data/input/week-2026-07-13.csv
 ```
 
-`--rm` 與 `--user "$(id -u):$(id -g)"` 是唯二功能性必要旗標（後者見 §4 host
-權限前置條件）；`--network none`/`--read-only`/`--tmpfs /tmp`/
-`-e TZ=Asia/Taipei` 四項純屬選配硬化（預設不加，映像已內建
+`--rm` 與 `--user "$(id -u):$(id -g)"` 是唯二功能性必要旗標（後者見
+docs/usage.md「HOST 權限前置條件」）；`--network none`/`--read-only`/
+`--tmpfs /tmp`/`-e TZ=Asia/Taipei` 四項純屬選配硬化（預設不加，映像已內建
 `TZ=Asia/Taipei`），安全敏感站點可自行加回，詳見
-[`docs/usage.zh-TW.md`](docs/usage.zh-TW.md) §3.3。
+[`docs/usage.md`](docs/usage.md)「每週單一指令執行」。
 
 想不用準備自己的資料就先看看效果？見
-[`docs/usage.zh-TW.md`](docs/usage.zh-TW.md) §11「可重複示範」，直接用入
-庫的 `docker/example/` 固定 fixtures 跑一次。
+[`docs/usage.md`](docs/usage.md)「可重複示範」，直接用入庫的
+`docker/example/` 固定 fixtures 跑一次。
 
 執行成功時 stdout 會印出一行 JSON 摘要（新增筆數、去重跳過數、唯一 IP
 數等），stderr 印出結構化日誌；exit code `0` 代表成功（詳見
-[`docs/usage.zh-TW.md`](docs/usage.zh-TW.md) §2）。
+[`docs/usage.md`](docs/usage.md)「stdout 摘要」）。
 
 ---
 
 ## 輸出落地位置
 
-| 目錄 | 內容 |
+| 位置 | 內容 |
 |------|------|
-| `docker/output/{今日日期}_連線紀錄.xlsx`（同日第二個不同批次自動加 `_02` 消歧） | 本次交付檔：「調閱紀錄」+「院所分析」兩張 sheet，純值、無公式，全表儲存格置中、資料細框線、表頭粗下框線、欄寬自動 fit，本次新增批次整列黃底。「院所分析」現為 5 欄，除 CLIENT IP/HOSP_ID/HOSP_ABBR 外，新增 `WEEKLY ACCESS`（本週存取數）與 `TOTAL ACCESS`（歷史累計），本週無存取之院所 `WEEKLY ACCESS` 顯示 `-`。 |
-| `docker/state/records.csv` | 累積中的 canonical state（單一真實來源），**機器託管，勿用 Excel 開啟編輯**。 |
-| `docker/state/runs.jsonl` | 每次執行一行的 append-only 稽核紀錄。 |
+| `{out_dir}/{今日日期}_連線紀錄.xlsx`（同日第二個不同批次自動加 `_02` 消歧） | 本次交付檔：「調閱紀錄」+「院所分析」兩張 sheet，純值、無公式，全表儲存格置中、資料細框線、表頭粗下框線、欄寬自動 fit，本次新增批次整列黃底。「院所分析」5 欄：CLIENT IP/HOSP_ID/HOSP_ABBR 外，`WEEKLY ACCESS`（本週存取數）與 `TOTAL ACCESS`（歷史累計）；本週無存取之院所 `WEEKLY ACCESS` 顯示 `-`。 |
+| `{state_dir}/records.csv` | 累積中的 canonical state（單一真實來源），**機器託管，勿用 Excel 開啟編輯**。 |
+| `{state_dir}/runs.jsonl` | 每次執行一行的 append-only 稽核紀錄。 |
 
-`docker/inbox/`、`docker/state/`、`docker/output/`（執行期目錄，Docker
-範例用）與根目錄下同名的 `inbox/`、`state/`、`output/`（host 直接執行慣
-例位置）皆已在 `.gitignore` 中錨定排除，不會被提交入庫；`docker/example/`
-則是 REQ4 入庫的固定示範 fixtures，**不受** `.gitignore` 影響，見
-[`docs/usage.zh-TW.md`](docs/usage.zh-TW.md) §11。
+`{out_dir}`/`{state_dir}` 由你透過 `-v`/`--state-dir`/`--out-dir` 指
+向自己選定的目錄（容器內固定掛載點為 `/data/output`/`/data/state`）；
+`docker/example/` 是入庫的固定示範 fixtures，不受 `.gitignore` 影
+響，見 [`docs/usage.md`](docs/usage.md)「可重複示範」。
 
 ---
 
@@ -112,9 +116,25 @@ docker run --rm --user "$(id -u):$(id -g)" \
 
 | 文件 | 內容 |
 |------|------|
-| [`docs/design.md`](docs/design.md) | 完整設計文件：系統概觀、資料模型、管線階段、持久化/去重/xlsx 產生規格、Docker 規格、CLI、測試策略、邊界案例、安全、分階段建置序列。 |
-| [`docs/usage.zh-TW.md`](docs/usage.zh-TW.md) | **操作手冊（runbook）**：CLI 語法、stdout/stderr/結束碼、Docker 每週執行、host 權限前置條件、NAS 鎖注意事項、交付檔名規則、復原程序、參考主檔更新程序。 |
-| [`docs/data-fidelity.zh-TW.md`](docs/data-fidelity.zh-TW.md) | 型別/格式契約逐欄對照表（輸入 14 欄 → state 10 欄 → 交付 9+5 欄）、TEXT/datetime/int 型別理由、落地錨點、openpyxl round-trip 行為、機器託管檔案警告。 |
+| [`docs/design.md`](docs/design.md) | 設計規格：系統概觀、架構、模組規格（資料模型、管線階段、CLI 契約）、橫切關注（冪等性、錯誤處理、日誌、並行、效能、安全、Docker）、能力矩陣、邊界案例、測試策略、已知限制。 |
+| [`docs/usage.md`](docs/usage.md) | **CLI 使用參考**：CLI 語法/選項/範例、stdout/stderr/結束碼、Docker 每週執行、host 權限前置條件、NAS 鎖注意事項、交付檔名規則、復原程序、參考主檔更新程序。 |
+| [`docs/data-fidelity.md`](docs/data-fidelity.md) | 型別/格式契約逐欄對照表（輸入 14 欄 → state 10 欄 → 交付 9+5 欄）、TEXT/datetime/int 型別理由、落地錨點、openpyxl round-trip 行為、機器託管檔案警告。 |
+
+---
+
+## 測試
+
+```bash
+cd report-export
+python3 -m ruff check src tests tools
+python3 -m mypy --strict src tests
+python3 -m coverage run -m pytest -q      # 391 個測試全綠
+python3 -m coverage report                # gate >= 80%，實測 100%
+```
+
+CI 階段對齊 lint → test → analyze → build → deploy：`ruff`(lint) →
+`mypy --strict`(analyze) → `pytest --cov`(test) → `docker build` →
+容器內 `--network none` 跑一次 smoke test。
 
 ---
 
@@ -124,17 +144,16 @@ docker run --rm --user "$(id -u):$(id -g)" \
 report-export/
 ├─ README.md                # 本檔
 ├─ src/report_export/       # 套件本體（純函式核心 + I/O 邊界模組）
-├─ reference/                # 捆綁的 HOSP_ID -> HOSP_ABBR 查表（入庫）
-├─ template/                 # 入庫基線：來源模板 xlsx + e2e 輸入 fixture
+├─ reference/               # 捆綁的 HOSP_ID -> HOSP_ABBR 查表（入庫）
+├─ template/                # 入庫基線：來源模板 xlsx + e2e 輸入 fixture
 ├─ tools/export_hosp_table.py  # 一次性 dev/ops 匯出工具（不進執行期映像）
-├─ tests/                    # 單元 + 端對端測試
-├─ docker/                   # Dockerfile + docker-compose.yml（選配）
-│  ├─ inbox/ state/ output/  # 執行期目錄（.gitignore，執行後才出現）
-│  └─ example/                # 入庫可重複示範 fixtures（seed state + this-week 輸入，見 docs/usage.zh-TW.md §11）
-├─ docs/                     # design.md + usage.zh-TW.md + data-fidelity.zh-TW.md
-├─ state/                    # host 直接執行慣例位置（.gitignore，執行後才出現）
-├─ output/                   # host 直接執行慣例位置（.gitignore，執行後才出現）
-└─ inbox/                    # host 直接執行慣例位置，選配每週輸入投放區（.gitignore）
+├─ tests/                   # 單元 + 端對端測試
+├─ docker/                  # Dockerfile + docker-compose.yml
+│  └─ example/              # 入庫可重複示範 fixtures（seed state + this-week 輸入，見 docs/usage.md「可重複示範」）
+└─ docs/                    # design.md + usage.md + data-fidelity.md（zh-TW）
 ```
 
-完整目錄結構與各檔案職責見 [`docs/design.md`](docs/design.md) 第 15 章。
+canonical state、交付 xlsx、輸入投放目錄皆為**使用者自訂、置於本儲存
+庫之外**的執行期資料（透過 `--state-dir`/`--out-dir`/`-v` 指定）；本
+專案不預先規範任何固定的 host 資料目錄。以上即完整目錄結構；各模組職
+責對照見 [`docs/design.md`](docs/design.md) §2.3 模組分解。

@@ -1,4 +1,4 @@
-"""Unit tests for report_export.lookup (design.md §12.1 test_lookup, §2.2, §2.8, §9.2)."""
+"""Unit tests for report_export.lookup (design.md §7.1 test_lookup, §1.5.2, §1.5.8, §3.3)."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def hosp_table() -> dict[str, str]:
 
 
 # --------------------------------------------------------------------
-# Real reference/hosp_id_map.csv.gz -- anchors from design.md §2.2 / §2.8
+# Real reference/hosp_id_map.csv.gz -- anchors from design.md §1.5.2 / §1.5.8
 # --------------------------------------------------------------------
 
 
@@ -41,12 +41,12 @@ def test_load_returns_expected_row_count(hosp_table: dict[str, str]) -> None:
 
 
 def test_known_hosp_id_maps_to_expected_abbr(hosp_table: dict[str, str]) -> None:
-    # design.md §2.2 row 9 / §2.8 anchor.
+    # design.md §1.5.2 row 9 / §1.5.8 anchor.
     assert hosp_table["0937010019"] == "秀傳醫院"
 
 
 def test_second_known_hosp_id_maps_to_expected_abbr(hosp_table: dict[str, str]) -> None:
-    # design.md §2.2 row 7 anchor.
+    # design.md §1.5.2 row 7 anchor.
     assert hosp_table["3501200000"] == "臺北虛擬診"
 
 
@@ -63,7 +63,7 @@ def test_all_keys_are_str_type() -> None:
 
 
 # --------------------------------------------------------------------
-# get() -- IFERROR / XLOOKUP-not-found semantics (design.md §9.2)
+# get() -- IFERROR / XLOOKUP-not-found semantics (design.md §3.3)
 # --------------------------------------------------------------------
 
 
@@ -146,7 +146,7 @@ def test_load_rejects_directory_path(tmp_path: Path) -> None:
 
 # --------------------------------------------------------------------
 # Sanity-check warnings -- WARN-only, tolerate master data evolution
-# (design.md §5 S1, §17 R2)
+# (design.md §3.8 S1, §8 R2)
 # --------------------------------------------------------------------
 
 

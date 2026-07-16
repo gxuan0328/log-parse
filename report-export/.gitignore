@@ -1,23 +1,14 @@
-# Runtime-generated, machine-owned (design.md §9.5): never commit.
-# Anchored (`/`-prefixed) to the specific runtime locations -- both the
-# top-level host-direct-run dirs AND the REQ2-relocated docker/{inbox,
-# state,output}/ dirs -- so an UNANCHORED pattern (which would also
-# match report-export/docker/example/{state,input}/, the REQ4
-# committed demo fixtures) never accidentally blocks committing them.
-/state/
-/output/
-/inbox/
-/docker/state/
-/docker/output/
-/docker/inbox/
+# Machine-generated tool/cache artifacts only. Runtime data dirs
+# (input/state/output) are user-defined and live outside the repo
+# (design.md §4.7.7).
 
 # Python / tooling
 .venv/
 __pycache__/
 *.egg-info/
 
-# Dev-tool caches (supplements the required list above; same rationale --
-# machine-generated, never meant to be committed).
+# Dev-tool caches (same rationale -- machine-generated, never meant to
+# be committed).
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

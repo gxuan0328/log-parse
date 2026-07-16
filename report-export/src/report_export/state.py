@@ -1,13 +1,13 @@
 """canonical `records.csv` state: crash-tolerant load, atomic commit,
 in-file `#META` integrity tail, `.bak` recovery, `runs.jsonl` audit
-trail, BATCH_ID assignment (design.md §3.2 state, §6.2-§6.7, §12.1).
+trail, BATCH_ID assignment (design.md §2.3 state, §3.5, §7.1).
 
 `records.csv` is the single source of truth. It is UTF-8, `\\n`-only
-line endings, all-`str` columns (design.md §6.1 -- always via `csv`,
+line endings, all-`str` columns (design.md §3.5.1 -- always via `csv`,
 never pandas-style dtype inference, so leading zeros never get
 numerically coerced), with one machine-owned tail line (`#META`) that
 lets a single `os.replace()` cover both the data and its own
-completeness/integrity description in one atomic step (design.md §6.3
+completeness/integrity description in one atomic step (design.md §3.5.3
 -- this is what makes a fully-committed state provably unbrickable: no
 window ever exists where the data is committed but its integrity
 descriptor is not, or vice versa).
@@ -65,9 +65,9 @@ _META_PREFIX: Final[str] = "#META"
 
 @dataclass(frozen=True, slots=True)
 class LoadResult:
-    """`state.load()`'s output (design.md §5 S2): the full existing
+    """`state.load()`'s output (design.md §3.8 S2): the full existing
     state, its REQUEST_ID set (for dedup.apply()), and the highest
-    BATCH_ID seen so far (0 for an empty state, design.md §6.8).
+    BATCH_ID seen so far (0 for an empty state, design.md §3.5.5).
     """
 
     existing: list[StateRecord]
@@ -84,19 +84,19 @@ class _TailIntegrityError(Exception):
 
 
 # --------------------------------------------------------------------
-# load() -- crash-tolerant (design.md §5 S2, §6.4 cases 1-5)
+# load() -- crash-tolerant (design.md §3.8 S2, §3.5.4 cases 1-5)
 # --------------------------------------------------------------------
 
 
 def load(state_dir: Path) -> LoadResult:
     """Load `state_dir/records.csv` with crash-tolerant tail-integrity
-    recovery (design.md §6.4). A fully-committed state is never
+    recovery (design.md §3.5.4). A fully-committed state is never
     misdiagnosed as corrupt.
 
-    Cases (design.md §6.4):
+    Cases (design.md §3.5.4):
       1. `records.csv` missing -> empty state (`existing=[]`,
          `max_batch_seq=0`) -- the normal first-ever-run path
-         (design.md §6.8), not an error.
+         (design.md §3.5.5), not an error.
       2. Parses; tail present; `records`/`sha256` match -> normal load.
       3. Parses; tail MISSING -> WARN (non-fatal); the next `commit()`
          backfills a correct tail.
@@ -161,7 +161,7 @@ def _split_tail(text: str) -> tuple[str, dict[str, str] | None]:
     """Split `text` into `(body, meta)`.
 
     `body` is exactly the header+data-row text that was hashed at
-    write time (design.md §6.3); `meta` is the parsed `#META` tail's
+    write time (design.md §3.5.3); `meta` is the parsed `#META` tail's
     key/value tokens, or `None` if no tail line is present (case 3).
     """
     without_trailing = text[:-1] if text.endswith("\n") else text
@@ -237,19 +237,19 @@ def _parse_body(body: str, *, source: Path) -> list[StateRecord]:
 
 # --------------------------------------------------------------------
 # commit() -- atomic write: tmp -> fsync -> .bak -> os.replace
-# (design.md §5 S9.1, §6.3, §6.6)
+# (design.md §3.8 S9.1, §3.5.3, §3.5.4)
 # --------------------------------------------------------------------
 
 
 def commit(state_dir: Path, full_state: list[StateRecord]) -> None:
     """Atomically persist `full_state` as the new `records.csv`.
 
-    Order (design.md §6.6): write `records.csv.tmp` -> `fsync` -> copy
+    Order (design.md §3.5.4): write `records.csv.tmp` -> `fsync` -> copy
     the CURRENT `records.csv` (if any) to `records.csv.bak` -> `
     os.replace(tmp, records.csv)` (POSIX-atomic). The `#META` tail is
     written in the exact same file as the data it describes, so
     `records.csv` is always either fully absent or fully
-    self-consistent -- never observable half-written (design.md §6.3).
+    self-consistent -- never observable half-written (design.md §3.5.3).
 
     Raises:
         WriteError (exit 5): any IO failure while writing the tmp
@@ -317,15 +317,15 @@ def _build_meta_line(*, records: int, last_batch_seq: int, sha256: str) -> str:
 
 
 # --------------------------------------------------------------------
-# BATCH_ID assignment (design.md §5 S7, §6.2, §6.8: from 1, no seeding)
+# BATCH_ID assignment (design.md §3.8 S7, §3.5.2, §3.5.5: from 1, no seeding)
 # --------------------------------------------------------------------
 
 
 def assign_batch(new_records: list[TransformedRecord], *, max_batch_seq: int) -> list[StateRecord]:
     """Assign the next BATCH_ID (`max_batch_seq + 1` -- 1 for an empty
-    state, design.md §6.2, §6.8) to every already-deduped record,
+    state, design.md §3.5.2, §3.5.5) to every already-deduped record,
     producing the final `StateRecord`s ready to merge into
-    `existing + new` and persist via `commit()` (design.md §5 S7).
+    `existing + new` and persist via `commit()` (design.md §3.8 S7).
     """
     batch_seq = max_batch_seq + 1
     return [
@@ -352,7 +352,7 @@ def assign_batch(new_records: list[TransformedRecord], *, max_batch_seq: int) ->
 
 def cleanup_tmp_files(state_dir: Path) -> int:
     """Remove leftover `*.tmp` files from a previous crashed run
-    (design.md §5 S0, §12.1).
+    (design.md §3.8 S0, §7.1).
 
     `records.csv`'s own atomicity guarantees it is always either fully
     committed or absent, so any stray `.tmp` sibling can only be an
@@ -375,7 +375,7 @@ def cleanup_tmp_files(state_dir: Path) -> int:
 
 
 def append_run(state_dir: Path, record: Mapping[str, object]) -> None:
-    """Append one JSON line to `runs.jsonl` (design.md §6.7 audit
+    """Append one JSON line to `runs.jsonl` (design.md §3.5.6 audit
     trail).
 
     Best-effort append-only log, deliberately NOT part of the atomic
@@ -397,14 +397,14 @@ def append_run(state_dir: Path, record: Mapping[str, object]) -> None:
 
 def read_runs_for_date(state_dir: Path, run_date: date) -> list[dict[str, object]]:
     """Return every `runs.jsonl` record for `run_date`, in the order
-    they were appended (design.md §6.7, §8.2 same-day disambiguation).
+    they were appended (design.md §3.5.6, §3.7.2 same-day disambiguation).
 
     Best-effort, mirroring `append_run`'s own audit-sidecar status: a
     missing `runs.jsonl` yields `[]` (no runs yet, e.g. the very first
     run ever); any single unparsable line is WARN-logged and skipped
     rather than failing the whole read -- `runs.jsonl` is a
     non-authoritative audit trail, never a gate on pipeline correctness
-    (contrast `records.csv`'s `#META` tail, design.md §6.3-§6.4, which
+    (contrast `records.csv`'s `#META` tail, design.md §3.5.3-§3.5.4, which
     IS a hard gate).
     """
     runs_path = state_dir / _RUNS_FILENAME

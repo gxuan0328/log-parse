@@ -1,4 +1,4 @@
-"""Unit tests for report_export.state (design.md §12.1 test_state, §6.2-§6.8)."""
+"""Unit tests for report_export.state (design.md §7.1 test_state, §3.5)."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def _transformed(request_id: str, **overrides: str) -> TransformedRecord:
 
 
 # --------------------------------------------------------------------
-# Empty start (design.md §5 S2, §6.8, §13-10)
+# Empty start (design.md §3.8 S2, §3.5.5, §6-10)
 # --------------------------------------------------------------------
 
 
@@ -68,7 +68,7 @@ def test_load_on_nonexistent_state_dir_returns_empty_state(tmp_path: Path) -> No
 
 
 # --------------------------------------------------------------------
-# assign_batch -- BATCH_ID from 1 (design.md §5 S7, §6.2, §6.8, §13-10)
+# assign_batch -- BATCH_ID from 1 (design.md §3.8 S7, §3.5.2, §3.5.5, §6-10)
 # --------------------------------------------------------------------
 
 
@@ -102,7 +102,7 @@ def test_assign_batch_preserves_order() -> None:
 
 
 # --------------------------------------------------------------------
-# commit() + load() round trip (design.md §6.1-§6.2; no ms drift)
+# commit() + load() round trip (design.md §3.5.1-§3.5.2; no ms drift)
 # --------------------------------------------------------------------
 
 
@@ -170,7 +170,7 @@ def test_commit_empty_list_produces_header_only_state(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------
-# In-file #META integrity tail (design.md §6.3)
+# In-file #META integrity tail (design.md §3.5.3)
 # --------------------------------------------------------------------
 
 
@@ -317,7 +317,7 @@ def _corrupt_sha256(records_path: Path) -> None:
 
 
 # --------------------------------------------------------------------
-# Atomic write: tmp -> fsync -> .bak -> os.replace (design.md §6.6)
+# Atomic write: tmp -> fsync -> .bak -> os.replace (design.md §3.5.4)
 # --------------------------------------------------------------------
 
 
@@ -369,7 +369,7 @@ def test_commit_creates_state_dir_if_missing(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------
-# Startup *.tmp cleanup (design.md §5 S0, §13-13)
+# Startup *.tmp cleanup (design.md §3.8 S0, §6-13)
 # --------------------------------------------------------------------
 
 
@@ -398,7 +398,7 @@ def test_cleanup_tmp_files_on_dir_with_no_tmp_files_returns_zero(tmp_path: Path)
 
 
 # --------------------------------------------------------------------
-# runs.jsonl audit trail (design.md §6.7)
+# runs.jsonl audit trail (design.md §3.5.6)
 # --------------------------------------------------------------------
 
 
@@ -435,7 +435,7 @@ def test_append_run_preserves_non_ascii_content(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------
-# Malformed BATCH_ID in a data row (design.md §6.4 case 5: unparsable)
+# Malformed BATCH_ID in a data row (design.md §3.5.4 case 5: unparsable)
 # --------------------------------------------------------------------
 
 
@@ -456,7 +456,7 @@ def test_non_integer_batch_id_with_no_backup_raises_state_integrity_error(tmp_pa
 
 # --------------------------------------------------------------------
 # read_runs_for_date() -- same-day disambiguation support (design.md
-# §6.7, §8.2)
+# §3.5.6, §3.7.2)
 # --------------------------------------------------------------------
 
 

@@ -1,13 +1,13 @@
 """File-lock abstraction: `flock`-preferred, `O_CREAT|O_EXCL` sentinel
-fallback + stale detection (design.md §3.2 statelock, §6.6, §12.1,
-§13-13).
+fallback + stale detection (design.md §2.3 statelock, §4.4, §7.1,
+§6-13).
 
 The PRIMARY guarantee is operational serialization (a single operator
-or cron schedule never runs two batches concurrently, design.md §6.6)
+or cron schedule never runs two batches concurrently, design.md §4.4)
 -- this module is defense-in-depth, not the sole safety net, because
 `state_dir` may live on NFSv3/CIFS where `flock()` can be emulated,
 degraded, or silently ineffective. Never waits: an unavailable lock is
-an immediate, loud `LockBusyError` (exit 4, design.md §11.4), never a
+an immediate, loud `LockBusyError` (exit 4, design.md §4.2), never a
 retry/backoff loop.
 """
 
@@ -36,7 +36,7 @@ _SENTINEL_FILENAME: Final[str] = ".lock.sentinel"
 
 #: A sentinel older than this is presumed to belong to a dead/crashed
 #: process even if its PID happens to have been reused by an unrelated
-#: process on this host (design.md §6.6 stale detection). This is a
+#: process on this host (design.md §4.4 stale detection). This is a
 #: weekly batch job; six hours is generously beyond any plausible run.
 _STALE_THRESHOLD_SECONDS: Final[float] = 6 * 60 * 60
 
@@ -50,7 +50,7 @@ def acquire(state_dir: Path) -> Iterator[None]:
     does not honour `flock` at all (`ENOSYS`/`EOPNOTSUPP`/`EINVAL`),
     falls back to an `O_CREAT|O_EXCL` sentinel file containing
     `pid`/`host`/`utc`, with stale-sentinel reclamation (design.md
-    §6.6).
+    §4.4).
 
     Raises:
         LockBusyError (exit 4): the lock is already held by another
@@ -162,7 +162,7 @@ def _release_sentinel(sentinel_path: Path) -> None:
 def _reclaim_if_stale(sentinel_path: Path) -> bool:
     """Return True (having removed the sentinel) iff it is safely
     presumed stale: its owning PID no longer exists on this host, or
-    it is older than `_STALE_THRESHOLD_SECONDS` (design.md §6.6).
+    it is older than `_STALE_THRESHOLD_SECONDS` (design.md §4.4).
     """
     try:
         text = sentinel_path.read_text(encoding="utf-8")

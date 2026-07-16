@@ -1,4 +1,4 @@
-"""Unit tests for report_export.pipeline (design.md §12.1 test_pipeline, §5, §11.2)."""
+"""Unit tests for report_export.pipeline (design.md §7.1 test_pipeline, §3.8, §3.9.2)."""
 
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ def _config(tmp_path: Path, input_path: Path) -> Config:
 
 
 # --------------------------------------------------------------------
-# First run -- empty state (design.md §6.8, §13-10)
+# First run -- empty state (design.md §3.5.5, §6-10)
 # --------------------------------------------------------------------
 
 
@@ -177,7 +177,7 @@ def test_deliverable_reflects_anchor_data(tmp_path: Path, reference_path: Path) 
 
 
 # --------------------------------------------------------------------
-# Idempotent rerun -- 0 new records (design.md §6.5, §13-4)
+# Idempotent rerun -- 0 new records (design.md §4.1, §6-4)
 # --------------------------------------------------------------------
 
 
@@ -219,7 +219,7 @@ def test_rerun_still_produces_deliverable_reflecting_state(
     second = pipeline.run(config, run_date=date(2026, 7, 15), reference_path=reference_path)
 
     assert Path(second.deliverable).exists()
-    # design.md §6.5: batch_seq always mirrors max(batch_id in
+    # design.md §4.1: batch_seq always mirrors max(batch_id in
     # full_state) -- an idempotent 0-new rerun leaves that unchanged
     # (never reports a "next" batch number that no record carries).
     assert second.batch_seq == first.batch_seq == 1
@@ -240,7 +240,7 @@ def test_empty_input_produces_zero_new_records_and_deliverable(
 
 
 # --------------------------------------------------------------------
-# Second distinct batch (design.md §5 S7, per-run yellow reset, §6.5)
+# Second distinct batch (design.md §3.8 S7, per-run yellow reset, §4.1)
 # --------------------------------------------------------------------
 
 
@@ -285,7 +285,7 @@ def test_second_batch_deliverable_highlights_only_new_rows(
 
 
 # --------------------------------------------------------------------
-# run_date injection determines filename (design.md §11.1, §8.2)
+# run_date injection determines filename (design.md §3.9.1, §3.7.2)
 # --------------------------------------------------------------------
 
 
@@ -310,7 +310,7 @@ def test_default_run_date_is_today_when_not_injected(tmp_path: Path, reference_p
 
 
 # --------------------------------------------------------------------
-# Same-day distinct-batch filename disambiguation (design.md §8.2)
+# Same-day distinct-batch filename disambiguation (design.md §3.7.2)
 # --------------------------------------------------------------------
 
 
@@ -345,7 +345,7 @@ def test_same_day_same_input_rerun_reuses_filename(tmp_path: Path, reference_pat
 
 
 # --------------------------------------------------------------------
-# Errors propagate untouched (design.md §11.4 -- cli.py is the sole catcher)
+# Errors propagate untouched (design.md §4.2 -- cli.py is the sole catcher)
 # --------------------------------------------------------------------
 
 
@@ -408,7 +408,7 @@ def test_lock_is_released_after_a_failed_run(tmp_path: Path) -> None:
 def test_deliverable_replace_failure_raises_write_error(
     tmp_path: Path, reference_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # design.md §5 "交付檔重建保證": if the FINAL os.replace of the
+    # design.md §3.8 "交付檔重建保證": if the FINAL os.replace of the
     # deliverable fails (state already committed by then), the run must
     # still fail loudly with WriteError (exit 5) rather than silently
     # reporting success with a stale/missing deliverable. Only the
@@ -441,7 +441,7 @@ def test_deliverable_replace_failure_raises_write_error(
 
 
 # --------------------------------------------------------------------
-# runs.jsonl audit trail gets one line per attempt (design.md §6.7)
+# runs.jsonl audit trail gets one line per attempt (design.md §3.5.6)
 # --------------------------------------------------------------------
 
 
@@ -475,7 +475,7 @@ def test_runs_jsonl_records_appended_request_ids(tmp_path: Path, reference_path:
 
 
 # --------------------------------------------------------------------
-# Real anchor dataset -- template/source-log.csv (design.md §2.1, §2.2)
+# Real anchor dataset -- template/source-log.csv (design.md §1.5.1, §1.5.2)
 # --------------------------------------------------------------------
 
 _TEMPLATE_INPUT = Path(__file__).resolve().parents[2] / "template" / "source-log.csv"

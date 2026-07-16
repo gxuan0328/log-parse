@@ -1,4 +1,4 @@
-"""Typed exceptions for report_export (design.md §3.2 errors, §11.4).
+"""Typed exceptions for report_export (design.md §2.3 errors, §4.2).
 
 Every exception maps 1:1 to a CLI process exit code:
 
@@ -31,7 +31,7 @@ class ReportExportError(Exception):
     """Base class for every typed report_export error.
 
     Subclasses set `exit_code` to the process exit code defined in
-    docs/design.md §11.4. Never caught-and-swallowed internally --
+    docs/design.md §4.2. Never caught-and-swallowed internally --
     only `cli.py` catches this family, to translate it into an exit
     code after the structured log record has already been emitted.
     """
@@ -50,7 +50,7 @@ class InputValidationError(ReportExportError):
 
     Covers: header mismatch, wrong column count, unparsable APP_TIME on
     a NORMAL row, missing APP_SERVER/CLIENT_IP/REQUEST_ID, bad
-    encoding (design.md §5 S3/S4, §13).
+    encoding (design.md §3.8 S3/S4, §6).
     """
 
     exit_code = 2
@@ -74,7 +74,7 @@ class WriteError(ReportExportError):
     exit_code = 5
 
 
-class ReferenceError(ReportExportError):  # noqa: A001 -- name is the design.md §3.2 contract
+class ReferenceError(ReportExportError):  # noqa: A001 -- name is the design.md §2.3 contract
     """The hosp_id_map reference table is missing, unreadable, or malformed (exit 5)."""
 
     exit_code = 5

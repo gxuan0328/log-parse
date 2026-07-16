@@ -1,5 +1,5 @@
 """Typed data model shapes for the report_export pipeline
-(design.md §3.2 models, §4.1-§4.3, §6.2).
+(design.md §2.3 models, §3.1.1-§3.1.3, §3.5.2).
 
 Four value objects flow through the pipeline, in this order:
 
@@ -8,7 +8,7 @@ Four value objects flow through the pipeline, in this order:
       v
     TransformedRecord  9 cols: REQUEST_ID + 8 payload; APP_TIME validated,
       |                HOSP_ABBR resolved -- everything StateRecord holds
-      |                except BATCH_ID (design.md §5 S5)
+      |                except BATCH_ID (design.md §3.8 S5)
       |  (dedup.apply + state.assign_batch, later phase)
       v
     StateRecord        10 cols: 2 internal keys + 8 payload; persisted to
@@ -17,7 +17,7 @@ Four value objects flow through the pipeline, in this order:
       v
     ReportRow          5 cols; one row per unique CLIENT IP (院所分析)
 
-Plus `Status`, the enum of canonical STATUS values (design.md §4.1 col B).
+Plus `Status`, the enum of canonical STATUS values (design.md §3.1.1 col B).
 
 Deliberately NOT using `from __future__ import annotations` here: these
 dataclasses are introspected by field *type* at runtime (tests assert
@@ -32,10 +32,10 @@ __all__ = ["InputRow", "ReportRow", "StateRecord", "Status", "TransformedRecord"
 
 
 class Status(StrEnum):
-    """Canonical STATUS enum values (design.md §4.1 col B).
+    """Canonical STATUS enum values (design.md §3.1.1 col B).
 
     Matching a raw CSV value against this enum is case-insensitive per
-    Excel `=` semantics (design.md §5 S4, §12.1): callers must
+    Excel `=` semantics (design.md §3.8 S4, §7.1): callers must
     `.strip().upper()` the raw field before constructing, e.g.
     `Status(raw_status.strip().upper())`.
     """
@@ -48,10 +48,10 @@ class Status(StrEnum):
 @dataclass(frozen=True, slots=True)
 class InputRow:
     """One raw input CSV row: the 14 columns of the analyze_access
-    `--format csv` contract (design.md §4.1), in column order A-N.
+    `--format csv` contract (design.md §3.1.1), in column order A-N.
 
     Every field is `str` -- the whole CSV is read as text (design.md
-    §4.1: the full 14-column contract is read as plain strings),
+    §3.1.1: the full 14-column contract is read as plain strings),
     deferring all interpretation (STATUS enum matching, APP_TIME
     parsing, dash-sentinel normalisation) to later pipeline stages
     (csv_reader/transform, later phases).
@@ -75,7 +75,7 @@ class InputRow:
 
 @dataclass(frozen=True, slots=True)
 class TransformedRecord:
-    """One NORMAL row after `transform.project()` (design.md §5 S5):
+    """One NORMAL row after `transform.project()` (design.md §3.8 S5):
     APP_TIME validated (parseable under the ms/no-ms contract),
     HOSP_ABBR resolved via the reference lookup table (IFERROR
     semantics -- frozen in now so later master-table updates never
@@ -83,10 +83,10 @@ class TransformedRecord:
 
     Identical to `StateRecord` minus `batch_id`: dedup.apply() and
     state.assign_batch() are the only two stages between this shape
-    and a fully-formed `StateRecord` (design.md §5 S6-S7). BATCH_ID is
+    and a fully-formed `StateRecord` (design.md §3.8 S6-S7). BATCH_ID is
     deliberately absent here rather than carrying a placeholder value
     -- a row is only entitled to a BATCH_ID after it has survived
-    dedup (design.md §5 S6 runs before S7), so this type makes
+    dedup (design.md §3.8 S6 runs before S7), so this type makes
     "not yet batch-assigned" unrepresentable as anything other than
     "the field does not exist yet".
     """
@@ -105,14 +105,14 @@ class TransformedRecord:
 @dataclass(frozen=True, slots=True)
 class StateRecord:
     """One durable `records.csv` row: 2 internal keys + 8 payload
-    columns, in exact schema order (design.md §6.2):
+    columns, in exact schema order (design.md §3.5.2):
 
         BATCH_ID, REQUEST_ID, APP_TIME_ISO, CLIENT_IP, SERVER_IP,
         HOSP_ID, HOSP_ABBR, PRSN_ID, BIRTHDAY, PATIENT_ID_AES
 
     `batch_id`/`request_id` never appear in the 調閱紀錄 deliverable
     projection -- they are the persistence layer's internal
-    dedup/highlight keys (design.md §6.2, §7.1).
+    dedup/highlight keys (design.md §3.5.2, §3.4.1).
     """
 
     batch_id: int
@@ -129,10 +129,10 @@ class StateRecord:
 
 @dataclass(frozen=True, slots=True)
 class ReportRow:
-    """One 院所分析 aggregate row (design.md §4.3): a unique CLIENT IP,
+    """One 院所分析 aggregate row (design.md §3.1.3): a unique CLIENT IP,
     the first-seen HOSP_ID/HOSP_ABBR for that IP (XLOOKUP first-match
     semantics against the state itself), and two row counts across the
-    full state (design.md §4.3 REQ3):
+    full state (design.md §3.1.3 REQ3):
 
         weekly_access  this IP's row count within the LATEST batch
                         only (`batch_id == max(BATCH_ID)`); 0 means the

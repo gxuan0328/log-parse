@@ -1,4 +1,4 @@
-"""End-to-end acceptance tests (design.md §12.2, §12.3).
+"""End-to-end acceptance tests (design.md §7.2, §7.3).
 
 Drives the full S0-S9 pipeline (`pipeline.run()`) through real
 filesystem I/O -- `tmp_path` state/output directories, real `Config`
@@ -7,10 +7,10 @@ individual stages in isolation (that is `tests/unit/`'s job). Two
 inputs anchor almost every scenario here:
 
   * `template/source-log.csv`      the 25-row, CRLF, real anchor
-                                    dataset (design.md §2.1/§2.2/§2.6),
+                                    dataset (design.md §1.5.1/§1.5.2/§1.5.6),
                                     referenced directly rather than
                                     duplicated into tests/fixtures/ --
-                                    design.md §12.3 explicitly permits
+                                    design.md §7.3 explicitly permits
                                     "直接引用或複製", and duplicating a
                                     25-row byte-exact fixture would
                                     create a second source of truth
@@ -19,12 +19,12 @@ inputs anchor almost every scenario here:
                                     CLAUDE.md §2 "Single source of
                                     truth").
   * `reference/hosp_id_map.csv.gz` the real, bundled 93,781-row lookup
-                                    table (design.md §9.2) -- the same
+                                    table (design.md §3.3) -- the same
                                     file the production Docker image
                                     ships.
 
 Every `pipeline.run()` call here injects a FIXED `run_date` (design.md
-§11.1 test seam) -- never `date.today()` -- so filenames, batch
+§3.9.1 test seam) -- never `date.today()` -- so filenames, batch
 sequencing, and same-day disambiguation are all deterministic.
 
 Two golden-master baselines, generated once by actually running this
@@ -35,7 +35,7 @@ cell-level regression baseline:
   * `expected_records_e2e1.csv`      the verbatim `records.csv` body
                                       E2E-1 produces. `records.csv`
                                       embeds no wall-clock timestamps
-                                      anywhere (design.md §6.2), so this
+                                      anywhere (design.md §3.5.2), so this
                                       is safe to compare as raw bytes,
                                       not just "a value set".
   * `expected_deliverable_e2e1.json` a JSON snapshot of every cell in
@@ -45,7 +45,7 @@ cell-level regression baseline:
                                       bytes (the zip container embeds a
                                       non-deterministic docProps
                                       timestamp on every save, design.md
-                                      §12.2 E2E-2).
+                                      §7.2 E2E-2).
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ from report_export.models import TransformedRecord
 _REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 _FIXTURES_DIR: Path = Path(__file__).resolve().parent.parent / "fixtures"
 
-#: design.md §12.3: the main e2e input is REFERENCED directly from the
+#: design.md §7.3: the main e2e input is REFERENCED directly from the
 #: checked-in Phase-0 baseline, never duplicated.
 _SOURCE_LOG: Path = _REPO_ROOT / "template" / "source-log.csv"
 _REAL_REFERENCE: Path = _REPO_ROOT / "reference" / "hosp_id_map.csv.gz"
@@ -87,20 +87,20 @@ _HOSP_MAP_SMALL: Path = _FIXTURES_DIR / "hosp_map_small.csv"
 _EXPECTED_RECORDS_E2E1: Path = _FIXTURES_DIR / "expected_records_e2e1.csv"
 _EXPECTED_DELIVERABLE_E2E1: Path = _FIXTURES_DIR / "expected_deliverable_e2e1.json"
 
-#: design.md §12.3: fixed injected run_date, never date.today(), for
+#: design.md §7.3: fixed injected run_date, never date.today(), for
 #: determinism. Three distinct dates stand in for three distinct weekly
-#: runs so same-day filename disambiguation (design.md §8.2) never
+#: runs so same-day filename disambiguation (design.md §3.7.2) never
 #: incidentally triggers where a test does not intend to exercise it.
 _RUN_DATE_1: date = date(2026, 7, 15)
 _RUN_DATE_2: date = date(2026, 7, 22)
 _RUN_DATE_3: date = date(2026, 7, 29)
 
-#: design.md §2.2 anchor: 院所分析 WEEKLY/TOTAL ACCESS columns, first-seen
+#: design.md §1.5.2 anchor: 院所分析 WEEKLY/TOTAL ACCESS columns, first-seen
 #: order -- E2E-1 is a single-batch state, so WEEKLY == TOTAL == these
-#: values for every IP (design.md §4.3 REQ3), same as the old COUNT.
+#: values for every IP (design.md §3.1.3 REQ3), same as the old COUNT.
 _ANCHOR_COUNTS: tuple[int, ...] = (1, 1, 1, 1, 1, 1, 3, 1, 7, 1, 1)
 
-#: design.md §8.3/§8.4 REQ1d anchors: round(display_width * 1.2, 2)
+#: design.md §3.7.3/§3.7.4 REQ1d anchors: round(display_width * 1.2, 2)
 #: for the E2E-1 anchor state, both sheets (see the docstring on
 #: `_assert_column_widths` for the formula).
 _RECORDS_SHEET_WIDTHS: dict[str, float] = {
@@ -130,9 +130,9 @@ def _config(tmp_path: Path, input_path: Path) -> Config:
 def _gzip_reference(csv_path: Path, dest_dir: Path) -> Path:
     """gzip-compress a human-readable fixture CSV into `dest_dir` so it
     can be passed as `pipeline.run(reference_path=...)` --
-    `lookup.load()` requires gzip (design.md §9.2) -- while the
+    `lookup.load()` requires gzip (design.md §3.3) -- while the
     checked-in fixture itself stays plain-text and git-diffable
-    (design.md §6.1 CSV ethos).
+    (design.md §3.5.1 CSV ethos).
     """
     dest = dest_dir / f"{csv_path.stem}.csv.gz"
     with csv_path.open("rb") as src, gzip.open(dest, "wb") as dst:
@@ -142,7 +142,7 @@ def _gzip_reference(csv_path: Path, dest_dir: Path) -> Path:
 
 # --------------------------------------------------------------------
 # Workbook cell-level snapshot: (value, data_type, number_format, fill)
-# -- design.md §12.2 E2E-2: "儲存格值 + data_type + number_format + fill
+# -- design.md §7.2 E2E-2: "儲存格值 + data_type + number_format + fill
 # 相等(非 bytes)". datetimes render as isoformat strings so the whole
 # structure is plain-JSON-comparable, and diffable against the
 # checked-in golden-master baseline.
@@ -182,7 +182,7 @@ def _load_expected_deliverable_snapshot() -> dict[str, list[list[dict[str, Any]]
 
 def _highlighted_rows(sheet: Worksheet) -> list[int]:
     """1-indexed data-row numbers (excludes the header) whose column-A
-    cell carries the solid yellow highlight fill (design.md §6.5).
+    cell carries the solid yellow highlight fill (design.md §3.7.3).
     """
     return [
         row_idx
@@ -192,7 +192,7 @@ def _highlighted_rows(sheet: Worksheet) -> list[int]:
 
 
 def _assert_no_formulas(workbook: Any) -> None:
-    """design.md §8.1/§8.6: every cell is a literal value -- never a
+    """design.md §3.7.1/§3.7.6: every cell is a literal value -- never a
     formula string (openpyxl's `data_type == 'f'` marks a formula).
     """
     for sheet_name in workbook.sheetnames:
@@ -203,7 +203,7 @@ def _assert_no_formulas(workbook: Any) -> None:
 
 
 def _assert_uniform_grid_and_alignment(workbook: Any) -> None:
-    """design.md §8.3-§8.6 REQ1: every cell (both sheets) is centered;
+    """design.md §3.7.3-§3.7.6 REQ1: every cell (both sheets) is centered;
     every DATA cell has a thin 4-side border; every HEADER cell has a
     thick bottom border (the REQUIRED emphasis) plus thin left/right/
     top (cosmetic grid continuity with the data rows below it).
@@ -228,10 +228,10 @@ def _assert_uniform_grid_and_alignment(workbook: Any) -> None:
 
 
 def _assert_column_widths(sheet: Worksheet, expected: dict[str, float]) -> None:
-    """design.md §8.3/§8.4 REQ1d: `width == round(max(display_width(
+    """design.md §3.7.3/§3.7.4 REQ1d: `width == round(max(display_width(
     header), max(display_width(rendered data))) * 1.2, 2)` per column
     -- asserted here as an exact expected-value dict per sheet, computed
-    once off the real E2E-1 anchor data (design.md §2.1/§2.2).
+    once off the real E2E-1 anchor data (design.md §1.5.1/§1.5.2).
     """
     for column, width in expected.items():
         assert sheet.column_dimensions[column].width == width
@@ -243,7 +243,7 @@ def _tail_line(records_path: Path) -> str:
 
 def _corrupt_tail_sha(path: Path) -> None:
     """Flip the `#META` tail's `sha256=` value so it no longer matches
-    the file's own body -- design.md §6.4 case 4 (tail present but
+    the file's own body -- design.md §3.5.4 case 4 (tail present but
     mismatched).
     """
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -253,7 +253,7 @@ def _corrupt_tail_sha(path: Path) -> None:
 
 
 # --------------------------------------------------------------------
-# records.csv body -> expected TransformedRecord list. design.md §6.2's
+# records.csv body -> expected TransformedRecord list. design.md §3.5.2's
 # 10 state columns minus the internal BATCH_ID key are EXACTLY
 # TransformedRecord's 9 fields, in the same order -- so the same
 # checked-in golden master serves both the state-level (E2E-1) and the
@@ -284,7 +284,7 @@ def _load_expected_transformed_records() -> list[TransformedRecord]:
 
 
 # --------------------------------------------------------------------
-# E2E-1 -- empty state + source-log.csv(25) (design.md §12.2, §2.1, §2.2)
+# E2E-1 -- empty state + source-log.csv(25) (design.md §7.2, §1.5.1, §1.5.2)
 # --------------------------------------------------------------------
 
 
@@ -304,7 +304,7 @@ def test_e2e1_empty_state_first_ingest_matches_anchors(tmp_path: Path) -> None:
 
     # State: exactly the 19 NORMAL rows, all BATCH_ID=1, byte-for-byte
     # identical to the checked-in golden master (records.csv embeds no
-    # timestamps -- fully reproducible, design.md §6.2).
+    # timestamps -- fully reproducible, design.md §3.5.2).
     records_path = config.state_dir / "records.csv"
     assert records_path.read_bytes() == _EXPECTED_RECORDS_E2E1.read_bytes()
     result = state.load(config.state_dir)
@@ -341,7 +341,7 @@ def test_e2e1_empty_state_first_ingest_matches_anchors(tmp_path: Path) -> None:
 
     agg_sheet = workbook["院所分析"]
     assert agg_sheet.max_row == 12  # header + 11 unique IPs
-    # design.md §4.3 REQ3: col D (idx 3) = WEEKLY ACCESS, col E (idx 4)
+    # design.md §3.1.3 REQ3: col D (idx 3) = WEEKLY ACCESS, col E (idx 4)
     # = TOTAL ACCESS. E2E-1 is a single-batch state (all BATCH_ID=1),
     # so WEEKLY == TOTAL == the old COUNT for every IP -- no "-" cell.
     weekly = [row[3].value for row in agg_sheet.iter_rows(min_row=2)]
@@ -379,7 +379,7 @@ def test_e2e1_empty_state_first_ingest_matches_anchors(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------
-# E2E-2 -- idempotent rerun (design.md §12.2, §6.5)
+# E2E-2 -- idempotent rerun (design.md §7.2, §4.1)
 # --------------------------------------------------------------------
 
 
@@ -413,7 +413,7 @@ def test_e2e2_idempotent_rerun_is_a_true_no_op(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------
-# E2E-3 -- new batch, per-run yellow reset (design.md §12.2, §6.5, §5 S7)
+# E2E-3 -- new batch, per-run yellow reset (design.md §7.2, §4.1, §3.8 S7)
 # --------------------------------------------------------------------
 
 
@@ -442,7 +442,7 @@ def test_e2e3_new_batch_appends_batch_2_and_recomputes_aggregate(tmp_path: Path)
 
     agg_sheet = workbook["院所分析"]
     assert agg_sheet.max_row == 13  # 11 existing + 1 brand-new IP
-    # design.md §4.3 REQ3: col D (idx 3) = WEEKLY ACCESS (this batch's
+    # design.md §3.1.3 REQ3: col D (idx 3) = WEEKLY ACCESS (this batch's
     # rows only), col E (idx 4) = TOTAL ACCESS (unchanged old COUNT
     # semantics). batch_new.csv's 3 rows each hit an IP exactly once.
     rows_by_ip = {row[0].value: row for row in agg_sheet.iter_rows(min_row=2)}
@@ -461,7 +461,7 @@ def test_e2e3_new_batch_appends_batch_2_and_recomputes_aggregate(tmp_path: Path)
 
 
 # --------------------------------------------------------------------
-# E2E-4 -- overlapping re-import after a second batch (design.md §12.2)
+# E2E-4 -- overlapping re-import after a second batch (design.md §7.2)
 # --------------------------------------------------------------------
 
 
@@ -489,7 +489,7 @@ def test_e2e4_overlap_reimport_after_second_batch_keeps_batch_2_highlighted(
 
 
 # --------------------------------------------------------------------
-# E2E-5 -- deliverable rebuild after loss (design.md §12.2, §6.5)
+# E2E-5 -- deliverable rebuild after loss (design.md §7.2, §4.1)
 # --------------------------------------------------------------------
 
 
@@ -504,7 +504,7 @@ def test_e2e5_deliverable_rebuild_after_loss_reruns_latest_input(tmp_path: Path)
     deliverable_path.unlink()
     assert not deliverable_path.exists()
 
-    # No special flag/command exists for this (design.md §6.5) -- simply
+    # No special flag/command exists for this (design.md §4.1) -- simply
     # rerunning the most recent input regenerates the deliverable.
     rebuilt = pipeline.run(config2, run_date=_RUN_DATE_2, reference_path=_REAL_REFERENCE)
 
@@ -518,7 +518,7 @@ def test_e2e5_deliverable_rebuild_after_loss_reruns_latest_input(tmp_path: Path)
 
 
 # --------------------------------------------------------------------
-# E2E-6 -- crash-tolerant state (design.md §12.2, §6.4)
+# E2E-6 -- crash-tolerant state (design.md §7.2, §3.5.4)
 # --------------------------------------------------------------------
 
 
@@ -528,7 +528,7 @@ def test_e2e6_missing_tail_is_non_fatal_and_gets_backfilled(tmp_path: Path) -> N
     records_path = config.state_dir / "records.csv"
     assert _tail_line(records_path).startswith("#META")
 
-    # Case 3 (design.md §6.4): strip the #META tail entirely, simulating
+    # Case 3 (design.md §3.5.4): strip the #META tail entirely, simulating
     # a hand-edited / pre-tail-schema records.csv.
     body_only_lines = records_path.read_text(encoding="utf-8").splitlines()[:-1]
     records_path.write_text("\n".join(body_only_lines) + "\n", encoding="utf-8")
@@ -538,7 +538,7 @@ def test_e2e6_missing_tail_is_non_fatal_and_gets_backfilled(tmp_path: Path) -> N
     assert result.max_batch_seq == 1
 
     # A 0-new rerun of the SAME input deliberately skips state.commit()
-    # entirely (design.md §5 S9: idempotent, never touches .bak) -- so it
+    # entirely (design.md §3.8 S9: idempotent, never touches .bak) -- so it
     # does NOT itself backfill the tail. Ingesting a genuinely new batch
     # does trigger a real commit(), which unconditionally (re)writes a
     # correct tail as part of its normal write path.
@@ -566,7 +566,7 @@ def test_e2e6_corrupt_tail_recovers_from_bak(tmp_path: Path) -> None:
     bak_path = config1.state_dir / "records.csv.bak"
     assert bak_path.is_file()
 
-    # Case 4 (design.md §6.4): corrupt the CURRENT tail's sha256 --
+    # Case 4 (design.md §3.5.4): corrupt the CURRENT tail's sha256 --
     # records.csv no longer self-validates, but a valid .bak exists.
     _corrupt_tail_sha(records_path)
 
@@ -600,15 +600,15 @@ def test_e2e6_corrupt_tail_with_corrupt_bak_raises_state_integrity_error(tmp_pat
 
 
 # --------------------------------------------------------------------
-# E2E-7 -- docker/example repeatable demo scenario (design.md §9.5,
-# §12.2, REQ3+REQ4). The committed docker/example/state/records.csv
+# E2E-7 -- docker/example repeatable demo scenario (design.md §4.7.7,
+# §7.2, REQ3+REQ4). The committed docker/example/state/records.csv
 # seed (19 rows, all BATCH_ID=1, byte-identical to
 # expected_records_e2e1.csv) plus docker/example/input/week-2026-07-13.csv
 # (4 brand-new-REQUEST_ID rows) together exercise all three WEEKLY
 # ACCESS cases in one run: a brand-new IP (weekly == total), two
 # overlapping IPs (weekly < total), and nine seed-only IPs (weekly
 # renders "-"). This is the exact scenario documented in
-# usage.zh-TW.md's repeatable demo section.
+# usage.md's repeatable demo section.
 # --------------------------------------------------------------------
 
 _DOCKER_EXAMPLE_DIR: Path = _REPO_ROOT / "docker" / "example"
@@ -629,7 +629,7 @@ _DOCKER_EXAMPLE_TOTAL: tuple[int, ...] = (1, 1, 1, 1, 1, 1, 4, 1, 9, 1, 1, 1)
 def test_e2e7_docker_example_scenario_demonstrates_weekly_vs_total(tmp_path: Path) -> None:
     # Copy the committed seed state into a scratch state_dir -- the
     # checked-in docker/example/state/records.csv must stay pristine
-    # (design.md §9.5, REQ4) so this test is repeatable run after run.
+    # (design.md §4.7.7, REQ4) so this test is repeatable run after run.
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     (state_dir / "records.csv").write_bytes(_DOCKER_EXAMPLE_SEED_STATE.read_bytes())
@@ -690,7 +690,7 @@ def test_e2e7_docker_example_scenario_demonstrates_weekly_vs_total(tmp_path: Pat
 
 # --------------------------------------------------------------------
 # Invariant: transform(source-log NORMAL) == 19 expected records
-# (design.md §12.2 "不變量", §2.1). Pure-function level, independent of
+# (design.md §7.2 "不變量", §1.5.1). Pure-function level, independent of
 # state/dedup/aggregate/xlsx -- reuses the SAME checked-in golden master
 # as E2E-1 (see _load_expected_transformed_records's docstring).
 # --------------------------------------------------------------------
@@ -712,7 +712,7 @@ def test_invariant_transform_matches_expected_snapshot() -> None:
 
 
 # --------------------------------------------------------------------
-# Supplementary fixture-driven edge cases (design.md §13; exercises the
+# Supplementary fixture-driven edge cases (design.md §6; exercises the
 # remaining checked-in fixtures: empty.csv, all_nonnormal.csv,
 # status_mixed_case.csv, hosp_map_small.csv).
 # --------------------------------------------------------------------
@@ -783,7 +783,7 @@ def test_unmapped_hosp_abbr_reads_back_as_none(tmp_path: Path) -> None:
         row for row in agg_sheet.iter_rows(min_row=2) if row[0].value == "10.238.23.241"
     )
     assert unmapped_agg_row[1].value == "1503190020"
-    # design.md §2.9/§8.6: a "" HOSP_ABBR reads back as None, not "".
+    # design.md §1.5.9/§3.7.6: a "" HOSP_ABBR reads back as None, not "".
     assert unmapped_agg_row[2].value is None
 
     records_sheet = workbook["調閱紀錄"]

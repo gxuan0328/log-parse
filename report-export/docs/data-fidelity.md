@@ -1,9 +1,9 @@
-# report-export — 資料型別與格式契約（data-fidelity.zh-TW.md）
+# report-export — 資料型別與格式契約（data-fidelity.md）
 
 > 本文件是型別／格式的**單一真實來源對照表**：輸入 14 欄 → state 10 欄 →
 > 交付 9+5 欄，逐欄列出型別、number_format、與保真理由。完整設計推導見
-> [`design.md`](design.md) 第 2、4 章；操作手冊見
-> [`usage.zh-TW.md`](usage.zh-TW.md)。技術名詞、程式識別字、sheet 名稱一律
+> [`design.md`](design.md) §1.5 保真基準錨點、§3.1 資料模型；操作手冊見
+> [`usage.md`](usage.md)。技術名詞、程式識別字、sheet 名稱一律
 > 保留原文。
 >
 > 全文所有數字/欄位均已對照實作原始碼（`src/report_export/`）與一次真實
@@ -26,7 +26,7 @@ state 層 records.csv（10 欄：2 內部鍵 + 8 payload；累積、持久化）
 三層欄數差異的原因：
 
 - 14 → 8 payload：REGION、API_TIME、DELTA_SEC、VERIFY_STATUS、API_SERVER
-  五欄在 state/交付從未使用（僅供驗證或人工追蹤，設計文件 §4.1）。
+  五欄在 state/交付從未使用（僅供驗證或人工追蹤，設計文件 §3.1.1）。
 - 8 payload + 2 內部鍵 = state 10 欄：`BATCH_ID`、`REQUEST_ID` 是**內部隱藏
   鍵**（去重自然鍵 + 最新批次高亮依據），存於 `records.csv` 但**永不**進
   交付檔。
@@ -72,7 +72,7 @@ CSV 全部以 `str` 讀入（`csv_reader.py`：`csv.reader`，從不用會做型
   中止整批。
 - NORMAL 列的 `APP_TIME` 為 `-`／空白／無法以兩種既定格式解析 → `InputValidationError`（exit 2，僅報行號＋欄名，不回顯欄值）。
 - NORMAL 列的 `APP_SERVER`／`CLIENT_IP` 為 `-`／空白 → 同上，`InputValidationError`（exit 2）。
-- NORMAL 列的 `REQUEST_ID` 為 `-`／空白 → 同上，`InputValidationError`（exit 2，不以空字串／合成鍵掩蓋，對齊 `design.md` §7.4／§13-4）。
+- NORMAL 列的 `REQUEST_ID` 為 `-`／空白 → 同上，`InputValidationError`（exit 2，不以空字串／合成鍵掩蓋，對齊 `design.md` §3.4.4）。
 
 ---
 
@@ -100,7 +100,8 @@ BATCH_ID, REQUEST_ID, APP_TIME_ISO, CLIENT_IP, SERVER_IP, HOSP_ID, HOSP_ABBR, PR
 API）。最後一實體列是機器完整性描述子 `#META\tschema=1\trecords=N\t
 last_batch_seq=M\tsha256=<hex>`（涵蓋表頭+全部資料列的 sha256）——這
 不是資料列，讀取器會先切掉它再解析本體（見
-[`usage.zh-TW.md`](usage.zh-TW.md) §9 與本文件 §8）。
+[`usage.md`](usage.md)「`state_dir` / `out_dir` 檔案總覽」一節與本文
+件 §8）。
 
 ---
 
@@ -111,7 +112,7 @@ last_batch_seq=M\tsha256=<hex>`（涵蓋表頭+全部資料列的 sha256）—�
 `Sheet`。每一格都是 Python 直接算好的字面值（`datetime`／`str`／`int`），
 **沒有任何公式字串**——模板的 `UNIQUE`/`FILTER`/`XLOOKUP`/`ANCHORARRAY`/
 `COUNTIF` 動態陣列公式，由 Python 於寫檔前全部預先算成純值（design.md
-§8.1、§17 R5）。
+§3.7.1、§8 R5）。
 
 ### 4.1 Sheet 1「調閱紀錄」（1 表頭 + 完整 state N 列；舊列在前、本次新批次接在最後）
 
@@ -150,7 +151,7 @@ bold 是本工具附加的可讀性微調）。
 | B | `HOSP_ID` | 該 IP **首見列**（調閱紀錄自身）之 HOSP_ID | `str` | `@` |
 | C | `HOSP_ABBR` | 該 IP 首見列之 HOSP_ABBR（可為 `""`） | `str` | `@` |
 | D | `WEEKLY ACCESS` | 該 IP 於**最新批次**（`batch_id == max(BATCH_ID)`）之列數；0 → render `-` | `int` 或 `-`（本週無存取） | `General`；`-` 時為 `@` |
-| E | `TOTAL ACCESS` | 完整 state 中該 CLIENT IP 之列數（即前版單一 COUNT 欄） | `int`（type='n'） | `General` |
+| E | `TOTAL ACCESS` | 完整 state 中該 CLIENT IP 之列數（即模板單一 COUNT 欄） | `int`（type='n'） | `General` |
 
 **關鍵語意**：B/C 欄是對「調閱紀錄自身」以 CLIENT IP 做 first-match 查找
 （對映模板 `XLOOKUP(IP, 調閱紀錄!C:C, 調閱紀錄!E:E)`），**不是**再查
@@ -166,7 +167,7 @@ bold 是本工具附加的可讀性微調）。
 left/right/top=Side('thin'))`；各欄寬依現有資料＋表頭字串顯示寬度（CJK/
 全形計 2）自動 ×1.2 動態設定（非硬編常數）。以上四項純屬呈現層外觀，與
 本文件逐欄記載的值／型別／number_format／fill 保真**完全獨立、互不影
-響**（design.md §8.3-§8.6）。
+響**（design.md §3.7.3-§3.7.6）。
 
 ---
 
@@ -197,7 +198,7 @@ left/right/top=Side('thin'))`；各欄寬依現有資料＋表頭字串顯示寬
 
 **院所分析（首見序，TOTAL ACCESS 合計 19）**：單一批次首次執行（19 列皆
 `BATCH_ID=1`）時 `WEEKLY ACCESS` 每列皆等於下表 `TOTAL ACCESS`，無 `-`
-出現（見 REQ3；多批次案例見 `usage.zh-TW.md` §11 可重複示範）。
+出現；多批次案例見 [`usage.md`](usage.md)「可重複示範」一節。
 
 | # | CLIENT IP | HOSP_ID | HOSP_ABBR | TOTAL ACCESS（單一批次時 WEEKLY 亦同此值） |
 |---|-----------|---------|-----------|-------|
@@ -218,7 +219,7 @@ CLIENT_IP 但 STATUS≠NORMAL）被正確排除於聚合之外；若誤含則該
 
 以上數值已於本次文件撰寫時，以實際 `python -m report_export` 執行
 `template/source-log.csv`（空 state 起步）並用 openpyxl 回讀交付檔重新
-核對，與 `design.md` §2.1/§2.2 記載完全一致。
+核對，與 `design.md` §1.5.1/§1.5.2 記載完全一致。
 
 ---
 
@@ -256,8 +257,8 @@ CLIENT_IP 但 STATUS≠NORMAL）被正確排除於聚合之外；若誤含則該
 
 | 檔案 | 由誰產生 | 為何不能用 Excel 編輯 |
 |------|----------|------------------------|
-| `{state_dir}/records.csv` | `state.commit()`（每次執行） | 含前導零顯著鍵（`HOSP_ID` 如 `0937010019`）；Excel 開啟 CSV 預設會將該欄數值化，存檔即永久丟失前導零。檔案**最後一實體列**是機器完整性描述子 `#META\t...`（見 §3），非資料列；Excel 存檔不保證保留其精確位元組格式，可能觸發下次載入時的完整性 WARN／`.bak` 復原，甚至 `StateIntegrityError`（exit 3，見 [`usage.zh-TW.md`](usage.zh-TW.md) §7）。 |
-| `reference/hosp_id_map.csv.gz` | `tools/export_hosp_table.py`（一次性 dev/ops 工具，見 §9.4） | 同樣含前導零顯著鍵；且是 gzip 壓縮檔，Excel 無法直接開啟／編輯。**正確更新方式**是重跑匯出工具，見 [`usage.zh-TW.md`](usage.zh-TW.md) 的「參考主檔更新程序」，絕非手動編輯。 |
+| `{state_dir}/records.csv` | `state.commit()`（每次執行） | 含前導零顯著鍵（`HOSP_ID` 如 `0937010019`）；Excel 開啟 CSV 預設會將該欄數值化，存檔即永久丟失前導零。檔案**最後一實體列**是機器完整性描述子 `#META\t...`（見 §3），非資料列；Excel 存檔不保證保留其精確位元組格式，可能觸發下次載入時的完整性 WARN／`.bak` 復原，甚至 `StateIntegrityError`（exit 3，見 [`usage.md`](usage.md)「復原（Recovery Runbook）」一節）。 |
+| `reference/hosp_id_map.csv.gz` | `tools/export_hosp_table.py`（一次性 dev/ops 工具，見 §3.3） | 同樣含前導零顯著鍵；且是 gzip 壓縮檔，Excel 無法直接開啟／編輯。**正確更新方式**是重跑匯出工具，見 [`usage.md`](usage.md) 的「參考主檔更新程序」，絕非手動編輯。 |
 | `reference/hosp_id_map.manifest.json` | 同上 | 人類可讀的匯出報告（sha256／列數／前導零計數等），由匯出工具的 fail-loud 驗證器一併產生；手改沒有意義，且會與實際 `.csv.gz` 內容不同步。 |
 
 若真的需要人工檢視這些檔案的內容，用純文字編輯器或 `zcat`/`gunzip -c`
@@ -267,6 +268,6 @@ CLIENT_IP 但 STATUS≠NORMAL）被正確排除於聚合之外；若誤含則該
 
 ## 9. 參照
 
-- 型別/格式表推導過程與模板實測原始數據：[`design.md`](design.md) 第 2、4 章。
-- 操作手冊（CLI／Docker／權限前置／NAS 鎖／復原）：[`usage.zh-TW.md`](usage.zh-TW.md)。
+- 型別/格式表推導過程與模板實測原始數據：[`design.md`](design.md) §1.5、§3.1。
+- 操作手冊（CLI／Docker／權限前置／NAS 鎖／復原）：[`usage.md`](usage.md)。
 - 快速上手：[`../README.md`](../README.md)。

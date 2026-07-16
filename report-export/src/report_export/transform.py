@@ -1,12 +1,12 @@
 """Filter NORMAL rows, validate + project them into 9-field payloads
-(design.md §3.2 transform, §5 S4/S5, §12.1).
+(design.md §2.3 transform, §3.8 S4/S5, §7.1).
 
 Pure functions only: no I/O, no mutation of inputs. `project()` takes
 the already-loaded HOSP_ID -> HOSP_ABBR table as a plain
 `Mapping[str, str]` parameter rather than importing `lookup.py` --
 `Mapping.get(key, "")` already IS the IFERROR/XLOOKUP-not-found
 semantics `lookup.get()` documents, so no extra module dependency is
-needed to resolve HOSP_ABBR here (design.md §5 S5, §9.2).
+needed to resolve HOSP_ABBR here (design.md §3.8 S5, §3.3).
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ __all__ = ["filter_normal", "project"]
 
 logger = logging.getLogger(__name__)
 
-#: design.md §5 S4: try the millisecond-precision format first (the
-#: real input contract, design.md §2.6), then the no-ms form for
+#: design.md §3.8 S4: try the millisecond-precision format first (the
+#: real input contract, design.md §1.5.6), then the no-ms form for
 #: compatibility.
 _APP_TIME_FORMATS: Final[tuple[str, ...]] = ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S")
 _DASH_SENTINEL: Final[str] = "-"
@@ -32,10 +32,10 @@ _DASH_SENTINEL: Final[str] = "-"
 
 def filter_normal(rows: list[tuple[int, InputRow]]) -> list[tuple[int, InputRow]]:
     """Keep only rows whose STATUS is NORMAL, Excel `=` case-insensitive
-    semantics (design.md §5 S4, §12.1): `status.strip().upper() ==
+    semantics (design.md §3.8 S4, §7.1): `status.strip().upper() ==
     "NORMAL"`, so `Normal`/`normal`/`NORMAL` are all accepted. Line
     numbers are preserved, order is preserved. Logs the dropped
-    ORPHAN/UNVERIFIED count at INFO (design.md §5 S4).
+    ORPHAN/UNVERIFIED count at INFO (design.md §3.8 S4).
     """
     normal: list[tuple[int, InputRow]] = []
     dropped = 0
@@ -54,30 +54,30 @@ def project(
     rows: list[tuple[int, InputRow]], hosp_table: Mapping[str, str]
 ) -> list[TransformedRecord]:
     """Validate + project already NORMAL-filtered rows into
-    `TransformedRecord`s (design.md §5 S5, §4.2).
+    `TransformedRecord`s (design.md §3.8 S5, §3.1.2).
 
     `app_time_iso` is the untouched original APP_TIME string -- the
-    sole source DATE/TIME are later derived from (design.md §4.2) --
+    sole source DATE/TIME are later derived from (design.md §3.1.2) --
     this stage only proves it is parseable under one of
     `_APP_TIME_FORMATS`; it never stores the parsed `datetime` itself
     (xlsx_writer, a later phase, re-parses at write time to avoid any
-    intermediate float/serial drift, design.md §8.3, §17 R4).
+    intermediate float/serial drift, design.md §3.7.3, §8 R4).
 
     HOSP_ABBR is resolved inline via `hosp_table.get(hosp_id, "")`
-    (IFERROR semantics, design.md §9.2) and frozen into the record now,
+    (IFERROR semantics, design.md §3.3) and frozen into the record now,
     so a later reference-table update never retroactively rewrites a
-    historical row (design.md §5 S5).
+    historical row (design.md §3.8 S5).
 
     Raises:
         InputValidationError (exit 2): a row's APP_TIME is the dash
             sentinel, blank, or unparsable in both accepted formats;
             or its REQUEST_ID/APP_SERVER/CLIENT_IP is blank or the dash
-            sentinel (design.md §5 S4, §7.4, §13-4, §13-8). A blank/dash
+            sentinel (design.md §3.8 S4, §3.4.4, §6-4, §6-8). A blank/dash
             REQUEST_ID is rejected fail-fast here rather than silently
-            accepted as a synthetic dedup key (design.md §7.4: "空/缺
+            accepted as a synthetic dedup key (design.md §3.4.4: "空/缺
             REQUEST_ID...不以合成鍵掩蓋"). The message names only the
             line number and column, never echoes surrounding row
-            content (design.md §5 S4: "只報行號+欄名").
+            content (design.md §3.8 S4: "只報行號+欄名").
     """
     projected: list[TransformedRecord] = []
     for line_no, row in rows:

@@ -1,4 +1,4 @@
-"""Unit tests for report_export.cli (design.md §12.1 test_cli, §11)."""
+"""Unit tests for report_export.cli (design.md §7.1 test_cli, §3.9)."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def _write_dummy_input(tmp_path: Path) -> Path:
 
 
 # --------------------------------------------------------------------
-# parse_args -- lean CLI shape (design.md §11)
+# parse_args -- lean CLI shape (design.md §3.9)
 # --------------------------------------------------------------------
 
 
@@ -94,7 +94,7 @@ def test_parse_args_unknown_flag_raises_usage_error() -> None:
 
 
 def test_parse_args_run_date_is_not_a_recognized_flag() -> None:
-    # design.md §11.1: run_date is an internal pipeline.run() test seam
+    # design.md §3.9.1: run_date is an internal pipeline.run() test seam
     # only, deliberately never a CLI flag.
     with pytest.raises(UsageError):
         cli.parse_args(["input.csv", "--run-date", "2026-07-15"])
@@ -120,7 +120,7 @@ def test_parse_args_version_prints_version_string(capsys: pytest.CaptureFixture[
 
 
 # --------------------------------------------------------------------
-# main() -- success path (stdout JSON, design.md §11.2)
+# main() -- success path (stdout JSON, design.md §3.9.2)
 # --------------------------------------------------------------------
 
 
@@ -200,7 +200,7 @@ def test_main_passes_input_state_dir_out_dir_into_config(
 
 
 # --------------------------------------------------------------------
-# Exit codes map to typed exceptions (design.md §11.4)
+# Exit codes map to typed exceptions (design.md §4.2)
 # --------------------------------------------------------------------
 
 
@@ -291,7 +291,7 @@ def test_bad_input_path_exits_1_via_config_validation(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------
-# `python -m report_export` entry point (design.md §3.2 __main__, §15)
+# `python -m report_export` entry point (design.md §2.3 __main__)
 # --------------------------------------------------------------------
 
 
@@ -302,7 +302,7 @@ def test_main_module_is_importable_and_re_exports_main() -> None:
 
 
 # --------------------------------------------------------------------
-# The lean CLI surface never grows extra flags (design.md §11)
+# The lean CLI surface never grows extra flags (design.md §3.9)
 # --------------------------------------------------------------------
 
 
@@ -327,7 +327,7 @@ def test_main_module_is_importable_and_re_exports_main() -> None:
     ],
 )
 def test_flags_removed_by_design_are_rejected(removed_flag: str) -> None:
-    # design.md §11.1: every one of these was baked in / removed in
+    # design.md §3.9.1: every one of these was baked in / removed in
     # favor of an internal default -- none survives as a CLI flag.
     with pytest.raises(UsageError):
         cli.parse_args(["input.csv", removed_flag, "x"])

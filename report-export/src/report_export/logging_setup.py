@@ -1,9 +1,9 @@
-"""Structured stderr logging (design.md §3.2 logging_setup, §11.1, §11.3, §14).
+"""Structured stderr logging (design.md §2.3 logging_setup, §3.9.1, §4.3, §4.6).
 
 stdout is reserved exclusively for the pipeline's single JSON summary
 (`cli.py`, a later phase); every log record goes to stderr instead. No
 field is masked -- the stakeholder has confirmed there is no PII
-concern (design.md §0.1, §14), so REQUEST_ID / CLIENT_IP / HOSP_ID are
+concern (design.md §4.6), so REQUEST_ID / CLIENT_IP / HOSP_ID are
 logged verbatim, never redacted.
 """
 
@@ -20,13 +20,13 @@ _LOGGER_NAME: Final[str] = "report_export"
 _DEFAULT_LEVEL: Final[int] = logging.INFO
 
 #: Debug elevation is env-only, never a CLI flag -- internal use only,
-#: intentionally not exposed as a CLI switch (design.md §11.1).
+#: intentionally not exposed as a CLI switch (design.md §3.9.1).
 _LEVEL_ENV_VAR: Final[str] = "REPORT_EXPORT_LOG_LEVEL"
 
 #: Every attribute a stdlib LogRecord carries at construction time;
 #: anything else present on a record arrived via
 #: `logger.info(..., extra={...})` and is rendered as additional
-#: key=val pairs (design.md §3.2: structured key=val or JSON logging).
+#: key=val pairs (design.md §2.3: structured key=val or JSON logging).
 _STANDARD_RECORD_FIELDS: Final[frozenset[str]] = frozenset(
     logging.LogRecord(
         name="", level=0, pathname="", lineno=0, msg="", args=(), exc_info=None
@@ -38,7 +38,7 @@ class StructuredFormatter(logging.Formatter):
     """Renders `TIMESTAMP LEVEL logger=NAME msg=MESSAGE [key=val ...]`.
 
     Colour is applied only when the destination stream is a TTY and
-    `NO_COLOR` is unset -- TTY/NO_COLOR-aware (design.md §3.2); colour
+    `NO_COLOR` is unset -- TTY/NO_COLOR-aware (design.md §2.3); colour
     never changes the underlying field content, only ANSI wrapping, so
     a redirected/piped stderr always yields identical plain text.
     """
@@ -83,7 +83,7 @@ def _stream_supports_color(stream: TextIO) -> bool:
 
 
 def _resolve_level_from_env() -> int:
-    """Read `REPORT_EXPORT_LOG_LEVEL` for debug elevation (design.md §11.1)."""
+    """Read `REPORT_EXPORT_LOG_LEVEL` for debug elevation (design.md §3.9.1)."""
     raw = os.environ.get(_LEVEL_ENV_VAR, "").strip().upper()
     if not raw:
         return _DEFAULT_LEVEL

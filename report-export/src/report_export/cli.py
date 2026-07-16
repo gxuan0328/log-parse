@@ -1,11 +1,11 @@
 """Lean argparse CLI: `INPUT` + `--state-dir`/`--out-dir` +
 `--version`/`--help` only -- everything else is baked in (design.md
-§3.2 cli, §11).
+§2.3 cli, §3.9).
 
 The sole `except ReportExportError` boundary in the whole package
 (errors.py's own docstring): every other module lets typed exceptions
 propagate unmodified; this is where they turn into a process exit code
-(design.md §11.4).
+(design.md §4.2).
 """
 
 from __future__ import annotations
@@ -31,13 +31,13 @@ _PROG: Final[str] = "report-export"
 
 
 class _FailFastArgumentParser(argparse.ArgumentParser):
-    """`error()` raises `UsageError` (exit 1, design.md §11.4) instead
+    """`error()` raises `UsageError` (exit 1, design.md §4.2) instead
     of argparse's default "print usage to stderr, `sys.exit(2)`" --
     keeps every usage error on the same typed-exception path as every
     other failure mode, and off exit code 2 (reserved for input
-    validation, design.md §11.4). `--help`/`--version` are unaffected:
+    validation, design.md §4.2). `--help`/`--version` are unaffected:
     both exit via `parser.exit()`, a different code path -- standard
-    argparse behaviour (design.md §11 table: "標準 argparse").
+    argparse behaviour (design.md §3.9 table: "標準 argparse").
     """
 
     def error(self, message: str) -> NoReturn:
@@ -45,9 +45,9 @@ class _FailFastArgumentParser(argparse.ArgumentParser):
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """Parse the lean 3-argument CLI surface (design.md §11 table):
+    """Parse the lean 3-argument CLI surface (design.md §3.9 table):
     positional `INPUT`, optional `--state-dir`/`--out-dir`, standard
-    `--version`/`--help`. No other flag exists (design.md §11.1: every
+    `--version`/`--help`. No other flag exists (design.md §3.9.1: every
     other behaviour is baked in).
     """
     parser = _FailFastArgumentParser(
@@ -73,7 +73,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point (`console_script` + `python -m report_export`).
 
-    Returns the process exit code (design.md §11.4) rather than calling
+    Returns the process exit code (design.md §4.2) rather than calling
     `sys.exit()` itself, so it stays directly callable/testable
     in-process; `__main__.py` is the only caller that turns the return
     value into an actual process exit.

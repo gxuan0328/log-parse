@@ -11,7 +11,7 @@ import pytest
 
 #: report-export/reference/hosp_id_map.csv.gz -- the real, checked-in
 #: export (tools/export_hosp_table.py output), used by test_lookup.py
-#: for anchor assertions against design.md §2.2/§2.8.
+#: for anchor assertions against design.md §1.5.2/§1.5.8.
 REFERENCE_DIR: Final[Path] = Path(__file__).resolve().parents[1] / "reference"
 
 

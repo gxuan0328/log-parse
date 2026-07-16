@@ -1,4 +1,4 @@
-"""Unit tests for report_export.errors (exit-code contract, design.md §11.4)."""
+"""Unit tests for report_export.errors (exit-code contract, design.md §4.2)."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def test_report_export_error_base_default_exit_code() -> None:
 
 
 def test_reference_error_name_matches_design_contract() -> None:
-    # design.md §3.2 names this exception `ReferenceError`; confirm the
+    # design.md §2.3 names this exception `ReferenceError`; confirm the
     # deliberate builtin shadow (targeted lint suppression in errors.py)
     # is our own type, distinct from the stdlib one, at the import above.
     assert ReportExportReferenceError.__name__ == "ReferenceError"

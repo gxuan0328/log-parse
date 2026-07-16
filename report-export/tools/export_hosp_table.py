@@ -2,20 +2,20 @@
 """Export HOSP_ID -> HOSP_ABBR from the source template into a
 runtime-friendly `reference/hosp_id_map.csv.gz` + manifest.
 
-One-off dev/ops tool (design.md §9.3): NOT part of the `report_export`
+One-off dev/ops tool (design.md §3.3): NOT part of the `report_export`
 runtime package, NOT bundled into the runtime Docker image (design.md
-§10.3 .dockerignore excludes `tools/`). Run once at build time and
+§4.7.2 .dockerignore excludes `tools/`). Run once at build time and
 again whenever the source template's master table changes (design.md
-§9.4 update procedure).
+§3.3 update procedure).
 
 Usage:
     python3 tools/export_hosp_table.py \
         [--source template/連線紀錄模板.xlsx] \
         [--out-dir reference]
 
-Fail-loud (design.md §9.3): exits non-zero and prints to stderr if the
+Fail-loud (design.md §3.3): exits non-zero and prints to stderr if the
 exported table does not match the shape measured against the real
-template file and locked in design.md §2.8:
+template file and locked in design.md §1.5.8:
 
     row_count == 93781, dup_keys == 0, blank_abbr == 0,
     key_len_hist == {10: 93781}, leading_zero == 531.
@@ -42,7 +42,7 @@ TOOL_VERSION: Final[str] = "1.0.0"
 SHEET_NAME: Final[str] = "HOSP_ID對照表"
 EXPECTED_HEADER: Final[tuple[str, str]] = ("HOSP_ID", "HOSP_ABBR")
 
-# Fail-loud expectations locked from design.md §2.8 (measured against
+# Fail-loud expectations locked from design.md §1.5.8 (measured against
 # the real committed template/連線紀錄模板.xlsx).
 EXPECTED_ROW_COUNT: Final[int] = 93781
 EXPECTED_DUP_KEYS: Final[int] = 0
@@ -71,7 +71,7 @@ class ExportStats:
 def read_hosp_rows(source: Path) -> list[tuple[str, str]]:
     """Stream (HOSP_ID, HOSP_ABBR) pairs from the template's master sheet.
 
-    Uses openpyxl `read_only` mode (design.md §9.1: a 2.3MB workbook
+    Uses openpyxl `read_only` mode (design.md §3.3: a 2.3MB workbook
     with 93,781 data rows must never be loaded eagerly). Every cell is
     coerced to `str` on read so leading zeros in HOSP_ID survive
     regardless of the source cell's stored data type.
@@ -100,7 +100,7 @@ def read_hosp_rows(source: Path) -> list[tuple[str, str]]:
                 raise ExportValidationError(f"row {line_no}: HOSP_ID is blank")
             # Deliberately NOT stripped: this is an exact-reproduction
             # export, not a cleanup pass. The master table's key_len_hist
-            # is measured (design.md §2.8) at a uniform 10 chars for
+            # is measured (design.md §1.5.8) at a uniform 10 chars for
             # EVERY key, including 6 sentinel/placeholder rows (e.g.
             # "TEST_USER ", "373104012 ") whose trailing space is part
             # of the stored 10-char key -- .strip()-ing it would corrupt
@@ -130,7 +130,7 @@ def compute_stats(rows: list[tuple[str, str]]) -> ExportStats:
 
 
 def validate_stats(stats: ExportStats) -> None:
-    """Fail-loud assertions locked from design.md §2.8 / §9.3."""
+    """Fail-loud assertions locked from design.md §1.5.8 / §3.3."""
     violations: list[str] = []
     if stats.row_count != EXPECTED_ROW_COUNT:
         violations.append(f"row_count={stats.row_count} != {EXPECTED_ROW_COUNT}")
@@ -177,7 +177,7 @@ def sha256_of_table(rows: list[tuple[str, str]]) -> str:
     gzip framing (container/header/mtime), so it stays stable across
     gzip implementations/mtimes -- mirrors the "sha256 over
     header+all data rows" convention used for records.csv's own
-    `#META` tail (design.md §6.3).
+    `#META` tail (design.md §3.5.3).
     """
     return hashlib.sha256(serialize_csv_bytes(rows)).hexdigest()
 

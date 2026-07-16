@@ -1,4 +1,4 @@
-"""`python -m report_export` entry point (design.md §3.2 __main__, §15)."""
+"""`python -m report_export` entry point (design.md §2.3 __main__)."""
 
 from __future__ import annotations
 
