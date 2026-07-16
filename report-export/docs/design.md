@@ -33,7 +33,7 @@
 ### 1.2 子工具目標
 
 - **正確性優先**：完整重現模板的過濾、投影、查表、聚合語意（見第 2、4 章實測基準）。
-- **資料保真**：前導零全程 TEXT、DATE/TIME 同存一個 datetime 兩種 number_format、僅 NORMAL、per-IP COUNT、**最新批次黃底**（最新批次高亮、歷史批次無底；每次執行由完整 state 重建 → per-run 重置語意）。
+- **資料保真**：前導零全程 TEXT、DATE/TIME 同存一個 datetime 兩種 number_format、僅 NORMAL、per-IP WEEKLY ACCESS + TOTAL ACCESS（最新批次列數／全 state 列數；本週無存取之院所 WEEKLY 填 `-`）、**最新批次黃底**（最新批次高亮、歷史批次無底；每次執行由完整 state 重建 → per-run 重置語意）。兩張交付 sheet 全表儲存格置中（horizontal/vertical center）、資料列四面細框線、表頭粗下框線（+細左右上框線構成連續格線）、欄寬依現有資料＋表頭字串顯示寬度自動 ×1.2（每次執行動態計算，非硬編常數）。
 - **可重複／冪等**：state 為單一真實來源；相同輸入重跑不重複追加、不破壞 state、產生等價交付檔。
 - **營運簡單**：單一 batch CLI、安全預設、無守護程序/DB；主機零安裝（依賴全入 Docker 映像）；精瘦 CLI（僅必要旗標）。
 - **精瘦 + 專案 ethos**：stdlib 為主僅引入 openpyxl；fail-fast loud、顯式型別、結構化日誌至 stderr、結果至 stdout/檔案。
@@ -72,12 +72,18 @@ COUNT = `[1,1,1,1,1,1,3,1,7,1,1]`，合計 **19**。`10.243.129.44` COUNT=1 證�
 
 **修正 parse-agent**：其宣稱 `[1×10, 7]`（合計 17、漏「3」）為錯誤。
 
+> **REQ3 增強**：本工具將上表單一 COUNT 欄拆為兩欄：`TOTAL ACCESS`（= 全
+> state 該 IP 列數，即此表 COUNT 值本身）與 `WEEKLY ACCESS`（= 最新批次
+> 該 IP 列數）。E2E-1 為單一批次（全 19 列 BATCH_ID=1）首次執行，故
+> WEEKLY == TOTAL == 上表數值、**無** `-` 出現；多批次情境（WEEKLY 只計
+> 最新批次、older-only IP WEEKLY 顯示 `-`）見 §12.2 E2E-3/E2E-7。
+
 ### 2.3 聚合語意（實測公式）
 
 - A：`=UNIQUE(FILTER(調閱紀錄!C2:C…, 調閱紀錄!C2:C…<>""))`
 - B：`=IFERROR(XLOOKUP(ANCHORARRAY(A2), 調閱紀錄!$C:$C, 調閱紀錄!$E:$E, ""), "")`
 - C：`=IFERROR(XLOOKUP(ANCHORARRAY(A2), 調閱紀錄!$C:$C, 調閱紀錄!$F:$F, ""), "")`
-- D：`=COUNTIF(調閱紀錄!$C:$C, ANCHORARRAY(A2))`
+- D：`=COUNTIF(調閱紀錄!$C:$C, ANCHORARRAY(A2))`（模板原始語意；本工具將此拆為 §4.3 REQ3 之 WEEKLY/TOTAL 兩欄——`TOTAL = COUNTIF(全部)`、`WEEKLY = COUNTIFS(該 IP AND BATCH_ID==max(BATCH_ID))`；模板本身無此拆分，為本工具增強）
 
 **關鍵**：院所分析的 HOSP_ID/HOSP_ABBR 是對「調閱紀錄自身」以 CLIENT IP 做 XLOOKUP **first-match**（取該 IP 首見列之值），**不是**再查 93k 主檔。主檔 XLOOKUP 只發生在 `格式轉換` 的 F 欄（`XLOOKUP(E2, HOSP_ID對照表!$A:$A, $B:$B, "")`）與 A/B 欄 `FILTER(…, 紀錄匯入!$B$2:$B$100000="NORMAL", "")`。
 
@@ -120,7 +126,7 @@ COUNT = `[1,1,1,1,1,1,3,1,7,1,1]`，合計 **19**。`10.243.129.44` COUNT=1 證�
 
 - `"0937010019"`／`"19560711"` 維持 type='s'、前導零保留。
 - 同一 `datetime` 物件寫入 A、B 兩格、兩種 number_format 可完整還原（A2==B2）。
-- COUNT int 寫入為 type='n'。
+- WEEKLY/TOTAL int 寫入為 type='n'；WEEKLY 為本週無存取（`weekly_access==0`）時寫 `-`（str，type='s'，number_format `@`）。
 - 寫入空字串 `""` 的 HOSP_ABBR **回讀為 `None`**（openpyxl 正規化）→ 測試須斷言「空或 None」，不可嚴格斷言 `""`。
 - 6 碼填色 `'FFFF00'` 會被存為 `00FFFF00`（alpha=00）→ 一律用 8 碼 `FFFFFF00`。
 
@@ -146,15 +152,15 @@ COUNT = `[1,1,1,1,1,1,3,1,7,1,1]`，合計 **19**。`10.243.129.44` COUNT=1 證�
 | `config.py` | `@dataclass(frozen=True) Config`；路徑正規化/校驗（防 CWE-22）、內建預設 | errors |
 | `errors.py` | 型別化例外：`UsageError`/`InputValidationError`/`StateIntegrityError`/`LockBusyError`/`WriteError`/`ReferenceError` | — |
 | `logging_setup.py` | 結構化日誌至 **stderr**（key=val 或 JSON、TTY/NO_COLOR 感知），INFO 預設、無遮罩 | — |
-| `models.py` | `InputRow`(14)、`StateRecord`(BATCH_ID+REQUEST_ID+8 payload)、`ReportRow`(4)、`Status`(Enum) | — |
+| `models.py` | `InputRow`(14)、`StateRecord`(BATCH_ID+REQUEST_ID+8 payload)、`ReportRow`(5)、`Status`(Enum) | — |
 | `csv_reader.py` | 讀/驗 14 欄 CSV（`newline=''`、utf-8-sig、標題精確比對、嚴格欄數、dash 正規化） | models, errors |
 | `transform.py` | 過濾 NORMAL（大小寫不敏感）→ 解析 APP_TIME → 投影 9 欄（純函式） | models, errors |
 | `lookup.py` | 載入 `hosp_id_map.csv.gz`→`dict[str,str]`；`get(hosp_id, "")`（IFERROR 語意） | errors |
 | `dedup.py` | REQUEST_ID 跨狀態 + 批次內去重；warn-skip（內建唯一策略） | models, errors |
 | `statelock.py` | 檔案鎖抽象：flock 優先，O_CREAT\|O_EXCL 備援 + stale 偵測（見 §6.6） | errors |
 | `state.py` | canonical state 讀寫、原子寫、**in-file 完整性尾列**、crash-tolerant 復原、`.bak`、`runs.jsonl`、BATCH_ID 配號 | models, errors, transform, lookup, statelock |
-| `aggregate.py` | 由完整 state 重算院所分析（首見序、first-HOSP、COUNT） | models |
-| `xlsx_writer.py` | 建 2-sheet 純值工作簿：TEXT/datetime 型別、number_format、**最新批次黃底**、表頭樣式、檔名 | openpyxl, models |
+| `aggregate.py` | 由完整 state 重算院所分析（首見序、first-HOSP、WEEKLY=最新批次列數/TOTAL=全 state 列數） | models |
+| `xlsx_writer.py` | 建 2-sheet 純值工作簿：TEXT/datetime 型別、number_format、**最新批次黃底**、表頭樣式、檔名、全表置中+資料細框線+表頭粗下框線+自動欄寬 | openpyxl, models |
 | `pipeline.py` | 串接各階段、回傳 `RunSummary`（接受內部 `run_date` 參數供測試注入） | 全部 |
 
 ### 3.3 資料流（單向）
@@ -221,16 +227,19 @@ fail-fast loud（型別化例外、無 `except: pass`、邊界即拋）｜顯式
 >
 > **核心保真**：A、B 同存一個完整 `datetime`（含毫秒，如 `datetime(2026,7,5,16,3,34,359000)`），差異僅 number_format。必須指派 `datetime.datetime` 物件（非 `date`）才能保留亞秒序列。C–I 以 Python `str` 指派（openpyxl 寫 type='s'）+ number_format `@` 雙保險。
 
-### 4.3 院所分析輸出（4 欄，交付 sheet 2；表頭 A1:D1）
+### 4.3 院所分析輸出（5 欄，交付 sheet 2；表頭 A1:E1；REQ3）
 
 | 欄 | 標題 | 計算（對映模板公式語意） | 型別 |
 |----|------|--------------------------|------|
 | A | `CLIENT IP` | 完整 state 的 CLIENT IP **首見順序去重**（= `UNIQUE(FILTER(...))`） | TEXT |
 | B | `HOSP_ID` | 該 IP **首見 state 列**的 HOSP_ID（= `XLOOKUP(IP, 調閱紀錄!C:C, E:E)` first-match，**取自調閱紀錄自身**） | TEXT |
 | C | `HOSP_ABBR` | 該 IP 首見 state 列的 HOSP_ABBR（= `XLOOKUP(..., F:F)`；可為 `""`） | TEXT |
-| D | `COUNT` | 完整 state 中該 CLIENT IP 之列數（= `COUNTIF(調閱紀錄!C:C, IP)`） | NUMERIC(int) |
+| D | `WEEKLY ACCESS` | 該 CLIENT IP 於**最新批次**（`batch_id == max(BATCH_ID)`）之列數；0 → render `-`（str, `@`），否則 int | NUMERIC(int) 或 `-`（render） |
+| E | `TOTAL ACCESS` | 完整 state 中該 CLIENT IP 之列數（= 舊 COUNT = `COUNTIF(調閱紀錄!C:C, IP)`） | NUMERIC(int) |
 
-落地錨點見第 2.2 節。
+模板本身只有單一 COUNT 欄（= 本表 E TOTAL ACCESS）；D WEEKLY ACCESS 是本
+工具在模板語意之上的增強，模板無對應公式（見 §2.3 附註）。落地錨點見第
+2.2 節；WEEKLY/TOTAL 分離之多批次錨點見 §12.2 E2E-3、E2E-7。
 
 ---
 
@@ -253,9 +262,9 @@ fail-fast loud（型別化例外、無 `except: pass`、邊界即拋）｜顯式
 
 **S6 — 去重（vs state、批次內）**：`dedup.apply()` 以 REQUEST_ID 判定；跨 state 或批次內重複→WARN(stderr，記 REQUEST_ID + 行號)+SKIP（**內建唯一策略 warn-skip；退出碼維持 0**）；產出 `new_records` 與 `skipped_cross/intra` 計數。
 
-**S7 — 配 BATCH_ID + 重算聚合**：本執行的 ingest 批次配號 `batch_seq = max_batch_seq + 1`（空 state → max=0 → 首批 = 1），每筆 `new_record.batch_id = batch_seq`；建 `full_state = existing + new_records`；`aggregate.build(full_state)`（首見序、first-HOSP 取自調閱紀錄自身、COUNT）。
+**S7 — 配 BATCH_ID + 重算聚合**：本執行的 ingest 批次配號 `batch_seq = max_batch_seq + 1`（空 state → max=0 → 首批 = 1），每筆 `new_record.batch_id = batch_seq`；建 `full_state = existing + new_records`；`aggregate.build(full_state)`（首見序、first-HOSP 取自調閱紀錄自身、REQ3：內部一次算出 `max_batch_id = max(BATCH_ID in full_state)`，per IP 之 TOTAL=全列數、WEEKLY=`batch_id == max_batch_id` 之列數）。
 
-**S8 — 寫交付 xlsx 至 .tmp**：`xlsx_writer.write(out.tmp)`：建 2 張純值 sheet（調閱紀錄=完整 state 9 欄；院所分析=4 欄）；**最新批次列（`batch_id == max(full_state 之 batch_id)`）整列上 FFFFFF00 黃底、其餘無 fill**；套型別/number_format/表頭樣式；`fsync`。
+**S8 — 寫交付 xlsx 至 .tmp**：`xlsx_writer.write(out.tmp)`：建 2 張純值 sheet（調閱紀錄=完整 state 9 欄；院所分析=5 欄，REQ3）；**最新批次列（`batch_id == max(full_state 之 batch_id)`）整列上 FFFFFF00 黃底、其餘無 fill**；套型別/number_format/表頭樣式；REQ1：兩 sheet 全格置中對齊（Alignment horizontal/vertical=center）、資料列四面 thin 框線、表頭 thick 下框線（+thin 左右上構成連續格線）、依現有資料＋表頭字串顯示寬度（CJK/全形計 2）動態設定各欄 `column_dimensions` 寬度（×1.2，非硬編常數）；`fsync`。
 
 **S9 — 原子提交**（state-first，保證交付檔為已提交 state 之投影，見 §6.5）：
 1. `state.commit(full_state)`：寫 `records.csv.tmp`（含 `#META` 尾列完整性描述子）→ `fsync` → 備份舊檔為 `records.csv.bak` → `os.replace`（POSIX 原子）。
@@ -397,22 +406,33 @@ BATCH_ID, REQUEST_ID, APP_TIME_ISO, CLIENT_IP, SERVER_IP, HOSP_ID, HOSP_ABBR, PR
 - **C–I（文字欄）**：`cell.value = <str>`；`cell.number_format = '@'`（硬化；見 §4.2）。HOSP_ABBR 未命中寫 `""`（**回讀為 None**，測試須斷言「空或 None」）。
 - **黃底（最新批次；每執行重置）**：`PatternFill(fill_type='solid', fgColor='FFFFFF00')`（**明確 8 碼 ARGB、FF 全不透明**；6 碼會被存為 alpha=00）。**僅** `batch_id == max(BATCH_ID)` 之列，對 A:I 9 格全上黃底；其餘列**不設 fill**（每執行由完整 state 重建整表 → 天然 per-run 重置）。
 
-### 8.4 Sheet 2「院所分析」（1 表頭 + 11 唯一 IP，依首見序）
+**REQ1 置中/框線/欄寬（兩 sheet 通用，§8.5/§8.6 一併適用）**：
+- 全部儲存格（表頭 + 資料，兩 sheet）：`Alignment(horizontal='center', vertical='center')`。
+- 每一資料格（兩 sheet）：`Border(left/right/top/bottom = Side(style='thin'))`（「所有框線」）；黃底 fill 與此 thin 框線、置中對齊三者於最新批次列同時存在，互不覆蓋（fill/border/alignment 為儲存格三個獨立屬性）。
+- 欄寬：`width = round(max(display_width(表頭文字), max(display_width(該欄每一資料格 rendered 值))) * 1.2, 2)`。`rendered` 值＝儲存格實際顯示的字元：DATE → `"YYYY-MM-DD"`（固定 10 碼）、TIME → `"HH:MM:SS"`（固定 8 碼，不含毫秒）、int → 其十進位數字字串、`-`（WEEKLY 無存取 sentinel）→ 1 碼、`None`（未命中 HOSP_ABBR 回讀）→ 空字串。`display_width` 以 `unicodedata.east_asian_width` 為 `W`/`F`（CJK/全形）者計 2、其餘計 1（門諾醫院/臺北虛擬診等中文欄正確計寬）。此為**每次執行依當下實際資料動態計算**（非硬編常數）；標頭字串亦納入 max 比較，確保如「WEEKLY ACCESS」（13 碼）等寬表頭不被窄資料截斷（清晰檢視）。作為所有列都已寫入後的一次性 post-pass 套用；空（僅表頭）sheet 仍依表頭寬度取值。
 
-表頭 A1:D1：`CLIENT IP, HOSP_ID, HOSP_ABBR, COUNT`。
+### 8.4 Sheet 2「院所分析」（1 表頭 + 11 唯一 IP，依首見序；REQ3 5 欄）
+
+表頭 A1:E1：`CLIENT IP, HOSP_ID, HOSP_ABBR, WEEKLY ACCESS, TOTAL ACCESS`。
 - **A,B,C**：TEXT（`str` + `@`）；HOSP_ABBR 可為 `""`。
-- **D(COUNT)**：`cell.value = <int>`（NUMERIC，type='n'；number_format `General` 或 `'0'`）。
-- 值由 `aggregate` 於 Python 算妥（無公式）。落地錨點見第 2.2 節。
+- **D(WEEKLY ACCESS)**：`weekly_access == 0` → `cell.value = "-"`（str，number_format `@`）；否則 `cell.value = <int>`（number_format 維持預設 `General`）。
+- **E(TOTAL ACCESS)**：`cell.value = <int>`（NUMERIC，type='n'；number_format `General`）。此即模板/前版之單一 COUNT 欄。
+- 值由 `aggregate` 於 Python 算妥（無公式）。
+- **REQ1**：全格置中對齊 + 資料格四面 thin 框線 + 自動欄寬（同 §8.3 公式）。
+- 落地錨點見第 2.2 節；WEEKLY 之 `-` 與 weekly&lt;total 案例見 §12.2 E2E-3、E2E-7。
 
 ### 8.5 表頭樣式（外觀；忠於模板但用顯式 RGB）
 
 - 模板實測：表頭 solid 淺綠底（theme=9 tint≈0.8）；資料列無 fill；無 freeze_panes、無 auto_filter。
 - 交付採：`Font(bold=True, size=12)`（bold 為可讀性微增；模板本身非 bold，屬 cosmetic）+ solid 淺綠底以**顯式 RGB `E2EFDA`**。**用顯式 RGB 而非 theme index**：實測讀 theme 色之 `fgColor.rgb` 會拋 `Values must be of type str`，theme 色亦不隨新工作簿可靠移植。
-- 選配（預設關）：欄寬還原（G/I≈40 等）；freeze_panes/auto_filter 不加。
+- **REQ1 表頭框線/對齊決策**：表頭每格 `Alignment(horizontal='center', vertical='center')` + `Border(bottom=Side(style='thick'), left/right/top=Side(style='thin'))`。**決策**：粗下框線（「粗下框線」）為使用者要求之必要強調；thin 三側為與資料格的連續格線（否則表頭列的左右上三側會是無框線的斷點，有違「確保清晰的資訊檢視」的目的）——記述此為本次實作選擇的具體理由，而非模板原樣（模板無任何框線）。Fill（`FFE2EFDA`）+ Font（bold, size=12）+ Border + Alignment 四者於表頭格同時存在。
+- 欄寬：改為每次執行**依現有資料自動 auto-fit**（見 §8.3 公式），非硬編常數；不再是「選配、預設關」的固定還原值。`display_width` 以 `unicodedata.east_asian_width` 為 `W`/`F` 者計 2。freeze_panes/auto_filter 仍不加。
 
 ### 8.6 保真檢核（產出後自我斷言，寫入 e2e 測試）
 
-回讀交付檔斷言：工作簿**恰 2 sheet、零公式**、無 紀錄匯入/格式轉換/HOSP_ID對照表；表頭字面精確；`A2.value == datetime(2026,7,5,16,3,34,359000)` 且 `A2.value == B2.value`（**斷言 datetime 值，不斷言浮點序列 repr**）；`'yyyy' in A2.number_format`、`'h:mm' in B2.number_format`；HOSP_ID 回讀為 `"0937010019"`（str，非 int）；未命中 HOSP_ABBR 回讀「空或 None」；COUNT 為 int；黃底僅落**最新批次**列（fgColor endswith `FFFF00`、patternType solid），其餘列無 fill。
+回讀交付檔斷言：工作簿**恰 2 sheet、零公式**、無 紀錄匯入/格式轉換/HOSP_ID對照表；表頭字面精確；`A2.value == datetime(2026,7,5,16,3,34,359000)` 且 `A2.value == B2.value`（**斷言 datetime 值，不斷言浮點序列 repr**）；`'yyyy' in A2.number_format`、`'h:mm' in B2.number_format`；HOSP_ID 回讀為 `"0937010019"`（str，非 int）；未命中 HOSP_ABBR 回讀「空或 None」；WEEKLY/TOTAL 皆為 int（`type='n'`）；本週無存取 IP 的 WEEKLY 回讀為 `-`（`type='s'`，`number_format=='@'`）；黃底僅落**最新批次**列（fgColor endswith `FFFF00`、patternType solid），其餘列無 fill。
+
+**REQ1 新增讀回斷言**：每一資料格（兩 sheet）`alignment.horizontal=='center'` 且 `alignment.vertical=='center'`、四面 `border.*.style=='thin'`；每一表頭格 `alignment` 同上、`border.bottom.style=='thick'`、`border.left/right/top.style=='thin'`；黃底列同時具備 fill `FFFFFF00`、四面 thin 框線、置中對齊（三者互不排斥）；各欄寬等於 §8.3 公式之預期值（E2E-1 錨點：調閱紀錄 A=12.0 B=9.6 C=18.0 D=12.0 E=12.0 F=12.0 G=38.4 H=9.6 I=38.4；院所分析 A=18.0 B=12.0 C=12.0 D=15.6 E=14.4——D=15.6 係因表頭「WEEKLY ACCESS」顯示寬度 13 主導單位數資料，正是 §8.3「表頭納入 max」設計理由的具體例證）。
 
 ---
 
@@ -444,7 +464,8 @@ BATCH_ID, REQUEST_ID, APP_TIME_ISO, CLIENT_IP, SERVER_IP, HOSP_ID, HOSP_ABBR, PR
   - `template/source-log.csv` — e2e 輸入 fixture（25 列、CRLF、無 BOM）；
   - `reference/hosp_id_map.csv.gz` + `hosp_id_map.manifest.json` — 由模板匯出之查表；
   - **建置期產生之預期輸出 fixtures**（各 Phase 步驟產生的 expected records.csv / 交付 xlsx 值快照等）亦入庫，作為回歸基準。
-- **不入庫（`.gitignore`；執行期機器產生、逐 run 變動）**：`state/`、`output/`、`inbox/`。
+  - **REQ4 可重複示範**：`docker/example/state/records.csv`（seed state，19 列 batch1，位元組同 `expected_records_e2e1.csv`）+ `docker/example/input/week-2026-07-13.csv`（this-week 14 欄 CRLF 輸入）——可重複示範 REQ3 三種 WEEKLY ACCESS 情形（brand-new weekly==total、overlap weekly&lt;total、older-only weekly 顯示 `-`），供 tests/e2e E2E-7 驅動與 usage.zh-TW.md 手動示範共用同一組固定 fixtures。
+- **不入庫（`.gitignore`；執行期機器產生、逐 run 變動）**：`/state/` `/output/` `/inbox/`（host 直跑時的執行期目錄）與 `/docker/state/` `/docker/output/` `/docker/inbox/`（REQ2 relocate 後容器化執行期目錄）；皆為錨定（leading `/`）路徑，故 `docker/example/**` 不受影響、可正常入庫。
 - **機器託管、勿用 Excel 編輯**：`hosp_id_map.csv.gz` 與 `records.csv` 含前導零鍵（如 `0937010019`）；**維運者若以 Excel 開啟編輯會數值化毀損** → 文件明訂此類檔為機器託管、勿用 Excel 直接編輯（見 §17 風險）。
 
 ---
@@ -464,7 +485,7 @@ BATCH_ID, REQUEST_ID, APP_TIME_ISO, CLIENT_IP, SERVER_IP, HOSP_ID, HOSP_ABBR, PR
 
 ### 10.3 `docker/Dockerfile.dockerignore`
 
-排除 `template/`（2.3MB xlsx + 輸入 fixture；已入庫作基線，執行期映像不需要）、`state/`、`output/`、`inbox/`、`tests/`、`docs/`、`tools/`、`.git`、`__pycache__`。
+排除 `template/`（2.3MB xlsx + 輸入 fixture；已入庫作基線，執行期映像不需要）、`state/`、`output/`、`inbox/`（含 REQ2 relocate 後的 `docker/inbox`、`docker/state`、`docker/output`，明列以利閱讀，儘管 unanchored pattern 本就任何深度皆會匹配）、`docker/example/`（REQ4 示範/測試 fixtures，不需入映像）、`tests/`、`docs/`、`tools/`、`.git`、`__pycache__`。build context 精簡；映像本就只 `COPY src/` + `reference/`。
 
 **命名細節**：BuildKit 僅在 context root（`report-export/`，對齊本檔 `docker build -f docker/Dockerfile .` 的呼叫方式）辨識純檔名 `.dockerignore`；Dockerfile 本身位於子目錄 `docker/` 時，BuildKit 改採「與該 Dockerfile 同名」慣例 `<Dockerfile 檔名>.dockerignore`，故實際檔名為 `docker/Dockerfile.dockerignore`——若誤放一個 `docker/.dockerignore`，會被靜默略過、不排除任何內容。
 
@@ -474,7 +495,7 @@ BATCH_ID, REQUEST_ID, APP_TIME_ISO, CLIENT_IP, SERVER_IP, HOSP_ID, HOSP_ABBR, PR
 - **修正**：
   1. **所有 `docker run` 範例預設 `--user "$(id -u):$(id -g)"`**——程序以掛載目錄的擁有者身分執行，host 目錄可寫，產出檔亦歸操作者。
   2. UID/GID 以 build-arg `APP_UID`/`APP_GID`（預設 10001）可調，供標準化服務帳號的站點。
-  3. 因 `--user` 可能對映無 `/etc/passwd` entry 的 uid，映像設 `ENV HOME=/tmp` 並確保 `--tmpfs /tmp` 可寫；本工具不做 pwd lookup。
+  3. 因 `--user` 可能對映無 `/etc/passwd` entry 的 uid，映像設 `ENV HOME=/tmp`；本工具不做 pwd lookup。**REQ2 簡化後**主要 `docker run` 範例不再帶 `--read-only`，`/tmp` 由容器一般 rw 根檔案系統即可寫（無需額外 `--tmpfs /tmp`）——`--tmpfs /tmp` 僅在站點自行加回 `--read-only`（選配硬化，見 §10.5）時才需要，`ENV HOME=/tmp` 本身不變。
   4. named volume 情境：文件提供一次性 `docker run --user 0 ... chown` 初始化步驟，或改用 `--user`。
   5. **usage.zh-TW.md 明訂 host 權限前置條件**：`state_dir`/`out_dir` 須由執行 `--user` 指定之 uid 可寫。
 
@@ -483,18 +504,22 @@ BATCH_ID, REQUEST_ID, APP_TIME_ISO, CLIENT_IP, SERVER_IP, HOSP_ID, HOSP_ABBR, PR
 - 非 root：建 `appuser`(UID/GID `APP_UID`/`APP_GID`)、`USER ${APP_UID}`（作為未給 `--user` 時的預設）。
 - `ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONHASHSEED=0 LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=Asia/Taipei HOME=/tmp`。
 - OCI labels（source、version、`hosp-data-version`=manifest sha256）。無 HEALTHCHECK。
-- 建議 `docker run` 加 `--network none`、`--read-only`、`--tmpfs /tmp`。CI 以 trivy 掃描；基底 digest pin。
+- **選配硬化（REQ2；預設不加）**：`--network none`、`--read-only`、`--tmpfs /tmp` 對交付結果無功能性影響，純屬 defense-in-depth；安全敏感站點可在 §10.7 的簡化主要範例上自行加回。CI 以 trivy 掃描；基底 digest pin。
+- 映像已 `ENV TZ=Asia/Taipei`（見上），故主要範例的 `docker run` 不再額外帶 `-e TZ=Asia/Taipei`——該旗標對已烘焙 ENV 的映像而言是冗餘的（已於本次驗證確認）。
 
 ### 10.6 Volumes
 
-| 掛載 | 模式 | 用途 |
-|------|------|------|
-| `/data/input` | ro | 本批原始 14 欄 CSV |
-| `/data/state` | rw | canonical state（`--state-dir` 預設指向此） |
-| `/data/output` | rw | 交付 xlsx（`--out-dir` 預設指向此） |
-| `/app/reference` | 映像內唯讀 | 捆綁 HOSP 查表 |
+| 掛載 | 模式 | 用途 | host 對應目錄（REQ2 relocate） |
+|------|------|------|-------------------------------|
+| `/data/input` | ro | 本批原始 14 欄 CSV | `report-export/docker/inbox/` |
+| `/data/state` | rw | canonical state（`--state-dir` 預設指向此） | `report-export/docker/state/` |
+| `/data/output` | rw | 交付 xlsx（`--out-dir` 預設指向此） | `report-export/docker/output/` |
+| `/app/reference` | 映像內唯讀 | 捆綁 HOSP 查表 | — |
 
-（前版 `/data/seed` 掛載已移除——無 seeding。）
+容器內掛載點與 `--state-dir`/`--out-dir` 預設值**不變**；REQ2 relocate 的
+只是 host 側目錄從 `report-export/{inbox,state,output}/` 移至
+`report-export/docker/{inbox,state,output}/`（§10.7、§15、`.gitignore`
+一併更新）。（前版 `/data/seed` 掛載已移除——無 seeding。）
 
 ### 10.7 Entrypoint / CMD 與執行範例
 
@@ -505,17 +530,29 @@ ENTRYPOINT ["python","-m","report_export"]
 CMD []
 ```
 
-每週執行（單一指令；state 自動從空起步/累積，run 1 不特殊）：
+每週執行（單一指令；state 自動從空起步/累積，run 1 不特殊；**REQ2 簡化**：
+從 `report-export/` 執行）：
 ```
-docker run --rm --network none --read-only --tmpfs /tmp \
-  --user "$(id -u):$(id -g)" -e TZ=Asia/Taipei \
-  -v "$PWD/report-export/inbox:/data/input:ro" \
-  -v "$PWD/report-export/state:/data/state" \
-  -v "$PWD/report-export/output:/data/output" \
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD/docker/inbox:/data/input:ro" \
+  -v "$PWD/docker/state:/data/state" \
+  -v "$PWD/docker/output:/data/output" \
   report-export:1.0.0 \
   /data/input/week-2026-07-13.csv
 ```
-容器內 `--state-dir`/`--out-dir` 預設即 `/data/state`、`/data/output`（與掛載點一致），故無需傳旗標；每週只換輸入檔即可。選配 `docker/docker-compose.yml` 預接卷（含 `--user` 註記）。
+`--rm`（一次性批次語意）與 `--user "$(id -u):$(id -g)"`（host bind-mount
+可寫性 **必要**，見 §10.4）保留；`--network none`、`--read-only`、
+`--tmpfs /tmp`、`-e TZ=Asia/Taipei` 四個旗標已 DROP——前三者純屬
+defense-in-depth、對交付結果無功能性影響，`-e TZ=Asia/Taipei` 對已
+`ENV TZ=Asia/Taipei` 的映像是冗餘的（本次驗證確認）。容器內
+`--state-dir`/`--out-dir` 預設即 `/data/state`、`/data/output`（與掛載點一
+致），故無需傳旗標；每週只換輸入檔即可。
+
+> **選配硬化**（安全敏感站點可自行加回，預設不加）：`--network none
+> --read-only --tmpfs /tmp -e TZ=Asia/Taipei`。
+
+選配 `docker/docker-compose.yml` 預接卷（含 `--user` 註記；同樣簡化，不含
+上述四個硬化旗標）。
 
 ---
 
@@ -583,24 +620,27 @@ CI 階段（對齊 lint→test→analyze→build→deploy）：`ruff`(lint) → 
 - `test_lookup`：`0937010019`→`秀傳醫院`、`3501200000`→`臺北虛擬診`；未命中→`""`；前導零鍵；gz 載入。
 - `test_dedup`：跨 state / 批次內重複→WARN+skip；重跑同輸入→0 新增。（無 fail 模式。）
 - `test_state`：寫→讀往返（APP_TIME_ISO 毫秒不漂移）；**尾列完整性：寫入後尾列 records/sha 相符；竄改 body→情況4 復原/exit 3；尾列缺失→情況3 WARN+補寫（非致命）**；原子寫入（tmp→replace、產 .bak）；**空 state 起步（無 records.csv → existing=[]、max_batch_seq=0）**；首批 `BATCH_ID=1`；權限 0600/0700；殘留 .tmp 清理；**flock 不可用時 O_CREAT|O_EXCL 備援 + stale 偵測**。
-- `test_aggregate`：11 唯一 IP、首見序 == 模板 A2:A12、COUNT=[1,1,1,1,1,1,3,1,7,1,1] 合計 19；first-HOSP 取自調閱紀錄自身；多 HOSP_ID 之 IP→WARN + 取首見。
-- `test_xlsx_writer`：A2==B2 datetime（非浮點序列 repr）；`'yyyy' in A2.number_format`、`'h:mm' in B2.number_format`；ID 欄回讀 str；**未命中 HOSP_ABBR 回讀空或 None**；COUNT int；黃底 `FFFFFF00`、僅 `batch_id==max(BATCH_ID)` 列、其餘列無 fill；恰 2 sheet、零公式；表頭字面精確；**同日不同 input_sha256 → 檔名加序號**。
+- `test_aggregate`：11 唯一 IP、首見序 == 模板 A2:A12；單一批次（全 BATCH_ID=1）WEEKLY==TOTAL==`[1,1,1,1,1,1,3,1,7,1,1]` 合計 19；多批次時 WEEKLY 只計 `max(BATCH_ID)` 之列、older-only IP `weekly_access==0`、latest-batch 新 IP `weekly_access==total_access`；first-HOSP 取自調閱紀錄自身；多 HOSP_ID 之 IP→WARN + 取首見。
+- `test_xlsx_writer`：A2==B2 datetime（非浮點序列 repr）；`'yyyy' in A2.number_format`、`'h:mm' in B2.number_format`；ID 欄回讀 str；**未命中 HOSP_ABBR 回讀空或 None**；WEEKLY/TOTAL int；`weekly_access==0` → 回讀 `-`（str, `@`）；表頭 5 欄（`CLIENT IP, HOSP_ID, HOSP_ABBR, WEEKLY ACCESS, TOTAL ACCESS`）；黃底 `FFFFFF00`、僅 `batch_id==max(BATCH_ID)` 列、其餘列無 fill；恰 2 sheet、零公式；表頭字面精確；**同日不同 input_sha256 → 檔名加序號**；REQ1：每格置中、資料格四面 thin 框線、表頭 thick 下框線（+thin 左右上）、欄寬 auto-fit（依 §8.3 公式，於代表性資料上核對 E2E-1 錨點欄寬）。
 - `test_logging`：stdout 為單一 JSON 摘要、stderr 為結構化日誌（**stream 分離**）；log record 型別/欄位正確。
 - `test_pipeline` / `test_cli`：退出碼對應各例外；stdout JSON 欄位齊全；**內部 `run_date` 注入決定檔名**；精瘦 CLI 僅接受 INPUT/`--state-dir`/`--out-dir`（未知旗標→exit 1）。
 
 ### 12.2 端對端（驗收）測試
 
-- **E2E-1（複現落地結果；空 state 首次執行）**：空 state + `INPUT=fixtures/source-log.csv`(25) → state 19 列（皆 `BATCH_ID=1`）；交付 調閱紀錄 19 資料列**全黃底**（皆最新批次）；院所分析 11 IP、COUNT 合計 19、秀傳醫院=7、臺北虛擬診=3、`10.243.129.44`=1（**證 ORPHAN 排除**）。
+- **E2E-1（複現落地結果；空 state 首次執行）**：空 state + `INPUT=fixtures/source-log.csv`(25) → state 19 列（皆 `BATCH_ID=1`）；交付 調閱紀錄 19 資料列**全黃底**（皆最新批次）；院所分析 11 IP、WEEKLY 欄==TOTAL 欄==`[1,1,1,1,1,1,3,1,7,1,1]` 皆合計 19、無 `-`（單一批次 → WEEKLY==TOTAL）、秀傳醫院=7、臺北虛擬診=3、`10.243.129.44`=1（**證 ORPHAN 排除**）；REQ1：全格置中、資料格四面 thin 框線、表頭 thick 下框線、欄寬 auto-fit（§8.6 錨點數值）。
 - **E2E-2（冪等）**：重跑同輸入 → 0 新增、19 dup 警告、state **尾列/位元不變**；兩次交付檔「儲存格值 + data_type + number_format + fill」**相等**（非 bytes，因 xlsx zip/docProps 時戳非位元組確定），黃底皆落該單一批次 19 列。
-- **E2E-3（新批次；per-run 黃底重置）**：於 E2E-1 之 state（19 列 batch1）後，ingest N 筆全新 REQUEST_ID → state 19+N（新列 `BATCH_ID=2`）→ 交付**恰 N 列黃底（batch2）、19 列 batch1 無 fill**；院所分析重算。
+- **E2E-3（新批次；per-run 黃底重置；REQ3 新增 `-` 案例）**：於 E2E-1 之 state（19 列 batch1）後，ingest N=3 筆全新 REQUEST_ID（`batch_new.csv`）→ state 19+3=22（新列 `BATCH_ID=2`）→ 交付**恰 3 列黃底（batch2）、19 列 batch1 無 fill**；院所分析重算為 12 IP：TOTAL 10.245.1.125==8、192.168.117.104==4、10.250.77.10==1；WEEKLY（該批各 IP 恰 1 列）10.245.1.125==1、192.168.117.104==1、10.250.77.10==1；older-only IP（如 `10.243.129.44`）本批 0 列 → WEEKLY render `-`；brand-new `10.250.77.10` → hosp `1301170017`/`台北醫大`。
 - **E2E-4（重匯重疊）**：於 E2E-3 後，再餵 source-log(19) → 19 皆去重 → state 不變、交付黃底仍落**最新真實批次（batch2 的 N 列）**、重匯的 19 不高亮。
 - **E2E-5（交付檔重建）**：ingest 一批成功提交 state 後，模擬交付檔遺失，**以最近輸入重跑**（去重 0 新增）→ 交付檔由 state 重生、正確高亮最新批次（無特殊旗標）。
 - **E2E-6（crash-tolerant state）**：手動使 records.csv 尾列與 body 不一致（模擬 manifest-lag 舊模型）→ 驗證載入**不 brick**、循情況 3/4 復原。
+- **E2E-7（docker/example 可重複示範；REQ3+REQ4）**：載入 `docker/example/state`（複製至 tmp，保持入庫檔案不變）+ 餵 `docker/example/input/week-2026-07-13.csv`（4 列，其中 2 列 IP 為既有 `10.245.1.125`、1 列 IP 為既有 `192.168.117.104`、1 列為全新 IP `10.250.77.10`）→ 12 IP、`state_total` 23、`unique_ips` 12、`batch_seq` 2；WEEKLY render=`['-'×6, 1, '-', 2, '-', '-', 1]`、TOTAL=`[1×6, 4, 1, 9, 1, 1, 1]`；三種 WEEKLY 情形（brand-new weekly==total、overlap weekly&lt;total、older-only weekly=`-`）齊備於同一次執行，且可無限次重複執行（seed 檔案不受測試影響）。
 - **不變量**：`transform(source-log NORMAL)` == 預期 19 筆 StateRecord。
 
 ### 12.3 fixtures（`tests/fixtures/`）
 
 以入庫基線 `template/source-log.csv`（25 列、**CRLF、無 BOM**）為主 e2e 輸入（可直接引用或複製至 fixtures）；另備 `hosp_map_small.csv`（含 `0937010019` 與一未命中鍵）、`batch_new.csv`（全新 REQUEST_ID，供 E2E-3）、`empty.csv`（僅表頭）、`all_nonnormal.csv`（僅 ORPHAN/UNVERIFIED）、`status_mixed_case.csv`（含 `Normal`/`normal` 驗大小寫不敏感）。**建置期產生之預期輸出 fixtures**（expected records.csv、交付值快照）入庫作回歸基準（見 §9.5）。**決定論**：內部注入固定 `run_date`；斷言儲存格值集合而非 bytes。
+
+**REQ4 docker/example fixtures**：`docker/example/state/records.csv`（seed，位元組同 `expected_records_e2e1.csv`）+ `docker/example/input/week-2026-07-13.csv`（this-week 14 欄 CRLF 輸入）為 E2E-7 與 usage.zh-TW.md 手動可重複示範共用的固定 fixtures；byte-exact 由 repo-root `.gitattributes` 的 `report-export/docker/example/** -text` 規則保證（this-week 輸入保留 CRLF、seed state 保留 LF，不受 repo 預設 `* text=auto eol=lf` 正規化影響）。
 
 ---
 
@@ -614,7 +654,7 @@ CI 階段（對齊 lint→test→analyze→build→deploy）：`ruff`(lint) → 
 6. **前導零/文字保留**：HOSP_ID `0937010019`、BIRTHDAY `19560711`、PRSN_ID、PATIENT_ID_AES 全程 TEXT（csv→state csv→xlsx `@`）；回讀仍為 str。
 7. **毫秒時間戳**：`…34.359`→`datetime(…,359000)`，相容無毫秒；TIME 顯示僅到秒。
 8. **NORMAL 列 APP_TIME=`-`/不可解析** → 契約違反 → exit 2（只報行號/欄名）。實測 dash APP_TIME 僅出現於非 NORMAL 列。
-9. **ORPHAN 列（row7）** APP_TIME 有效但 API 欄 dash → 因非 NORMAL 被過濾；其 CLIENT IP（10.243.129.44）不得灌入 COUNT（該 IP COUNT=1）。
+9. **ORPHAN 列（row7）** APP_TIME 有效但 API 欄 dash → 因非 NORMAL 被過濾；其 CLIENT IP（10.243.129.44）不得灌入聚合（該 IP TOTAL ACCESS=1；WEEKLY ACCESS 視其是否在最新批次而定，E2E-1 單一批次時亦=1）。
 10. **首次執行（空 state）**：無 records.csv → 直接以空 state 進行第一個真實批次（`BATCH_ID=1`）；**無 seeding、無特殊路徑**（見 §6.8）。
 11. **同一 CLIENT IP 對映多個相異 HOSP_ID** → 取首見列自身值（XLOOKUP first-match）並 WARN（以 HOSP_IDs + IP 表述）。
 12. **毀損/被竄改 state** → 循 §6.4 crash-tolerant 復原；.bak 亦壞才 exit 3。
@@ -656,7 +696,7 @@ report-export/
 ├─ pyproject.toml                 # 套件中繼、console_script、ruff/mypy/pytest 設定
 ├─ requirements.lock              # 執行期鎖檔：openpyxl==3.1.5 + et_xmlfile==… + hashes（pip-compile/uv）
 ├─ requirements-dev.txt           # dev：pytest, coverage, ruff, mypy
-├─ .gitignore                     # 僅忽略 state/ output/ inbox/（執行期機器產生）
+├─ .gitignore                     # 錨定忽略 /state/ /output/ /inbox/ 與 /docker/{state,output,inbox}/（執行期機器產生）
 ├─ src/
 │  └─ report_export/
 │     ├─ __init__.py              # __version__
@@ -665,34 +705,40 @@ report-export/
 │     ├─ config.py                # frozen Config、路徑校驗、內建預設
 │     ├─ errors.py                # 型別化例外
 │     ├─ logging_setup.py         # 結構化 stderr 日誌（INFO、無遮罩）
-│     ├─ models.py                # InputRow(14)/StateRecord(10)/ReportRow(4)/Status Enum
+│     ├─ models.py                # InputRow(14)/StateRecord(10)/ReportRow(5)/Status Enum
 │     ├─ csv_reader.py            # 讀/驗 14 欄 CSV（newline='' + utf-8-sig、嚴格欄數、dash）
 │     ├─ transform.py             # 過濾 NORMAL（大小寫不敏感）+ 解析 APP_TIME + 投影 9 欄
 │     ├─ lookup.py                # 載入 hosp_id_map.csv.gz→dict；get(id,"")
 │     ├─ dedup.py                 # REQUEST_ID 跨狀態/批次內去重、warn-skip
 │     ├─ statelock.py             # flock + O_CREAT|O_EXCL 備援 + stale 偵測
 │     ├─ state.py                 # 讀寫/原子寫/in-file 尾列完整性/crash-tolerant/.bak/runs.jsonl/BATCH_ID（空起步）
-│     ├─ aggregate.py             # 院所分析重算（首見序、first-HOSP、COUNT）
-│     ├─ xlsx_writer.py           # 2-sheet 純值、型別/number_format、最新批次黃底、表頭、檔名（同日消歧）
+│     ├─ aggregate.py             # 院所分析重算（首見序、first-HOSP、WEEKLY/TOTAL ACCESS）
+│     ├─ xlsx_writer.py           # 2-sheet 純值、型別/number_format、最新批次黃底、表頭、檔名（同日消歧）、全格置中/框線/自動欄寬
 │     └─ pipeline.py              # 串接各階段 → RunSummary（接受內部 run_date 參數）
 ├─ reference/                     # 捆綁參考資料（入庫、烘焙進映像）
 │  ├─ hosp_id_map.csv.gz          # 精簡查表（全 TEXT）
 │  └─ hosp_id_map.manifest.json   # sha256/rows/key_len_hist/dup/blank/exported_utc/tool_version
-├─ state/                         # 執行期 canonical state（.gitignore）
+├─ state/                         # host-直接執行（無 Docker）慣例位置；執行期 canonical state（.gitignore）
 │  └─ (執行後：records.csv[含尾列] / records.csv.bak / runs.jsonl / .lock)
-├─ output/                        # 執行期交付檔（.gitignore）
-├─ inbox/                         # 選配：每週輸入投放區（.gitignore）
+├─ output/                        # host-直接執行慣例位置；執行期交付檔（.gitignore）
+├─ inbox/                         # host-直接執行慣例位置；選配每週輸入投放區（.gitignore）；Docker 範例已改用 docker/inbox 等（REQ2，見下）
 ├─ tools/                         # dev/ops 一次性（不進執行期映像）
 │  └─ export_hosp_table.py        # 模板 xlsx→hosp_id_map.csv.gz + manifest（fail-loud 驗證）
 ├─ tests/
 │  ├─ conftest.py
 │  ├─ fixtures/                   # source-log.csv(CRLF, 引用基線)、hosp_map_small.csv、batch_new.csv、empty.csv、all_nonnormal.csv、status_mixed_case.csv、預期輸出快照(入庫)
 │  ├─ unit/                       # test_{csv_reader,transform,lookup,dedup,statelock,state,aggregate,xlsx_writer,logging,pipeline,cli}.py
-│  └─ e2e/                        # test_end_to_end.py（E2E-1..6）
+│  └─ e2e/                        # test_end_to_end.py（E2E-1..7）
 ├─ docker/
 │  ├─ Dockerfile                  # 多階段、python:3.12-slim digest pin、非 root、venv、烘焙 HOSP 查表
-│  ├─ Dockerfile.dockerignore     # 排除 template/、state/、output/、inbox/、tests/、docs/、tools/、.git
-│  └─ docker-compose.yml          # 選配：預接卷（含 --user 註記）
+│  ├─ Dockerfile.dockerignore     # 排除 template/、state/、output/、inbox/、docker/example/、tests/、docs/、tools/、.git
+│  ├─ docker-compose.yml          # 選配：預接卷（REQ2 已簡化，不含 network_mode/read_only/tmpfs/environment；含 --user 註記）
+│  ├─ inbox/                      # REQ2 relocate：Docker 範例輸入投放區（.gitignore，執行後才出現）
+│  ├─ state/                      # REQ2 relocate：Docker 範例 canonical state（.gitignore，執行後才出現）
+│  ├─ output/                     # REQ2 relocate：Docker 範例交付檔（.gitignore，執行後才出現）
+│  └─ example/                    # REQ4 入庫可重複示範 fixtures（錨定 .gitignore 不影響此路徑，正常入庫）
+│     ├─ state/records.csv        # seed state（19 列 batch1，位元組同 tests/fixtures/expected_records_e2e1.csv）
+│     └─ input/week-2026-07-13.csv  # this-week 14 欄 CRLF 輸入（4 列全新 REQUEST_ID，供 E2E-7 + usage.zh-TW.md 示範）
 ├─ docs/
 │  ├─ design.md                   # 本設計文件（交付物；本檔）
 │  ├─ usage.zh-TW.md              # CLI/Docker 使用與維運 runbook（含 host 權限前置、NAS 鎖注意）
@@ -712,9 +758,9 @@ report-export/
 | **1. 參考資料** | `tools/export_hosp_table.py` → 產 `hosp_id_map.csv.gz` + manifest（fail-loud 驗證 93781/0 dup/0 blank/531 lz）；`lookup.py`。 | 匯出驗證器通過；`test_lookup` 綠（`0937010019→秀傳醫院`）；查表 gz 入庫。 |
 | **2. 讀取 + 轉換** | `csv_reader`（newline=''、utf-8-sig、嚴格 14 欄）；`transform`（NORMAL 大小寫不敏感、APP_TIME 解析、投影 9 欄）。 | `test_csv_reader`/`test_transform` 綠；25→19 不變量；CRLF 尾欄無 `\r`。 |
 | **3. 去重 + state** | `dedup`（warn-skip）；`statelock`（flock + O_EXCL + stale）；`state`（空起步、`#META` 尾列、原子寫、.bak、runs.jsonl、BATCH_ID 由 1 起）。 | `test_dedup`/`test_state` 綠；空 state 起步、首批 BATCH_ID=1；crash-tolerant 復原（情況 3/4）。 |
-| **4. 聚合 + xlsx** | `aggregate`（首見序、first-HOSP、COUNT）；`xlsx_writer`（2 sheet 純值、型別/numFmt、最新批次黃底、表頭 RGB、同日消歧）。 | `test_aggregate`（COUNT=[…]=19）/`test_xlsx_writer` 綠；§8.6 保真斷言全過。 |
+| **4. 聚合 + xlsx** | `aggregate`（首見序、first-HOSP、WEEKLY/TOTAL）；`xlsx_writer`（2 sheet 純值、型別/numFmt、最新批次黃底、表頭 RGB、同日消歧；REQ1 全格置中/資料細框線/表頭粗下框線/自動欄寬）。 | `test_aggregate`（WEEKLY==TOTAL==[…]=19 於單批次）/`test_xlsx_writer` 綠；§8.6 保真斷言全過（含 REQ1 對齊/框線/欄寬）。 |
 | **5. 管線 + CLI** | `pipeline`（串接、接受內部 run_date）；`cli`（精瘦：INPUT + --state-dir/--out-dir、退出碼、stdout JSON）。 | `test_pipeline`/`test_cli` 綠；退出碼對應例外；未知旗標→exit 1。 |
-| **6. E2E + 預期輸出入庫** | `tests/e2e/`（E2E-1..6）；產生並入庫預期輸出快照。 | E2E-1..6 全綠；coverage ≥ 80%；預期輸出 fixtures 入庫。 |
+| **6. E2E + 預期輸出入庫** | `tests/e2e/`（E2E-1..7，含 REQ4 docker/example 示範 fixtures + E2E-7）；產生並入庫預期輸出快照。 | E2E-1..7 全綠；coverage ≥ 80%；預期輸出 fixtures 入庫。 |
 | **7. Docker** | 多階段 Dockerfile（digest pin、非 root、`--user` 可攜、烘焙查表）；Dockerfile.dockerignore；compose（選配）。 | `docker build` 成功；容器內 `--network none --user $(id -u):$(id -g)` 跑 E2E-1 smoke 綠；trivy 掃描。 |
 | **8. 文件** | `docs/design.md`（本檔）、`usage.zh-TW.md`（含 host 權限前置、NAS 鎖）、`data-fidelity.zh-TW.md`、`README.md`。 | 文件與程式行為一致；runbook 可依樣執行。 |
 

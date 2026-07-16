@@ -1,8 +1,8 @@
 # report-export Docker Compose convenience wrapper (docs/design.md
 # §10.6-§10.7). OPTIONAL: the canonical, documented invocation is a
 # plain `docker run` (design.md §10.7); this file only pre-wires the
-# three bind mounts + the hardening flags from that same example so a
-# weekly run reduces to one `docker compose run` line.
+# three bind mounts from that same example so a weekly run reduces to
+# one `docker compose run` line.
 #
 # IMPORTANT -- host bind-mount writability (design.md §10.4, HIGH):
 # this container must run as the uid:gid that OWNS the host
@@ -13,8 +13,8 @@
 # in bash, so `export UID=$(id -u)` fails outright. Pass distinctly
 # named variables instead, every time you invoke this file:
 #
-#   mkdir -p ../inbox ../state ../output
-#   cp /path/to/this-weeks-export.csv ../inbox/
+#   mkdir -p docker/inbox docker/state docker/output
+#   cp /path/to/this-weeks-export.csv docker/inbox/
 #   DOCKER_UID=$(id -u) DOCKER_GID=$(id -g) \
 #     docker compose -f docker/docker-compose.yml run --rm report-export \
 #       /data/input/this-weeks-export.csv
@@ -22,6 +22,14 @@
 # (build once beforehand with `docker build -t report-export:1.0.0 -f
 # docker/Dockerfile .` from report-export/, or let `docker compose run`
 # build it on first use.)
+#
+# 選配硬化 (optional hardening, not set here): security-conscious sites
+# may additionally pass `--network none`/`network_mode: "none"`,
+# `--read-only`/`read_only: true`, and a `/tmp` tmpfs on top of this
+# base file -- none of the three affect the deliverable's output, only
+# defense-in-depth (design.md §10.5). `TZ=Asia/Taipei` is deliberately
+# NOT set here either: the image already bakes `ENV TZ=Asia/Taipei`
+# (design.md §10.5), so an explicit override would be redundant.
 
 services:
   report-export:
@@ -32,26 +40,20 @@ services:
     # See the IMPORTANT note above -- these defaults (1000:1000) are a
     # dev-box convenience only; always override via DOCKER_UID/DOCKER_GID.
     user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
-    network_mode: "none"
-    read_only: true
-    tmpfs:
-      - /tmp
-    environment:
-      TZ: Asia/Taipei
     volumes:
       # Weekly raw 14-column input CSV (design.md §10.6) -- read-only.
       - type: bind
-        source: ../inbox
+        source: ./inbox
         target: /data/input
         read_only: true
       # Canonical state -- read-write; single source of truth
       # (design.md §6.1). Must be writable by DOCKER_UID:DOCKER_GID.
       - type: bind
-        source: ../state
+        source: ./state
         target: /data/state
       # Deliverable xlsx output -- read-write.
       - type: bind
-        source: ../output
+        source: ./output
         target: /data/output
     # No `command:` here on purpose -- the input CSV filename changes
     # every week, so it is supplied on the `docker compose run ...`

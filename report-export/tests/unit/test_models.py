@@ -251,22 +251,31 @@ def test_transformed_record_values() -> None:
 
 def test_report_row_field_order() -> None:
     names = tuple(f.name for f in dataclasses.fields(ReportRow))
-    assert names == ("client_ip", "hosp_id", "hosp_abbr", "count")
+    assert names == ("client_ip", "hosp_id", "hosp_abbr", "weekly_access", "total_access")
 
 
-def test_report_row_count_is_int_typed() -> None:
+def test_report_row_weekly_and_total_access_are_int_typed() -> None:
     field_by_name = {f.name: f for f in dataclasses.fields(ReportRow)}
-    assert field_by_name["count"].type is int
+    assert field_by_name["weekly_access"].type is int
+    assert field_by_name["total_access"].type is int
 
 
 def test_report_row_values() -> None:
-    row = ReportRow(client_ip="10.245.1.125", hosp_id="0937010019", hosp_abbr="秀傳醫院", count=7)
-    assert row.count == 7
-    assert isinstance(row.count, int)
+    row = ReportRow(
+        client_ip="10.245.1.125",
+        hosp_id="0937010019",
+        hosp_abbr="秀傳醫院",
+        weekly_access=2,
+        total_access=7,
+    )
+    assert row.weekly_access == 2
+    assert row.total_access == 7
+    assert isinstance(row.weekly_access, int)
+    assert isinstance(row.total_access, int)
     assert row.hosp_id == "0937010019"
 
 
 def test_report_row_is_frozen() -> None:
-    row = ReportRow(client_ip="x", hosp_id="y", hosp_abbr="z", count=1)
+    row = ReportRow(client_ip="x", hosp_id="y", hosp_abbr="z", weekly_access=1, total_access=1)
     with pytest.raises(dataclasses.FrozenInstanceError):
-        row.count = 2  # type: ignore[misc]
+        row.total_access = 2  # type: ignore[misc]

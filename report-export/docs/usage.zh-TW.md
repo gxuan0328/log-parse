@@ -33,21 +33,22 @@ cd report-export
 docker build -t report-export:1.0.0 -f docker/Dockerfile .
 
 # 準備目錄（僅需一次；由「將要執行 docker run 的你」建立，見 §4）
-mkdir -p inbox state output
+mkdir -p docker/inbox docker/state docker/output
 
-# 每週：把本週輸入 CSV 放進 inbox/，然後一行指令
-cp /path/to/this-weeks-export.csv inbox/week-2026-07-13.csv
-docker run --rm --network none --read-only --tmpfs /tmp \
-  --user "$(id -u):$(id -g)" -e TZ=Asia/Taipei \
-  -v "$PWD/inbox:/data/input:ro" \
-  -v "$PWD/state:/data/state" \
-  -v "$PWD/output:/data/output" \
+# 每週：把本週輸入 CSV 放進 docker/inbox/，然後一行指令
+cp /path/to/this-weeks-export.csv docker/inbox/week-2026-07-13.csv
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD/docker/inbox:/data/input:ro" \
+  -v "$PWD/docker/state:/data/state" \
+  -v "$PWD/docker/output:/data/output" \
   report-export:1.0.0 \
   /data/input/week-2026-07-13.csv
 ```
 
-交付檔出現在 `output/{今日日期}_連線紀錄.xlsx`；`state/records.csv` 累積
-本次新批次；stdout 印出一行 JSON 摘要，stderr 印出結構化日誌。
+交付檔出現在 `docker/output/{今日日期}_連線紀錄.xlsx`；`docker/state/records.csv`
+累積本次新批次；stdout 印出一行 JSON 摘要，stderr 印出結構化日誌。（`--rm`
+與 `--user "$(id -u):$(id -g)"` 為唯二功能性必要旗標，見 §3.3；安全敏感
+站點的選配硬化旗標亦見同節。）
 
 ---
 
@@ -177,57 +178,66 @@ docker build -t report-export:1.0.0 -f docker/Dockerfile .
 
 ### 3.2 Volumes
 
-| 容器內掛載點 | 模式 | 用途 | 對應 CLI 預設 |
-|--------------|------|------|----------------|
-| `/data/input` | 唯讀（`:ro`） | 本批原始 14 欄輸入 CSV | 由指令列位置引數指定 |
-| `/data/state` | 讀寫 | canonical state（`records.csv` 等） | `--state-dir` 預設值 |
-| `/data/output` | 讀寫 | 交付 xlsx | `--out-dir` 預設值 |
-| `/app/reference` | 映像內建、不掛載 | 捆綁的 HOSP 查表（build 時已 `COPY` 進映像） | — |
+| 容器內掛載點 | 模式 | 用途 | 對應 CLI 預設 | host 對應目錄（REQ2 relocate） |
+|--------------|------|------|----------------|-------------------------------|
+| `/data/input` | 唯讀（`:ro`） | 本批原始 14 欄輸入 CSV | 由指令列位置引數指定 | `report-export/docker/inbox/` |
+| `/data/state` | 讀寫 | canonical state（`records.csv` 等） | `--state-dir` 預設值 | `report-export/docker/state/` |
+| `/data/output` | 讀寫 | 交付 xlsx | `--out-dir` 預設值 | `report-export/docker/output/` |
+| `/app/reference` | 映像內建、不掛載 | 捆綁的 HOSP 查表（build 時已 `COPY` 進映像） | — | — |
 
 `/data/seed` 不存在——本工具**無 seeding 機制**（design.md §6.8），
 canonical state 從空目錄起步，第一次真正批次即 `BATCH_ID=1`。
 
+容器內掛載點與 `--state-dir`/`--out-dir` 預設值**不變**；上表最後一欄
+是本工具 REQ2 relocate 後的 host 側慣例目錄（`report-export/docker/`
+之下，取代前版 `report-export/{inbox,state,output}/` 直接置於根目錄）。
+
 ### 3.3 每週單一指令執行
 
 ```bash
-docker run --rm --network none --read-only --tmpfs /tmp \
-  --user "$(id -u):$(id -g)" -e TZ=Asia/Taipei \
-  -v "$PWD/report-export/inbox:/data/input:ro" \
-  -v "$PWD/report-export/state:/data/state" \
-  -v "$PWD/report-export/output:/data/output" \
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD/report-export/docker/inbox:/data/input:ro" \
+  -v "$PWD/report-export/docker/state:/data/state" \
+  -v "$PWD/report-export/docker/output:/data/output" \
   report-export:1.0.0 \
   /data/input/week-2026-07-13.csv
 ```
 
-逐旗標說明（**全部**均建議保留，不是可有可無的裝飾）：
+逐旗標說明（以下**皆為主要範例保留**的旗標；其餘曾評估過的硬化旗標見下
+方選配硬化說明）：
 
 | 旗標 | 作用 |
 |------|------|
 | `--rm` | 容器結束即刪除，不留殘留容器（一次性批次語意）。 |
-| `--network none` | 本工具零對外連線需求；杜絕任何非預期網路存取面。 |
-| `--read-only` | 容器根檔案系統唯讀；唯一需要寫入的路徑是掛載卷與 `/tmp`。 |
-| `--tmpfs /tmp` | 配合 `--read-only`；映像設 `HOME=/tmp`，`--user` 選到的 uid 在容器內多半沒有 `/etc/passwd` 條目，任何需要臨時可寫空間或 home 目錄查找的行為都落在這裡。 |
 | `--user "$(id -u):$(id -g)"` | **必要**，見 §4；否則新建的 host 目錄極可能因 UID 不符而寫入失敗（exit 5）。 |
-| `-e TZ=Asia/Taipei` | 顯式標明業務時區（映像本身也已內建 `TZ=Asia/Taipei`；此處是雙重保險，不依賴日後映像預設值變動）。 |
-| `-v .../inbox:/data/input:ro` | 本週輸入檔目錄，唯讀掛載。 |
-| `-v .../state:/data/state` | canonical state，讀寫掛載，**必須跨週使用同一個目錄**（累積用）。 |
-| `-v .../output:/data/output` | 交付 xlsx 落地目錄。 |
+| `-v .../docker/inbox:/data/input:ro` | 本週輸入檔目錄，唯讀掛載。 |
+| `-v .../docker/state:/data/state` | canonical state，讀寫掛載，**必須跨週使用同一個目錄**（累積用）。 |
+| `-v .../docker/output:/data/output` | 交付 xlsx 落地目錄。 |
 
 每週只需更換指令最後一行的輸入檔路徑（即 `/data/input/<本週檔名>`），其
 餘完全不變。
 
+> **選配硬化**（預設不加；安全敏感站點可自行加回）：`--network none`、
+> `--read-only`、`--tmpfs /tmp`、`-e TZ=Asia/Taipei` 四個旗標已從主要範
+> 例移除——前三者對交付結果無功能性影響，純屬 defense-in-depth；映像本
+> 身已 `ENV TZ=Asia/Taipei`（design.md §10.5），`-e TZ=Asia/Taipei` 對此
+> 是冗餘的（本次驗證確認）。安全敏感站點可在上方指令上自行加回全部四
+> 個旗標，行為與前版完全相同。
+
 ### 3.4 docker compose（選配）
 
-`docker/docker-compose.yml` 預接好上述三個掛載與硬化旗標，把每週執行縮成
-一行 `docker compose run`。**注意**：compose 不會自動讀你 shell 的
-`uid:gid`；且 `UID` 是 bash 唯讀特殊變數，`export UID=$(id -u)` 本身就會
-失敗，因此必須改用（此檔已設計為接受）明確命名的 `DOCKER_UID`/
-`DOCKER_GID`：
+`docker/docker-compose.yml` 預接好上述三個掛載，把每週執行縮成一行
+`docker compose run`（REQ2：已簡化，**不含** `network_mode`/`read_only`/
+`tmpfs`/`environment.TZ`，volume 來源為相對 compose 檔自身目錄的
+`./inbox`、`./state`、`./output`，即 `report-export/docker/{inbox,state,
+output}/`）。**注意**：compose 不會自動讀你 shell 的 `uid:gid`；且 `UID`
+是 bash 唯讀特殊變數，`export UID=$(id -u)` 本身就會失敗，因此必須改用
+（此檔已設計為接受）明確命名的 `DOCKER_UID`/`DOCKER_GID`：
 
 ```bash
 cd report-export
-mkdir -p inbox state output
-cp /path/to/this-weeks-export.csv inbox/
+mkdir -p docker/inbox docker/state docker/output
+cp /path/to/this-weeks-export.csv docker/inbox/
 
 DOCKER_UID=$(id -u) DOCKER_GID=$(id -g) \
   docker compose -f docker/docker-compose.yml run --rm report-export \
@@ -235,7 +245,10 @@ DOCKER_UID=$(id -u) DOCKER_GID=$(id -g) \
 ```
 
 首次使用可省略手動 `docker build`——`docker compose run` 會在映像不存在
-時自動建置（`build: {context: .., dockerfile: docker/Dockerfile}`）。
+時自動建置（`build: {context: .., dockerfile: docker/Dockerfile}`）。安
+全敏感站點若想加回選配硬化旗標（見 §3.3），可直接在
+`docker/docker-compose.yml` 內自行補上 `network_mode: "none"`、
+`read_only: true`、`tmpfs: [/tmp]`、`environment: {TZ: Asia/Taipei}`。
 
 ---
 
@@ -263,7 +276,8 @@ stderr: ... msg=cannot prepare state_dir for locking: /data/state
    行，host 目錄天生可寫，產出檔案也歸操作者所有，而非歸 `10001`。
 2. `state_dir`／`out_dir` 必須由**執行 `docker run` 這個指令的使用者自
    己**先 `mkdir -p` 建立（或至少存在且該使用者可寫）——即 §1/§3.3 範例
-   中的 `mkdir -p inbox state output` 這一步不可省略。本工具本身也會在
+   中的 `mkdir -p docker/inbox docker/state docker/output` 這一步不可省
+   略。本工具本身也會在
    目錄存在時把權限收斂為 `0700`（`os.chmod`，只要你是該目錄擁有者就一
    定成功），但**前提是你已經擁有這個目錄**。
 3. 若你的站點有標準化服務帳號、不想用 `$(id -u):$(id -g)`，可在
@@ -333,11 +347,10 @@ stderr: ... msg=cannot prepare state_dir for locking: /data/state
 入檔，對同一個 `state_dir` 重新執行一次即可**：
 
 ```bash
-docker run --rm --network none --read-only --tmpfs /tmp \
-  --user "$(id -u):$(id -g)" -e TZ=Asia/Taipei \
-  -v "$PWD/report-export/inbox:/data/input:ro" \
-  -v "$PWD/report-export/state:/data/state" \
-  -v "$PWD/report-export/output:/data/output" \
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD/report-export/docker/inbox:/data/input:ro" \
+  -v "$PWD/report-export/docker/state:/data/state" \
+  -v "$PWD/report-export/docker/output:/data/output" \
   report-export:1.0.0 \
   /data/input/<最新一批輸入檔>
 ```
@@ -470,3 +483,54 @@ exit 3 時的人工排除步驟：
 | 交付檔不見了，或本次 `docker run` 在寫交付檔那步失敗 | 直接重跑最新輸入即可自動重建 | §7.1 |
 | 同一天第二個批次卻蓋掉了第一個檔名而非產生 `_02` | 檢查兩批 `input_sha256` 是否其實相同（代表真的是冪等重跑，覆寫是正確行為） | §6 |
 | `unmapped_hosp_ids` 一直大於 0 | 參考主檔過舊，該 HOSP_ID 不在目前捆綁的 `hosp_id_map.csv.gz` 中 | §8 |
+
+---
+
+## 11. 可重複示範（`docker/example`）
+
+`report-export/docker/example/` 入庫了一組固定的 seed state + this-week
+輸入，讓你**不需要準備任何自己的資料**就能實際跑一次，親眼看到院所分析
+的 `WEEKLY ACCESS`／`TOTAL ACCESS`／`-` 三種情形（design.md §9.5、§12.2
+E2E-7）。這組 fixtures 也是 `tests/e2e/test_end_to_end.py` 之
+`test_e2e7_docker_example_scenario_demonstrates_weekly_vs_total` 驅動的
+同一份資料——手動跑一次與自動化測試斷言的是同一組數字。
+
+```bash
+cd report-export
+
+# 1. 準備目錄（若尚未做過 §1 的一次性準備）
+mkdir -p docker/inbox docker/state docker/output
+
+# 2. 把入庫的 seed state 複製進執行期 state 目錄
+cp docker/example/state/records.csv docker/state/records.csv
+
+# 3. 把入庫的 this-week 輸入複製進 inbox
+cp docker/example/input/week-2026-07-13.csv docker/inbox/
+
+# 4. 執行（簡化版 docker run，見 §3.3）
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD/docker/inbox:/data/input:ro" \
+  -v "$PWD/docker/state:/data/state" \
+  -v "$PWD/docker/output:/data/output" \
+  report-export:1.0.0 \
+  /data/input/week-2026-07-13.csv
+```
+
+執行後開啟 `docker/output/{今日日期}_連線紀錄.xlsx` 的「院所分析」
+sheet（此時已是**5 欄**：`CLIENT IP, HOSP_ID, HOSP_ABBR, WEEKLY ACCESS,
+TOTAL ACCESS`），應觀察到 12 列、`state_total` 23、三種 WEEKLY ACCESS
+情形齊備：
+
+| CLIENT IP | HOSP_ABBR | WEEKLY ACCESS | TOTAL ACCESS | 情形 |
+|-----------|-----------|----------------|----------------|------|
+| `10.250.77.10` | 瀚田診所 | `1` | `1` | 本週全新 IP——WEEKLY == TOTAL |
+| `192.168.117.104` | 臺北虛擬診 | `1` | `4` | 既有 IP、本週亦有新列——WEEKLY < TOTAL |
+| `10.245.1.125` | 秀傳醫院 | `2` | `9` | 既有 IP、本週亦有新列——WEEKLY < TOTAL |
+| 其餘 9 個 IP（如 `10.243.129.44` 門諾醫院） | — | `-` | `1` | 本週無存取（僅存在於 seed 批次）——WEEKLY 顯示 `-` |
+
+`docker/example/state/records.csv`（seed，19 列，皆 `BATCH_ID=1`）與
+`docker/example/input/week-2026-07-13.csv`（this-week，4 列全新
+REQUEST_ID）本身**入庫、不受 `.gitignore` 影響**，可重複執行以上步驟任意
+次——每次都是從同一份 seed 起步，結果完全相同（`docker/state/`、
+`docker/inbox/`、`docker/output/` 才是 `.gitignore` 排除的執行期目錄，
+`docker/example/` 不是）。

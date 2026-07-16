@@ -15,7 +15,7 @@ Four value objects flow through the pipeline, in this order:
       |                records.csv
       |  (aggregate; later phase)
       v
-    ReportRow          4 cols; one row per unique CLIENT IP (院所分析)
+    ReportRow          5 cols; one row per unique CLIENT IP (院所分析)
 
 Plus `Status`, the enum of canonical STATUS values (design.md §4.1 col B).
 
@@ -131,11 +131,26 @@ class StateRecord:
 class ReportRow:
     """One 院所分析 aggregate row (design.md §4.3): a unique CLIENT IP,
     the first-seen HOSP_ID/HOSP_ABBR for that IP (XLOOKUP first-match
-    semantics against the state itself), and the IP's total row count
-    across the full state.
+    semantics against the state itself), and two row counts across the
+    full state (design.md §4.3 REQ3):
+
+        weekly_access  this IP's row count within the LATEST batch
+                        only (`batch_id == max(BATCH_ID)`); 0 means the
+                        IP has no rows in this run's latest batch (it
+                        only appears in older batches) -- the
+                        xlsx_writer layer renders that case as the
+                        string "-", but the model itself stays a plain
+                        `int` (0 = none), kept numeric and testable.
+        total_access    this IP's row count across the ENTIRE state
+                        (the pre-REQ3 single COUNT column).
+
+    A single-batch state (e.g. a first-ever ingest) has
+    `weekly_access == total_access` for every row, since every row
+    belongs to the one and only (and therefore latest) batch.
     """
 
     client_ip: str
     hosp_id: str
     hosp_abbr: str
-    count: int
+    weekly_access: int
+    total_access: int

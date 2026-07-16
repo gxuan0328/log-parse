@@ -1,7 +1,15 @@
 # Runtime-generated, machine-owned (design.md §9.5): never commit.
-state/
-output/
-inbox/
+# Anchored (`/`-prefixed) to the specific runtime locations -- both the
+# top-level host-direct-run dirs AND the REQ2-relocated docker/{inbox,
+# state,output}/ dirs -- so an UNANCHORED pattern (which would also
+# match report-export/docker/example/{state,input}/, the REQ4
+# committed demo fixtures) never accidentally blocks committing them.
+/state/
+/output/
+/inbox/
+/docker/state/
+/docker/output/
+/docker/inbox/
 
 # Python / tooling
 .venv/

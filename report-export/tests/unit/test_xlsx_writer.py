@@ -42,9 +42,16 @@ def _report_row(
     client_ip: str = "10.245.1.125",
     hosp_id: str = "0937010019",
     hosp_abbr: str = "秀傳醫院",
-    count: int = 1,
+    weekly_access: int = 1,
+    total_access: int = 1,
 ) -> ReportRow:
-    return ReportRow(client_ip=client_ip, hosp_id=hosp_id, hosp_abbr=hosp_abbr, count=count)
+    return ReportRow(
+        client_ip=client_ip,
+        hosp_id=hosp_id,
+        hosp_abbr=hosp_abbr,
+        weekly_access=weekly_access,
+        total_access=total_access,
+    )
 
 
 def _save_and_reload(workbook: Workbook, tmp_path: Path, name: str = "out.xlsx") -> Workbook:
@@ -90,7 +97,7 @@ def test_aggregate_sheet_header_is_exact() -> None:
     workbook = xlsx_writer.build_workbook([], [])
     sheet = workbook["院所分析"]
     header = [cell.value for cell in sheet[1]]
-    assert header == ["CLIENT IP", "HOSP_ID", "HOSP_ABBR", "COUNT"]
+    assert header == ["CLIENT IP", "HOSP_ID", "HOSP_ABBR", "WEEKLY ACCESS", "TOTAL ACCESS"]
 
 
 def test_no_cell_holds_a_formula(tmp_path: Path) -> None:
@@ -187,12 +194,31 @@ def test_aggregate_unmapped_hosp_abbr_round_trips_as_empty_or_none(tmp_path: Pat
     assert reloaded["院所分析"]["C2"].value in ("", None)
 
 
-def test_count_column_round_trips_as_int(tmp_path: Path) -> None:
-    workbook = xlsx_writer.build_workbook([], [_report_row(count=7)])
+def test_weekly_and_total_access_columns_round_trip_as_int(tmp_path: Path) -> None:
+    workbook = xlsx_writer.build_workbook([], [_report_row(weekly_access=2, total_access=9)])
+    reloaded = _save_and_reload(workbook, tmp_path)
+    sheet = reloaded["院所分析"]
+    weekly_cell = sheet["D2"]
+    total_cell = sheet["E2"]
+    assert weekly_cell.value == 2
+    assert isinstance(weekly_cell.value, int)
+    assert weekly_cell.number_format == "General"
+    assert total_cell.value == 9
+    assert isinstance(total_cell.value, int)
+    assert total_cell.number_format == "General"
+
+
+def test_weekly_access_zero_renders_as_dash_string(tmp_path: Path) -> None:
+    # design.md §4.3 REQ3b: "本周無存取紀錄之院所則填入 -" -- the MODEL stays
+    # numeric (weekly_access=0), but the rendered cell is the "-" string.
+    workbook = xlsx_writer.build_workbook([], [_report_row(weekly_access=0, total_access=1)])
     reloaded = _save_and_reload(workbook, tmp_path)
     cell = reloaded["院所分析"]["D2"]
-    assert cell.value == 7
-    assert isinstance(cell.value, int)
+    assert cell.value == "-"
+    assert isinstance(cell.value, str)
+    assert cell.number_format == "@"
+    # TOTAL ACCESS is unaffected by WEEKLY ACCESS being "-".
+    assert reloaded["院所分析"]["E2"].value == 1
 
 
 # --------------------------------------------------------------------
@@ -265,7 +291,7 @@ def test_highlight_survives_save_and_reload(tmp_path: Path) -> None:
 def test_aggregate_sheet_rows_never_get_yellow_fill() -> None:
     workbook = xlsx_writer.build_workbook([], [_report_row()])
     sheet = workbook["院所分析"]
-    for column in "ABCD":
+    for column in "ABCDE":
         assert sheet[f"{column}2"].fill.patternType is None
 
 
@@ -302,6 +328,108 @@ def test_both_sheet_headers_are_styled() -> None:
     cell = workbook["院所分析"]["A1"]
     assert cell.font.bold is True
     assert cell.fill.patternType == "solid"
+
+
+# --------------------------------------------------------------------
+# REQ1 formatting: center alignment, thin data borders, thick header
+# bottom border, auto-fit column widths (design.md §8.3-§8.5, §8.6)
+# --------------------------------------------------------------------
+
+
+def test_every_data_cell_is_centered_with_thin_border_on_both_sheets() -> None:
+    workbook = xlsx_writer.build_workbook([_record()], [_report_row()])
+    for sheet_name in ("調閱紀錄", "院所分析"):
+        sheet = workbook[sheet_name]
+        for row in sheet.iter_rows(min_row=2):
+            for cell in row:
+                assert cell.alignment.horizontal == "center"
+                assert cell.alignment.vertical == "center"
+                assert cell.border.left.style == "thin"
+                assert cell.border.right.style == "thin"
+                assert cell.border.top.style == "thin"
+                assert cell.border.bottom.style == "thin"
+
+
+def test_every_header_cell_is_centered_with_thick_bottom_border_on_both_sheets() -> None:
+    workbook = xlsx_writer.build_workbook([_record()], [_report_row()])
+    for sheet_name in ("調閱紀錄", "院所分析"):
+        sheet = workbook[sheet_name]
+        for cell in sheet[1]:
+            assert cell.alignment.horizontal == "center"
+            assert cell.alignment.vertical == "center"
+            assert cell.border.bottom.style == "thick"
+            # design.md §8.5: thin sides/top are cosmetic grid
+            # continuity with the data rows below -- the REQUIRED
+            # emphasis is the thick bottom border.
+            assert cell.border.left.style == "thin"
+            assert cell.border.right.style == "thin"
+            assert cell.border.top.style == "thin"
+
+
+def test_yellow_fill_and_thin_border_and_center_coexist_on_latest_batch_rows() -> None:
+    records = [_record(batch_id=1, request_id="a"), _record(batch_id=2, request_id="b")]
+    workbook = xlsx_writer.build_workbook(records, [])
+    sheet = workbook["調閱紀錄"]
+    for column in "ABCDEFGHI":
+        cell = sheet[f"{column}3"]  # latest (highlighted) batch-2 row
+        assert cell.fill.patternType == "solid"
+        assert cell.fill.fgColor.rgb == "FFFFFF00"
+        assert cell.alignment.horizontal == "center"
+        assert cell.border.left.style == "thin"
+        assert cell.border.bottom.style == "thin"
+
+
+def test_column_widths_match_e2e1_anchors_on_a_representative_state() -> None:
+    # design.md §8.3/§8.4 REQ1d: width = round(max(display_width(header),
+    # max(display_width(rendered data))) * 1.2, 2). A SINGLE record/row
+    # whose fields already hit the same per-column maxima as the real
+    # 19-row/11-IP E2E-1 anchor state (design.md §2.1/§2.2) reproduces
+    # the EXACT same widths, since max() over a superset can never
+    # exceed max() over a subset that already holds the maximal value.
+    record = _record(
+        client_ip="192.168.117.104",  # longest CLIENT_IP/SERVER_IP-column IP (15 chars)
+        hosp_abbr="臺北虛擬診",  # widest HOSP_ABBR in the anchor dataset (5 CJK = 10)
+    )
+    report_row = _report_row(
+        client_ip="192.168.117.104", hosp_abbr="臺北虛擬診", weekly_access=1, total_access=1
+    )
+    workbook = xlsx_writer.build_workbook([record], [report_row])
+
+    records_sheet = workbook["調閱紀錄"]
+    expected_records_widths = {
+        "A": 12.0,  # DATE: "YYYY-MM-DD" (10) * 1.2
+        "B": 9.6,  # TIME: "HH:MM:SS" (8) * 1.2
+        "C": 18.0,  # CLIENT IP: "192.168.117.104" (15) * 1.2
+        "D": 12.0,  # SERVER IP: "10.21.3.35" (10) * 1.2
+        "E": 12.0,  # HOSP_ID: 10-digit string * 1.2
+        "F": 12.0,  # HOSP_ABBR: "臺北虛擬診" (width 10) * 1.2
+        "G": 38.4,  # PRSN_ID: hex32 (32) * 1.2
+        "H": 9.6,  # BIRTHDAY: "19560711" (8) * 1.2
+        "I": 38.4,  # PATIENT ID AES: hex32 (32) * 1.2
+    }
+    for column, width in expected_records_widths.items():
+        assert records_sheet.column_dimensions[column].width == width
+
+    agg_sheet = workbook["院所分析"]
+    expected_agg_widths = {
+        "A": 18.0,  # CLIENT IP: same 15-char IP * 1.2
+        "B": 12.0,  # HOSP_ID: 10-digit string * 1.2
+        "C": 12.0,  # HOSP_ABBR: width 10 * 1.2
+        "D": 15.6,  # WEEKLY ACCESS: header "WEEKLY ACCESS" (13) * 1.2 (dominates 1-digit data)
+        "E": 14.4,  # TOTAL ACCESS: header "TOTAL ACCESS" (12) * 1.2
+    }
+    for column, width in expected_agg_widths.items():
+        assert agg_sheet.column_dimensions[column].width == width
+
+
+def test_column_widths_are_header_based_on_empty_sheets() -> None:
+    # design.md §8.3 REQ1d: a header-only (0 data row) sheet still
+    # gets a sensible, header-derived width -- never a crash, never 0.
+    workbook = xlsx_writer.build_workbook([], [])
+    records_sheet = workbook["調閱紀錄"]
+    assert records_sheet.column_dimensions["A"].width == round(len("DATE") * 1.2, 2)
+    agg_sheet = workbook["院所分析"]
+    assert agg_sheet.column_dimensions["D"].width == round(len("WEEKLY ACCESS") * 1.2, 2)
 
 
 # --------------------------------------------------------------------

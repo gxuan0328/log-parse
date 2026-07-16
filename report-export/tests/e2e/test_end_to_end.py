@@ -95,8 +95,32 @@ _RUN_DATE_1: date = date(2026, 7, 15)
 _RUN_DATE_2: date = date(2026, 7, 22)
 _RUN_DATE_3: date = date(2026, 7, 29)
 
-#: design.md §2.2 anchor: 院所分析 COUNT column, first-seen order.
+#: design.md §2.2 anchor: 院所分析 WEEKLY/TOTAL ACCESS columns, first-seen
+#: order -- E2E-1 is a single-batch state, so WEEKLY == TOTAL == these
+#: values for every IP (design.md §4.3 REQ3), same as the old COUNT.
 _ANCHOR_COUNTS: tuple[int, ...] = (1, 1, 1, 1, 1, 1, 3, 1, 7, 1, 1)
+
+#: design.md §8.3/§8.4 REQ1d anchors: round(display_width * 1.2, 2)
+#: for the E2E-1 anchor state, both sheets (see the docstring on
+#: `_assert_column_widths` for the formula).
+_RECORDS_SHEET_WIDTHS: dict[str, float] = {
+    "A": 12.0,
+    "B": 9.6,
+    "C": 18.0,
+    "D": 12.0,
+    "E": 12.0,
+    "F": 12.0,
+    "G": 38.4,
+    "H": 9.6,
+    "I": 38.4,
+}
+_AGGREGATE_SHEET_WIDTHS: dict[str, float] = {
+    "A": 18.0,
+    "B": 12.0,
+    "C": 12.0,
+    "D": 15.6,
+    "E": 14.4,
+}
 
 
 def _config(tmp_path: Path, input_path: Path) -> Config:
@@ -176,6 +200,41 @@ def _assert_no_formulas(workbook: Any) -> None:
             for cell in row:
                 location = f"{sheet_name}!{cell.coordinate}"
                 assert cell.data_type != "f", f"unexpected formula at {location}"
+
+
+def _assert_uniform_grid_and_alignment(workbook: Any) -> None:
+    """design.md §8.3-§8.6 REQ1: every cell (both sheets) is centered;
+    every DATA cell has a thin 4-side border; every HEADER cell has a
+    thick bottom border (the REQUIRED emphasis) plus thin left/right/
+    top (cosmetic grid continuity with the data rows below it).
+    """
+    for sheet_name in workbook.sheetnames:
+        sheet = workbook[sheet_name]
+        for cell in sheet[1]:
+            assert cell.alignment.horizontal == "center"
+            assert cell.alignment.vertical == "center"
+            assert cell.border.bottom.style == "thick"
+            assert cell.border.left.style == "thin"
+            assert cell.border.right.style == "thin"
+            assert cell.border.top.style == "thin"
+        for row in sheet.iter_rows(min_row=2):
+            for cell in row:
+                assert cell.alignment.horizontal == "center"
+                assert cell.alignment.vertical == "center"
+                assert cell.border.left.style == "thin"
+                assert cell.border.right.style == "thin"
+                assert cell.border.top.style == "thin"
+                assert cell.border.bottom.style == "thin"
+
+
+def _assert_column_widths(sheet: Worksheet, expected: dict[str, float]) -> None:
+    """design.md §8.3/§8.4 REQ1d: `width == round(max(display_width(
+    header), max(display_width(rendered data))) * 1.2, 2)` per column
+    -- asserted here as an exact expected-value dict per sheet, computed
+    once off the real E2E-1 anchor data (design.md §2.1/§2.2).
+    """
+    for column, width in expected.items():
+        assert sheet.column_dimensions[column].width == width
 
 
 def _tail_line(records_path: Path) -> str:
@@ -282,22 +341,38 @@ def test_e2e1_empty_state_first_ingest_matches_anchors(tmp_path: Path) -> None:
 
     agg_sheet = workbook["院所分析"]
     assert agg_sheet.max_row == 12  # header + 11 unique IPs
-    counts = [row[3].value for row in agg_sheet.iter_rows(min_row=2)]
-    assert counts == list(_ANCHOR_COUNTS)
-    assert sum(counts) == 19
+    # design.md §4.3 REQ3: col D (idx 3) = WEEKLY ACCESS, col E (idx 4)
+    # = TOTAL ACCESS. E2E-1 is a single-batch state (all BATCH_ID=1),
+    # so WEEKLY == TOTAL == the old COUNT for every IP -- no "-" cell.
+    weekly = [row[3].value for row in agg_sheet.iter_rows(min_row=2)]
+    total = [row[4].value for row in agg_sheet.iter_rows(min_row=2)]
+    assert weekly == list(_ANCHOR_COUNTS)
+    assert total == list(_ANCHOR_COUNTS)
+    assert sum(weekly) == 19
+    assert sum(total) == 19
+    assert all(isinstance(v, int) for v in weekly)  # never "-" in a single-batch run
 
     shuchuan = next(row for row in agg_sheet.iter_rows(min_row=2) if row[1].value == "0937010019")
     assert shuchuan[2].value == "秀傳醫院"
     assert shuchuan[3].value == 7
+    assert shuchuan[4].value == 7
     taipei_virtual = next(
         row for row in agg_sheet.iter_rows(min_row=2) if row[1].value == "3501200000"
     )
     assert taipei_virtual[2].value == "臺北虛擬診"
     assert taipei_virtual[3].value == 3
+    assert taipei_virtual[4].value == 3
     orphan_ip_row = next(
         row for row in agg_sheet.iter_rows(min_row=2) if row[0].value == "10.243.129.44"
     )
     assert orphan_ip_row[3].value == 1  # proves the ORPHAN row (same IP) was excluded
+    assert orphan_ip_row[4].value == 1
+
+    # REQ1: center alignment + thin/thick borders (uniform, both
+    # sheets) + auto-fit column widths off the real anchor data.
+    _assert_uniform_grid_and_alignment(workbook)
+    _assert_column_widths(records_sheet, _RECORDS_SHEET_WIDTHS)
+    _assert_column_widths(agg_sheet, _AGGREGATE_SHEET_WIDTHS)
 
     # Full cell-level (value + data_type + number_format + fill) golden master.
     assert _workbook_snapshot(Path(summary.deliverable)) == _load_expected_deliverable_snapshot()
@@ -367,12 +442,22 @@ def test_e2e3_new_batch_appends_batch_2_and_recomputes_aggregate(tmp_path: Path)
 
     agg_sheet = workbook["院所分析"]
     assert agg_sheet.max_row == 13  # 11 existing + 1 brand-new IP
+    # design.md §4.3 REQ3: col D (idx 3) = WEEKLY ACCESS (this batch's
+    # rows only), col E (idx 4) = TOTAL ACCESS (unchanged old COUNT
+    # semantics). batch_new.csv's 3 rows each hit an IP exactly once.
     rows_by_ip = {row[0].value: row for row in agg_sheet.iter_rows(min_row=2)}
-    assert rows_by_ip["10.245.1.125"][3].value == 8  # 秀傳醫院: 7 -> 8
-    assert rows_by_ip["192.168.117.104"][3].value == 4  # 臺北虛擬診: 3 -> 4
-    assert rows_by_ip["10.250.77.10"][3].value == 1  # brand-new 12th IP
+    assert rows_by_ip["10.245.1.125"][3].value == 1  # WEEKLY: this batch's 1 new row
+    assert rows_by_ip["10.245.1.125"][4].value == 8  # TOTAL: 秀傳醫院 7 -> 8
+    assert rows_by_ip["192.168.117.104"][3].value == 1
+    assert rows_by_ip["192.168.117.104"][4].value == 4  # TOTAL: 臺北虛擬診 3 -> 4
+    assert rows_by_ip["10.250.77.10"][3].value == 1  # brand-new 12th IP: weekly == total
+    assert rows_by_ip["10.250.77.10"][4].value == 1
     assert rows_by_ip["10.250.77.10"][1].value == "1301170017"
     assert rows_by_ip["10.250.77.10"][2].value == "台北醫大"
+    # An older-only (seed-batch-1-only) IP has no rows in the new
+    # latest batch -> WEEKLY ACCESS renders "-"; TOTAL ACCESS unchanged.
+    assert rows_by_ip["10.243.129.44"][3].value == "-"
+    assert rows_by_ip["10.243.129.44"][4].value == 1
 
 
 # --------------------------------------------------------------------
@@ -512,6 +597,95 @@ def test_e2e6_corrupt_tail_with_corrupt_bak_raises_state_integrity_error(tmp_pat
 
     with pytest.raises(StateIntegrityError):
         state.load(config1.state_dir)  # both copies unrecoverable -> fail loud, never silent
+
+
+# --------------------------------------------------------------------
+# E2E-7 -- docker/example repeatable demo scenario (design.md §9.5,
+# §12.2, REQ3+REQ4). The committed docker/example/state/records.csv
+# seed (19 rows, all BATCH_ID=1, byte-identical to
+# expected_records_e2e1.csv) plus docker/example/input/week-2026-07-13.csv
+# (4 brand-new-REQUEST_ID rows) together exercise all three WEEKLY
+# ACCESS cases in one run: a brand-new IP (weekly == total), two
+# overlapping IPs (weekly < total), and nine seed-only IPs (weekly
+# renders "-"). This is the exact scenario documented in
+# usage.zh-TW.md's repeatable demo section.
+# --------------------------------------------------------------------
+
+_DOCKER_EXAMPLE_DIR: Path = _REPO_ROOT / "docker" / "example"
+_DOCKER_EXAMPLE_SEED_STATE: Path = _DOCKER_EXAMPLE_DIR / "state" / "records.csv"
+_DOCKER_EXAMPLE_WEEK_INPUT: Path = _DOCKER_EXAMPLE_DIR / "input" / "week-2026-07-13.csv"
+
+#: Arbitrary (design.md: only affects the deliverable filename, never
+#: WEEKLY/TOTAL semantics) -- a Monday after the 2026-07-13 input date.
+_DOCKER_EXAMPLE_RUN_DATE: date = date(2026, 7, 15)
+
+#: The 12-row 院所分析 table this scenario produces, first-seen order
+#: (11 seed IPs, then the one brand-new IP last) -- verified by
+#: simulation when this fixture pair was authored (REQ4 example_scenario).
+_DOCKER_EXAMPLE_WEEKLY: tuple[object, ...] = ("-", "-", "-", "-", "-", "-", 1, "-", 2, "-", "-", 1)
+_DOCKER_EXAMPLE_TOTAL: tuple[int, ...] = (1, 1, 1, 1, 1, 1, 4, 1, 9, 1, 1, 1)
+
+
+def test_e2e7_docker_example_scenario_demonstrates_weekly_vs_total(tmp_path: Path) -> None:
+    # Copy the committed seed state into a scratch state_dir -- the
+    # checked-in docker/example/state/records.csv must stay pristine
+    # (design.md §9.5, REQ4) so this test is repeatable run after run.
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "records.csv").write_bytes(_DOCKER_EXAMPLE_SEED_STATE.read_bytes())
+
+    config = Config(
+        input_path=_DOCKER_EXAMPLE_WEEK_INPUT, state_dir=state_dir, out_dir=tmp_path / "output"
+    )
+    summary = pipeline.run(
+        config, run_date=_DOCKER_EXAMPLE_RUN_DATE, reference_path=_REAL_REFERENCE
+    )
+
+    assert summary.rows_in == 4
+    assert summary.normal == 4
+    assert summary.dropped_nonnormal == 0
+    assert summary.new_records == 4
+    assert summary.skipped_cross_state == 0
+    assert summary.skipped_intra_batch == 0
+    assert summary.state_total == 23
+    assert summary.unique_ips == 12
+    assert summary.batch_seq == 2
+    assert summary.unmapped_hosp_ids == 0
+
+    agg_sheet = load_workbook(summary.deliverable)["院所分析"]
+    assert agg_sheet.max_row == 13  # header + 12 unique IPs
+    rows_by_ip = {row[0].value: row for row in agg_sheet.iter_rows(min_row=2)}
+    assert len(rows_by_ip) == 12
+
+    weekly = [row[3].value for row in agg_sheet.iter_rows(min_row=2)]
+    total = [row[4].value for row in agg_sheet.iter_rows(min_row=2)]
+    assert weekly == list(_DOCKER_EXAMPLE_WEEKLY)
+    assert total == list(_DOCKER_EXAMPLE_TOTAL)
+    assert sum(v for v in weekly if isinstance(v, int)) == 4  # == this week's batch size
+    assert sum(total) == 23  # == state_total
+
+    # Brand-new IP this week -- WEEKLY ACCESS == TOTAL ACCESS (REQ3 case 1).
+    brand_new = rows_by_ip["10.250.77.10"]
+    assert brand_new[1].value == "3507030143"
+    assert brand_new[2].value == "瀚田診所"
+    assert brand_new[3].value == 1
+    assert brand_new[4].value == 1
+
+    # Overlap: present in both the seed AND this week -- WEEKLY < TOTAL
+    # (REQ3 case 2).
+    assert rows_by_ip["192.168.117.104"][3].value == 1
+    assert rows_by_ip["192.168.117.104"][4].value == 4
+    assert rows_by_ip["10.245.1.125"][3].value == 2
+    assert rows_by_ip["10.245.1.125"][4].value == 9
+
+    # Older-only (seed-only): no rows this week -> WEEKLY ACCESS "-"
+    # (REQ3 case 3).
+    assert rows_by_ip["10.243.129.44"][3].value == "-"
+    assert rows_by_ip["10.243.129.44"][4].value == 1
+
+    # The committed seed state itself must stay untouched by this run
+    # (this test only ever wrote to the tmp_path copy).
+    assert _DOCKER_EXAMPLE_SEED_STATE.read_bytes() == _EXPECTED_RECORDS_E2E1.read_bytes()
 
 
 # --------------------------------------------------------------------

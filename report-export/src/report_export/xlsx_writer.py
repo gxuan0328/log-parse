@@ -12,19 +12,28 @@ fsync. The FINAL `os.replace` into the live deliverable name is
 deliberately left to the caller (design.md §5 S8 vs S9.2: pipeline.py
 performs it only after `state.commit()` has already succeeded --
 state-first ordering, design.md §6.5).
+
+Every cell (both sheets, header + data) is also center-aligned and
+bordered, and every column is auto-fit to whatever data is actually
+present this run (design.md §8.3-§8.5 REQ1) -- a purely cosmetic
+presentation layer applied as a post-pass AFTER all values/types/
+number_formats/fills are already written, so it can never disturb the
+value/type/number_format/fill fidelity asserted in §8.6.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import unicodedata
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from pathlib import Path
 from typing import Final
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from report_export.errors import WriteError
@@ -48,7 +57,17 @@ _RECORDS_HEADER: Final[tuple[str, ...]] = (
     "BIRTHDAY",
     "PATIENT ID AES",
 )
-_AGGREGATE_HEADER: Final[tuple[str, ...]] = ("CLIENT IP", "HOSP_ID", "HOSP_ABBR", "COUNT")
+#: design.md §4.3/§8.4 REQ3: the old single COUNT column split into
+#: WEEKLY ACCESS (this run's latest-batch row count) and TOTAL ACCESS
+#: (the old COUNT, full-state row count) -- English, space-separated,
+#: matching the CLIENT IP/PATIENT ID AES header style.
+_AGGREGATE_HEADER: Final[tuple[str, ...]] = (
+    "CLIENT IP",
+    "HOSP_ID",
+    "HOSP_ABBR",
+    "WEEKLY ACCESS",
+    "TOTAL ACCESS",
+)
 
 #: design.md §2.6/§5 S4: the same two accepted APP_TIME formats as
 #: transform.py's contract, duplicated here deliberately -- xlsx_writer
@@ -78,6 +97,32 @@ _HIGHLIGHT_FILL: Final[PatternFill] = PatternFill(fill_type="solid", fgColor="FF
 #: would silently defeat the visible-header intent.
 _HEADER_FILL: Final[PatternFill] = PatternFill(fill_type="solid", fgColor="FFE2EFDA")
 _HEADER_FONT: Final[Font] = Font(bold=True, size=12)
+
+#: design.md §8.3-§8.5 REQ1a: every cell, header and data, both
+#: sheets, centered both horizontally and vertically.
+_CENTER: Final[Alignment] = Alignment(horizontal="center", vertical="center")
+#: design.md §8.3 REQ1b ("所有框線"): thin border on all four sides of
+#: every DATA cell, both sheets.
+_DATA_BORDER: Final[Border] = Border(
+    left=Side(style="thin"),
+    right=Side(style="thin"),
+    top=Side(style="thin"),
+    bottom=Side(style="thin"),
+)
+#: design.md §8.5 REQ1c ("粗下框線"): the REQUIRED emphasis is the
+#: thick bottom border; thin left/right/top are added so the header
+#: row's outline is a continuous grid with the thin-bordered data rows
+#: below it, rather than an open top/sides on the table's first row.
+_HEADER_BORDER: Final[Border] = Border(
+    left=Side(style="thin"),
+    right=Side(style="thin"),
+    top=Side(style="thin"),
+    bottom=Side(style="thick"),
+)
+
+#: design.md §4.3/§8.4 REQ3b: rendered in WEEKLY ACCESS whenever an
+#: IP has zero rows in the latest batch ("本周無存取紀錄之院所則填入 -").
+_WEEKLY_NONE_SENTINEL: Final[str] = "-"
 
 _FILENAME_DATE_FMT: Final[str] = "%Y-%m-%d"
 _DELIVERABLE_SUFFIX: Final[str] = "_連線紀錄.xlsx"
@@ -116,6 +161,7 @@ def _write_records_sheet(sheet: Worksheet, full_state: Sequence[StateRecord]) ->
     max_batch_id = max((record.batch_id for record in full_state), default=0)
     for row_idx, record in enumerate(full_state, start=2):
         _write_record_row(sheet, row_idx, record, highlight=record.batch_id == max_batch_id)
+    _autofit(sheet, _RECORDS_HEADER)
 
 
 def _write_record_row(
@@ -146,8 +192,13 @@ def _write_record_row(
         cell.number_format = _TEXT_NUMBER_FORMAT
         row_cells.append(cell)
 
-    if highlight:
-        for cell in row_cells:
+    # design.md §8.3 REQ1a/b: center + thin 4-side border on every DATA
+    # cell, unconditionally; the yellow highlight (latest batch only)
+    # layers on top of -- never instead of -- that grid/alignment.
+    for cell in row_cells:
+        cell.alignment = _CENTER
+        cell.border = _DATA_BORDER
+        if highlight:
             cell.fill = _HIGHLIGHT_FILL
 
 
@@ -155,10 +206,29 @@ def _write_aggregate_sheet(sheet: Worksheet, report_rows: Sequence[ReportRow]) -
     _write_header(sheet, _AGGREGATE_HEADER)
     for row_idx, report_row in enumerate(report_rows, start=2):
         text_values = (report_row.client_ip, report_row.hosp_id, report_row.hosp_abbr)
-        for column, value in enumerate(text_values, start=1):
-            cell = sheet.cell(row=row_idx, column=column, value=value)
+        row_cells = [
+            sheet.cell(row=row_idx, column=column, value=value)
+            for column, value in enumerate(text_values, start=1)
+        ]
+        for cell in row_cells:
             cell.number_format = _TEXT_NUMBER_FORMAT
-        sheet.cell(row=row_idx, column=4, value=report_row.count)
+
+        # design.md §4.3/§8.4 REQ3b-c: WEEKLY ACCESS renders the "-"
+        # sentinel (str, hardened `@`) when this IP had no rows in the
+        # latest batch; otherwise the int is left at the default
+        # `General` number_format, same as TOTAL ACCESS always is.
+        if report_row.weekly_access == 0:
+            weekly_cell = sheet.cell(row=row_idx, column=4, value=_WEEKLY_NONE_SENTINEL)
+            weekly_cell.number_format = _TEXT_NUMBER_FORMAT
+        else:
+            weekly_cell = sheet.cell(row=row_idx, column=4, value=report_row.weekly_access)
+        total_cell = sheet.cell(row=row_idx, column=5, value=report_row.total_access)
+        row_cells += [weekly_cell, total_cell]
+
+        for cell in row_cells:
+            cell.alignment = _CENTER
+            cell.border = _DATA_BORDER
+    _autofit(sheet, _AGGREGATE_HEADER)
 
 
 def _write_header(sheet: Worksheet, header: tuple[str, ...]) -> None:
@@ -166,6 +236,8 @@ def _write_header(sheet: Worksheet, header: tuple[str, ...]) -> None:
         cell = sheet.cell(row=1, column=column, value=title)
         cell.font = _HEADER_FONT
         cell.fill = _HEADER_FILL
+        cell.alignment = _CENTER
+        cell.border = _HEADER_BORDER
 
 
 def _parse_app_time_iso(raw: str) -> datetime:
@@ -182,6 +254,82 @@ def _parse_app_time_iso(raw: str) -> datetime:
     # (design.md §9.5 R7: records.csv is machine-owned, never hand-edited,
     # but this module must not silently mis-render it if that happens).
     raise WriteError(f"cannot render APP_TIME_ISO as a datetime: {raw!r}")
+
+
+# --------------------------------------------------------------------
+# Column auto-fit -- dynamic, from THIS run's actual data (design.md
+# §8.3/§8.4 REQ1d). Runs as a post-pass after every cell already holds
+# its final value/number_format, so it only ever READS what earlier
+# code wrote -- it can neither disturb nor depend on write order.
+# --------------------------------------------------------------------
+
+
+def _display_width(text: str) -> int:
+    """A tiny wcwidth-style helper (design.md §8.3 REQ1d): CJK/full-width
+    code points (`unicodedata.east_asian_width` in `{"W", "F"}`) count
+    as 2 display columns, everything else as 1 -- so a 4-character
+    hospital name like `門諾醫院` sizes as 8, not 4, and a column holding
+    it is not visually truncated even though `len()` would say 4.
+    """
+    return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
+
+
+def _rendered(value: object, number_format: str) -> str:
+    """The literal characters a cell DISPLAYS (design.md §8.3 REQ1d) --
+    distinct from `cell.value`'s Python type:
+
+        datetime + a DATE-style format (`"yyyy"` in `number_format`)
+            -> `"YYYY-MM-DD"` (always 10 characters)
+        datetime + anything else (the TIME column)
+            -> `"HH:MM:SS"` (always 8 characters, no sub-second digits)
+        None (an unmapped HOSP_ABBR written as `""`, which openpyxl
+        normalizes to `None` on read-back, design.md §2.9)
+            -> `""`
+        anything else (str, int, including the WEEKLY "-" sentinel)
+            -> `str(value)` (an int renders as its digit string)
+    """
+    if isinstance(value, datetime):
+        if "yyyy" in number_format:
+            return value.strftime("%Y-%m-%d")
+        return value.strftime("%H:%M:%S")
+    if value is None:
+        # Defensive only: every cell _autofit() ever reads back was
+        # JUST written by _write_record_row/_write_aggregate_sheet in
+        # this same build_workbook() call, and neither ever assigns a
+        # bare `None` (an unmapped HOSP_ABBR is written as `""`, which
+        # only normalizes to `None` on a save+reload round-trip that
+        # has not happened yet at autofit time, design.md §2.9) -- so
+        # this branch is unreachable through the current call graph.
+        # Kept anyway so `_rendered()` stays a total, honest function
+        # of "what would this cell display" for any caller/future cell
+        # kind, not just the ones this module happens to write today.
+        return ""  # pragma: no cover
+    return str(value)
+
+
+def _autofit(sheet: Worksheet, header: Sequence[str]) -> None:
+    """Set every column's width to fit whatever data THIS sheet
+    actually holds this run (design.md §8.3/§8.4 REQ1d) -- dynamic,
+    never a hardcoded constant. Per column: `width = max(display_width
+    of the header text, display_width of every data cell's RENDERED
+    value) * 1.2` -- the header participates in the max so a wide
+    header (e.g. "WEEKLY ACCESS") is never truncated by narrower data
+    (design.md §8.5: 確保清晰的資訊檢視). A header-only (0 data row) sheet
+    still gets a sensible width, since the header-only term is always
+    present in the max.
+
+    `round(..., 2)` (design.md §8.3): 2 decimal places is exactly
+    enough precision for `display_width * 1.2` to always be exact (the
+    only fractional parts that formula can ever produce are `.0`, `.2`,
+    `.4`, `.6`, `.8`), so this round-trips through openpyxl without
+    float drift and tests can assert exact width floats.
+    """
+    for col_idx, title in enumerate(header, start=1):
+        widths = [_display_width(title)]
+        for row_idx in range(2, sheet.max_row + 1):
+            cell = sheet.cell(row=row_idx, column=col_idx)
+            widths.append(_display_width(_rendered(cell.value, cell.number_format)))
+        sheet.column_dimensions[get_column_letter(col_idx)].width = round(max(widths) * 1.2, 2)
 
 
 # --------------------------------------------------------------------

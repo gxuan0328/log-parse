@@ -1,7 +1,7 @@
 # report-export — 資料型別與格式契約（data-fidelity.zh-TW.md）
 
 > 本文件是型別／格式的**單一真實來源對照表**：輸入 14 欄 → state 10 欄 →
-> 交付 9+4 欄，逐欄列出型別、number_format、與保真理由。完整設計推導見
+> 交付 9+5 欄，逐欄列出型別、number_format、與保真理由。完整設計推導見
 > [`design.md`](design.md) 第 2、4 章；操作手冊見
 > [`usage.zh-TW.md`](usage.zh-TW.md)。技術名詞、程式識別字、sheet 名稱一律
 > 保留原文。
@@ -20,7 +20,7 @@
 state 層 records.csv（10 欄：2 內部鍵 + 8 payload；累積、持久化）
         │  aggregate（由完整 state 重算 院所分析）
         ▼
-交付 xlsx（2 sheet：調閱紀錄 9 欄、院所分析 4 欄；純值、無公式）
+交付 xlsx（2 sheet：調閱紀錄 9 欄、院所分析 5 欄；純值、無公式）
 ```
 
 三層欄數差異的原因：
@@ -33,7 +33,8 @@ state 層 records.csv（10 欄：2 內部鍵 + 8 payload；累積、持久化）
 - state 10 欄 → 交付 9 欄：移除 `BATCH_ID`+`REQUEST_ID`，並將
   `APP_TIME_ISO` 一欄**展開為 DATE+TIME 兩欄**（同一個 `datetime` 值、
   兩種 number_format）。
-- 交付另有 院所分析 4 欄，是由完整 state**重新聚合**而來（非欄位映射）。
+- 交付另有 院所分析 5 欄（CLIENT IP, HOSP_ID, HOSP_ABBR, WEEKLY ACCESS,
+  TOTAL ACCESS），是由完整 state**重新聚合**而來（非欄位映射）。
 
 ---
 
@@ -141,20 +142,31 @@ bold 是本工具附加的可讀性微調）。
 
 ### 4.2 Sheet 2「院所分析」（1 表頭 + 每唯一 CLIENT IP 一列，依首見序）
 
-表頭字面（A1:D1）：`CLIENT IP, HOSP_ID, HOSP_ABBR, COUNT`
+表頭字面（A1:E1）：`CLIENT IP, HOSP_ID, HOSP_ABBR, WEEKLY ACCESS, TOTAL ACCESS`
 
 | 欄 | 標題 | 計算語意 | 型別 | number_format |
 |----|------|----------|------|----------------|
 | A | `CLIENT IP` | 完整 state 之 CLIENT IP **首見順序去重** | `str` | `@` |
 | B | `HOSP_ID` | 該 IP **首見列**（調閱紀錄自身）之 HOSP_ID | `str` | `@` |
 | C | `HOSP_ABBR` | 該 IP 首見列之 HOSP_ABBR（可為 `""`） | `str` | `@` |
-| D | `COUNT` | 完整 state 中該 CLIENT IP 之列數 | `int`（type='n'） | `General` |
+| D | `WEEKLY ACCESS` | 該 IP 於**最新批次**（`batch_id == max(BATCH_ID)`）之列數；0 → render `-` | `int` 或 `-`（本週無存取） | `General`；`-` 時為 `@` |
+| E | `TOTAL ACCESS` | 完整 state 中該 CLIENT IP 之列數（即前版單一 COUNT 欄） | `int`（type='n'） | `General` |
 
 **關鍵語意**：B/C 欄是對「調閱紀錄自身」以 CLIENT IP 做 first-match 查找
 （對映模板 `XLOOKUP(IP, 調閱紀錄!C:C, 調閱紀錄!E:E)`），**不是**再查
 93,781 列的 HOSP_ID對照表主檔。一個 CLIENT IP 若對映到多個不同 HOSP_ID，
 取首見列的值，並記一筆 WARNING（含該 IP 與全部相異 HOSP_ID 清單）——資料
-品質訊號，不會失敗。
+品質訊號，不會失敗。D、E 兩欄是本工具在模板單一 COUNT 語意之上的增強
+（模板本身無 WEEKLY/TOTAL 之分）；單一批次（如首次執行）時 D==E，恆無
+`-`；多批次時 D 僅計最新批次、E 恆計全 state（見 §6 落地錨點）。
+
+**呈現層設定（不影響值/型別保真）**：兩張交付 sheet 全表儲存格皆
+`Alignment(horizontal='center', vertical='center')`；每一資料格四面
+`Border(style='thin')`；表頭每格 `Border(bottom=Side('thick'),
+left/right/top=Side('thin'))`；各欄寬依現有資料＋表頭字串顯示寬度（CJK/
+全形計 2）自動 ×1.2 動態設定（非硬編常數）。以上四項純屬呈現層外觀，與
+本文件逐欄記載的值／型別／number_format／fill 保真**完全獨立、互不影
+響**（design.md §8.3-§8.6）。
 
 ---
 
@@ -167,7 +179,7 @@ bold 是本工具附加的可讀性微調）。
 | `BIRTHDAY` | TEXT | **不是**前導零理由（來源 `紀錄匯入` sheet 實測以 `int` 儲存，19 列全為 19xx、永不以 0 開頭）。真正理由是**防止被強制轉型為數字或日期序列**，並對齊模板 `調閱紀錄` 本身即以文字形式儲存 BIRTHDAY 的既有語意。 |
 | `CLIENT_IP` / `REQUEST_ID` | TEXT | 內含點號／連字號，本質非數值，即使無前導零疑慮也理當存文字。 |
 | `DATE` / `TIME` | `datetime` | 全交付檔**唯二**的 datetime 型別欄。A、B 存同一個 Python `datetime` 物件（含 microsecond），差異僅 `number_format`——刻意如此設計，讓 `A2.value == B2.value` 成為**保證**的往返不變量，而非兩次獨立解析可能各自漂移的結果。 |
-| `COUNT` | `int` | 全交付檔**唯一**的整數型別欄；由 Python 於 `aggregate.build()` 算妥，非公式。 |
+| `WEEKLY ACCESS` / `TOTAL ACCESS` | `int`（`type='n'`，`General`） | 全交付檔**唯二**的整數型別欄；由 Python 於 `aggregate.build()` 算妥，非公式。`WEEKLY ACCESS` 於本週 0 存取時改 render 為 `-`（`type='s'`，`@`）——模型欄位本身仍是 `int`（`weekly_access=0`），是否顯示 `-` 純屬 xlsx_writer 的呈現層決策。 |
 
 **模板 vs 本工具寫入的 number_format 差異**：模板 `調閱紀錄` 實測僅 E
 （HOSP_ID）欄硬化為 `@`，其餘文字欄是 `General`——僅靠儲存格本身的字串
@@ -183,9 +195,11 @@ bold 是本工具附加的可讀性微調）。
 **列數流（e2e 不變量）**：25 輸入列（NORMAL 19 / ORPHAN 1 / UNVERIFIED 5）
 → `調閱紀錄` **19** 列 → `院所分析` **11** 個唯一 CLIENT IP。
 
-**院所分析（首見序，COUNT 合計 19）**：
+**院所分析（首見序，TOTAL ACCESS 合計 19）**：單一批次首次執行（19 列皆
+`BATCH_ID=1`）時 `WEEKLY ACCESS` 每列皆等於下表 `TOTAL ACCESS`，無 `-`
+出現（見 REQ3；多批次案例見 `usage.zh-TW.md` §11 可重複示範）。
 
-| # | CLIENT IP | HOSP_ID | HOSP_ABBR | COUNT |
+| # | CLIENT IP | HOSP_ID | HOSP_ABBR | TOTAL ACCESS（單一批次時 WEEKLY 亦同此值） |
 |---|-----------|---------|-----------|-------|
 | 1 | 10.243.129.44 | 1145010038 | 門諾醫院 | 1 |
 | 2 | 10.249.8.10 | 1101150011 | 新光醫院 | 1 |
@@ -199,7 +213,7 @@ bold 是本工具附加的可讀性微調）。
 | 10 | 10.245.11.141 | 1137080017 | 彰基二林醫 | 1 |
 | 11 | 10.238.23.241 | 1503190020 | 長安醫院 | 1 |
 
-`10.243.129.44` 的 COUNT=1 證明 ORPHAN 列（row 7，與此 IP 共用同一
+`10.243.129.44` 的 TOTAL ACCESS=1 證明 ORPHAN 列（row 7，與此 IP 共用同一
 CLIENT_IP 但 STATUS≠NORMAL）被正確排除於聚合之外；若誤含則該值會變成 2。
 
 以上數值已於本次文件撰寫時，以實際 `python -m report_export` 執行
@@ -219,7 +233,9 @@ CLIENT_IP 但 STATUS≠NORMAL）被正確排除於聚合之外；若誤含則該
 - 同一個 `datetime` 物件寫入 A、B 兩格（僅 number_format 不同）→ 回讀
   `A2.value == B2.value` 為 `True`。測試斷言的是 **datetime 值**，不是
   浮點序列 repr。
-- `int`（COUNT）寫入 → 回讀 `type='n'`。
+- `int`（WEEKLY ACCESS / TOTAL ACCESS）寫入 → 回讀 `type='n'`。WEEKLY
+  ACCESS 為 `-`（本週無存取，字串）寫入 → 回讀 `type='s'`，
+  `number_format=='@'`。
 - 寫入空字串 `""`（HOSP_ABBR 未命中）→ **回讀為 `None`**（openpyxl 對空
   字串的正規化行為）。任何檢查／測試都必須斷言「空字串或 None」，**不可**
   嚴格斷言 `== ""`，否則會在未命中案例上誤判失敗。

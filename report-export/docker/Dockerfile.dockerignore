@@ -28,10 +28,21 @@ template/
 
 # Runtime-generated, machine-owned, per-run state (design.md §6, §9.5)
 # -- never baked into an image; always host bind-mounted (design.md
-# §10.6). Matches the top-level .gitignore.
+# §10.6). Matches the top-level .gitignore (both the top-level and the
+# REQ2-relocated docker/{inbox,state,output}/ runtime dirs -- these
+# patterns are unanchored, so they already match at any depth, but the
+# docker/ paths are listed explicitly too for readability).
 state/
 output/
 inbox/
+docker/inbox/
+docker/state/
+docker/output/
+
+# Committed REQ4 demo fixtures (docker/example/**, design.md §9.5) --
+# input, docs and tools/tests-driven fixtures, never read by any COPY
+# in this Dockerfile; keep the build context small.
+docker/example/
 
 # Dev-only: tests, docs, and the one-off HOSP-table export tool never
 # ship in the runtime image (design.md §9.3, §10.2, §10.3).
