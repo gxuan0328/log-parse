@@ -108,7 +108,7 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── sample-outputs/      Sample rendered reports
 │   └── *.sh                 Scenario-driving scripts
 ├── tests/
-│   └── run_tests.sh         258-test functional suite
+│   └── run_tests.sh         275-test functional suite
 ├── report-export/           Independent Python subtool: weekly xlsx export
 │   ├── src/report_export/   Package (pure-function core + I/O boundary)
 │   ├── docs/                design.md · usage.md · data-fidelity.md (zh-TW)

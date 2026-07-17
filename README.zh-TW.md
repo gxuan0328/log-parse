@@ -108,7 +108,7 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── sample-outputs/      範例輸出報告
 │   └── *.sh                 情境驅動腳本
 ├── tests/
-│   └── run_tests.sh         258 項功能測試套件
+│   └── run_tests.sh         275 項功能測試套件
 ├── report-export/           獨立 Python 子工具：週報 xlsx 匯出
 │   ├── src/report_export/   套件本體（純函式核心 + I/O 邊界）
 │   ├── docs/                design.md · usage.md · data-fidelity.md（zh-TW）
