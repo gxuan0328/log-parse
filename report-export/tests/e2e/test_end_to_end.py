@@ -6,13 +6,13 @@ objects, real `openpyxl` round-trips -- rather than unit-testing
 individual stages in isolation (that is `tests/unit/`'s job). Two
 inputs anchor almost every scenario here:
 
-  * `template/source-log.csv`      the 25-row, CRLF, real anchor
+  * `template/source-log.csv`      the 22-row, CRLF, real anchor
                                     dataset (design.md §1.5.1/§1.5.2/§1.5.6),
                                     referenced directly rather than
                                     duplicated into tests/fixtures/ --
                                     design.md §7.3 explicitly permits
                                     "直接引用或複製", and duplicating a
-                                    25-row byte-exact fixture would
+                                    22-row byte-exact fixture would
                                     create a second source of truth
                                     that could silently drift from the
                                     committed baseline (project
@@ -98,7 +98,7 @@ _RUN_DATE_3: date = date(2026, 7, 29)
 #: design.md §1.5.2 anchor: 院所分析 WEEKLY/TOTAL ACCESS columns, first-seen
 #: order -- E2E-1 is a single-batch state, so WEEKLY == TOTAL == these
 #: values for every IP (design.md §3.1.3 REQ3), same as the old COUNT.
-_ANCHOR_COUNTS: tuple[int, ...] = (1, 1, 1, 1, 1, 1, 3, 1, 7, 1, 1)
+_ANCHOR_COUNTS: tuple[int, ...] = (1, 1, 1, 1, 1, 1, 1, 7, 1, 1)
 
 #: design.md §3.7.3/§3.7.4 REQ1d anchors: round(display_width * 1.2, 2)
 #: for the E2E-1 anchor state, both sheets (see the docstring on
@@ -106,7 +106,7 @@ _ANCHOR_COUNTS: tuple[int, ...] = (1, 1, 1, 1, 1, 1, 3, 1, 7, 1, 1)
 _RECORDS_SHEET_WIDTHS: dict[str, float] = {
     "A": 12.0,
     "B": 9.6,
-    "C": 18.0,
+    "C": 16.8,
     "D": 12.0,
     "E": 12.0,
     "F": 12.0,
@@ -115,7 +115,7 @@ _RECORDS_SHEET_WIDTHS: dict[str, float] = {
     "I": 38.4,
 }
 _AGGREGATE_SHEET_WIDTHS: dict[str, float] = {
-    "A": 18.0,
+    "A": 16.8,
     "B": 12.0,
     "C": 12.0,
     "D": 15.6,
@@ -284,7 +284,31 @@ def _load_expected_transformed_records() -> list[TransformedRecord]:
 
 
 # --------------------------------------------------------------------
-# E2E-1 -- empty state + source-log.csv(25) (design.md §7.2, §1.5.1, §1.5.2)
+# Fixture integrity -- the demo input carries no log-parse test-host IP
+# --------------------------------------------------------------------
+
+#: design.md §1.5.6: the four log-parse test-host client IPs are
+#: pre-filtered upstream (analyze_access --test-hosts exclude) and were
+#: struck from template/source-log.csv in the test-host re-baseline.
+#: None may reappear -- a test-host IP here would misattribute internal
+#: QA/probe traffic to a real 院所 in the 院所分析 aggregate.
+_TEST_HOST_IPS: frozenset[str] = frozenset(
+    {"192.168.117.90", "192.168.105.149", "192.168.117.73", "192.168.117.104"}
+)
+
+
+def test_source_log_demo_input_excludes_test_host_ips() -> None:
+    with _SOURCE_LOG.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.reader(handle))
+    header, data = rows[0], rows[1:]
+    ip_column = header.index("CLIENT_IP")
+    present = {row[ip_column] for row in data if row}
+    leaked = present & _TEST_HOST_IPS
+    assert not leaked, f"log-parse test-host IP leaked into demo fixture: {sorted(leaked)}"
+
+
+# --------------------------------------------------------------------
+# E2E-1 -- empty state + source-log.csv(22) (design.md §7.2, §1.5.1, §1.5.2)
 # --------------------------------------------------------------------
 
 
@@ -293,22 +317,22 @@ def test_e2e1_empty_state_first_ingest_matches_anchors(tmp_path: Path) -> None:
 
     summary = pipeline.run(config, run_date=_RUN_DATE_1, reference_path=_REAL_REFERENCE)
 
-    assert summary.rows_in == 25
-    assert summary.normal == 19
+    assert summary.rows_in == 22
+    assert summary.normal == 16
     assert summary.dropped_nonnormal == 6
-    assert summary.new_records == 19
-    assert summary.state_total == 19
-    assert summary.unique_ips == 11
+    assert summary.new_records == 16
+    assert summary.state_total == 16
+    assert summary.unique_ips == 10
     assert summary.batch_seq == 1
     assert summary.unmapped_hosp_ids == 0
 
-    # State: exactly the 19 NORMAL rows, all BATCH_ID=1, byte-for-byte
+    # State: exactly the 16 NORMAL rows, all BATCH_ID=1, byte-for-byte
     # identical to the checked-in golden master (records.csv embeds no
     # timestamps -- fully reproducible, design.md §3.5.2).
     records_path = config.state_dir / "records.csv"
     assert records_path.read_bytes() == _EXPECTED_RECORDS_E2E1.read_bytes()
     result = state.load(config.state_dir)
-    assert len(result.existing) == 19
+    assert len(result.existing) == 16
     assert {r.batch_id for r in result.existing} == {1}
 
     workbook = load_workbook(summary.deliverable)
@@ -316,9 +340,9 @@ def test_e2e1_empty_state_first_ingest_matches_anchors(tmp_path: Path) -> None:
     _assert_no_formulas(workbook)  # zero formulas
 
     records_sheet = workbook["調閱紀錄"]
-    assert records_sheet.max_row == 20  # header + 19 NORMAL rows
-    # ALL 19 data rows are the sole (and thus latest) batch -> all yellow.
-    assert _highlighted_rows(records_sheet) == list(range(2, 21))
+    assert records_sheet.max_row == 17  # header + 16 NORMAL rows
+    # ALL 16 data rows are the sole (and thus latest) batch -> all yellow.
+    assert _highlighted_rows(records_sheet) == list(range(2, 18))
     assert records_sheet["A2"].fill.fgColor.rgb == "FFFFFF00"  # explicit 8-hex ARGB
 
     # A2==B2: the SAME datetime, only number_format differs.
@@ -330,7 +354,7 @@ def test_e2e1_empty_state_first_ingest_matches_anchors(tmp_path: Path) -> None:
     # Leading-zero HOSP_ID (0937010019) survives as `str`, hardened `@`.
     hosp_id_row = next(
         row_idx
-        for row_idx in range(2, 21)
+        for row_idx in range(2, 18)
         if records_sheet.cell(row=row_idx, column=5).value == "0937010019"
     )
     hosp_id_cell = records_sheet.cell(row=hosp_id_row, column=5)
@@ -340,7 +364,7 @@ def test_e2e1_empty_state_first_ingest_matches_anchors(tmp_path: Path) -> None:
     assert hosp_id_cell.number_format == "@"
 
     agg_sheet = workbook["院所分析"]
-    assert agg_sheet.max_row == 12  # header + 11 unique IPs
+    assert agg_sheet.max_row == 11  # header + 10 unique IPs
     # design.md §3.1.3 REQ3: col D (idx 3) = WEEKLY ACCESS, col E (idx 4)
     # = TOTAL ACCESS. E2E-1 is a single-batch state (all BATCH_ID=1),
     # so WEEKLY == TOTAL == the old COUNT for every IP -- no "-" cell.
@@ -348,20 +372,14 @@ def test_e2e1_empty_state_first_ingest_matches_anchors(tmp_path: Path) -> None:
     total = [row[4].value for row in agg_sheet.iter_rows(min_row=2)]
     assert weekly == list(_ANCHOR_COUNTS)
     assert total == list(_ANCHOR_COUNTS)
-    assert sum(weekly) == 19
-    assert sum(total) == 19
+    assert sum(weekly) == 16
+    assert sum(total) == 16
     assert all(isinstance(v, int) for v in weekly)  # never "-" in a single-batch run
 
     shuchuan = next(row for row in agg_sheet.iter_rows(min_row=2) if row[1].value == "0937010019")
     assert shuchuan[2].value == "秀傳醫院"
     assert shuchuan[3].value == 7
     assert shuchuan[4].value == 7
-    taipei_virtual = next(
-        row for row in agg_sheet.iter_rows(min_row=2) if row[1].value == "3501200000"
-    )
-    assert taipei_virtual[2].value == "臺北虛擬診"
-    assert taipei_virtual[3].value == 3
-    assert taipei_virtual[4].value == 3
     orphan_ip_row = next(
         row for row in agg_sheet.iter_rows(min_row=2) if row[0].value == "10.243.129.44"
     )
@@ -393,8 +411,8 @@ def test_e2e2_idempotent_rerun_is_a_true_no_op(tmp_path: Path) -> None:
     second = pipeline.run(config, run_date=_RUN_DATE_1, reference_path=_REAL_REFERENCE)
 
     assert second.new_records == 0
-    assert second.skipped_cross_state == 19
-    assert second.state_total == 19
+    assert second.skipped_cross_state == 16
+    assert second.state_total == 16
     assert second.batch_seq == first.batch_seq == 1
     assert second.deliverable == first.deliverable  # same-day, same sha256 -> same filename
 
@@ -409,7 +427,7 @@ def test_e2e2_idempotent_rerun_is_a_true_no_op(tmp_path: Path) -> None:
     assert second_snapshot == _load_expected_deliverable_snapshot()
 
     records_sheet = load_workbook(second.deliverable)["調閱紀錄"]
-    assert _highlighted_rows(records_sheet) == list(range(2, 21))  # all 19, still batch 1
+    assert _highlighted_rows(records_sheet) == list(range(2, 18))  # all 16, still batch 1
 
 
 # --------------------------------------------------------------------
@@ -424,33 +442,31 @@ def test_e2e3_new_batch_appends_batch_2_and_recomputes_aggregate(tmp_path: Path)
     config2 = Config(input_path=_BATCH_NEW, state_dir=config1.state_dir, out_dir=config1.out_dir)
     summary = pipeline.run(config2, run_date=_RUN_DATE_2, reference_path=_REAL_REFERENCE)
 
-    n_new = 3  # batch_new.csv's row count -- all brand-new REQUEST_IDs
+    n_new = 2  # batch_new.csv's row count -- all brand-new REQUEST_IDs
     assert summary.new_records == n_new
-    assert summary.state_total == 19 + n_new
+    assert summary.state_total == 16 + n_new
     assert summary.batch_seq == 2
 
     result = state.load(config1.state_dir)
-    assert sum(1 for r in result.existing if r.batch_id == 1) == 19
+    assert sum(1 for r in result.existing if r.batch_id == 1) == 16
     assert sum(1 for r in result.existing if r.batch_id == 2) == n_new
 
     workbook = load_workbook(summary.deliverable)
     records_sheet = workbook["調閱紀錄"]
     assert records_sheet.max_row == 1 + summary.state_total
-    assert _highlighted_rows(records_sheet) == [21, 22, 23]  # exactly the N new batch-2 rows
-    for row_idx in range(2, 21):  # all 19 batch-1 rows: no fill
+    assert _highlighted_rows(records_sheet) == [18, 19]  # exactly the N new batch-2 rows
+    for row_idx in range(2, 18):  # all 16 batch-1 rows: no fill
         assert records_sheet.cell(row=row_idx, column=1).fill.patternType is None
 
     agg_sheet = workbook["院所分析"]
-    assert agg_sheet.max_row == 13  # 11 existing + 1 brand-new IP
+    assert agg_sheet.max_row == 12  # 10 existing + 1 brand-new IP
     # design.md §3.1.3 REQ3: col D (idx 3) = WEEKLY ACCESS (this batch's
     # rows only), col E (idx 4) = TOTAL ACCESS (unchanged old COUNT
-    # semantics). batch_new.csv's 3 rows each hit an IP exactly once.
+    # semantics). batch_new.csv's 2 rows each hit an IP exactly once.
     rows_by_ip = {row[0].value: row for row in agg_sheet.iter_rows(min_row=2)}
     assert rows_by_ip["10.245.1.125"][3].value == 1  # WEEKLY: this batch's 1 new row
     assert rows_by_ip["10.245.1.125"][4].value == 8  # TOTAL: 秀傳醫院 7 -> 8
-    assert rows_by_ip["192.168.117.104"][3].value == 1
-    assert rows_by_ip["192.168.117.104"][4].value == 4  # TOTAL: 臺北虛擬診 3 -> 4
-    assert rows_by_ip["10.250.77.10"][3].value == 1  # brand-new 12th IP: weekly == total
+    assert rows_by_ip["10.250.77.10"][3].value == 1  # brand-new 11th IP: weekly == total
     assert rows_by_ip["10.250.77.10"][4].value == 1
     assert rows_by_ip["10.250.77.10"][1].value == "1301170017"
     assert rows_by_ip["10.250.77.10"][2].value == "台北醫大"
@@ -477,15 +493,15 @@ def test_e2e4_overlap_reimport_after_second_batch_keeps_batch_2_highlighted(
     summary = pipeline.run(config3, run_date=_RUN_DATE_3, reference_path=_REAL_REFERENCE)
 
     assert summary.new_records == 0
-    assert summary.skipped_cross_state == 19  # the reimported 19 all dedup away
-    assert summary.state_total == 22  # unchanged: 19 (batch1) + 3 (batch2)
+    assert summary.skipped_cross_state == 16  # the reimported 16 all dedup away
+    assert summary.state_total == 18  # unchanged: 16 (batch1) + 2 (batch2)
     assert summary.batch_seq == 2  # unchanged: the latest REAL batch is still batch 2
 
     result = state.load(config1.state_dir)
     assert max(r.batch_id for r in result.existing) == 2
 
     records_sheet = load_workbook(summary.deliverable)["調閱紀錄"]
-    assert _highlighted_rows(records_sheet) == [21, 22, 23]  # still batch 2's rows only
+    assert _highlighted_rows(records_sheet) == [18, 19]  # still batch 2's rows only
 
 
 # --------------------------------------------------------------------
@@ -514,7 +530,7 @@ def test_e2e5_deliverable_rebuild_after_loss_reruns_latest_input(tmp_path: Path)
     assert Path(rebuilt.deliverable).exists()
 
     records_sheet = load_workbook(rebuilt.deliverable)["調閱紀錄"]
-    assert _highlighted_rows(records_sheet) == [21, 22, 23]  # correct latest-batch highlight
+    assert _highlighted_rows(records_sheet) == [18, 19]  # correct latest-batch highlight
 
 
 # --------------------------------------------------------------------
@@ -534,7 +550,7 @@ def test_e2e6_missing_tail_is_non_fatal_and_gets_backfilled(tmp_path: Path) -> N
     records_path.write_text("\n".join(body_only_lines) + "\n", encoding="utf-8")
 
     result = state.load(config.state_dir)  # must NOT brick
-    assert len(result.existing) == 19
+    assert len(result.existing) == 16
     assert result.max_batch_seq == 1
 
     # A 0-new rerun of the SAME input deliberately skips state.commit()
@@ -552,7 +568,7 @@ def test_e2e6_missing_tail_is_non_fatal_and_gets_backfilled(tmp_path: Path) -> N
     committing_rerun = pipeline.run(
         new_batch_config, run_date=_RUN_DATE_2, reference_path=_REAL_REFERENCE
     )
-    assert committing_rerun.new_records == 3
+    assert committing_rerun.new_records == 2
     assert _tail_line(records_path).startswith("#META")  # backfilled by this real commit
 
 
@@ -571,16 +587,16 @@ def test_e2e6_corrupt_tail_recovers_from_bak(tmp_path: Path) -> None:
     _corrupt_tail_sha(records_path)
 
     result = state.load(config1.state_dir)  # must NOT brick -- recovers from .bak
-    assert len(result.existing) == 19  # the older, still-valid .bak snapshot (pre-batch-2)
+    assert len(result.existing) == 16  # the older, still-valid .bak snapshot (pre-batch-2)
     assert result.max_batch_seq == 1
 
-    # The full pipeline also tolerates it end-to-end. batch_new.csv's 3
+    # The full pipeline also tolerates it end-to-end. batch_new.csv's 2
     # REQUEST_IDs are no longer visible in the rolled-back (.bak) state,
     # so this rerun legitimately re-ingests them as batch 2 again --
     # self-healing, never a brick.
     rerun = pipeline.run(config2, run_date=_RUN_DATE_2, reference_path=_REAL_REFERENCE)
-    assert rerun.new_records == 3
-    assert rerun.state_total == 22
+    assert rerun.new_records == 2
+    assert rerun.state_total == 18
     assert _tail_line(records_path).startswith("#META")
 
 
@@ -602,11 +618,11 @@ def test_e2e6_corrupt_tail_with_corrupt_bak_raises_state_integrity_error(tmp_pat
 # --------------------------------------------------------------------
 # E2E-7 -- docker/example repeatable demo scenario (design.md §4.7.7,
 # §7.2, REQ3+REQ4). The committed docker/example/state/records.csv
-# seed (19 rows, all BATCH_ID=1, byte-identical to
+# seed (16 rows, all BATCH_ID=1, byte-identical to
 # expected_records_e2e1.csv) plus docker/example/input/week-2026-07-13.csv
-# (4 brand-new-REQUEST_ID rows) together exercise all three WEEKLY
-# ACCESS cases in one run: a brand-new IP (weekly == total), two
-# overlapping IPs (weekly < total), and nine seed-only IPs (weekly
+# (3 brand-new-REQUEST_ID rows) together exercise all three WEEKLY
+# ACCESS cases in one run: a brand-new IP (weekly == total), one
+# overlapping IP (weekly < total), and nine seed-only IPs (weekly
 # renders "-"). This is the exact scenario documented in
 # usage.md's repeatable demo section.
 # --------------------------------------------------------------------
@@ -619,11 +635,11 @@ _DOCKER_EXAMPLE_WEEK_INPUT: Path = _DOCKER_EXAMPLE_DIR / "input" / "week-2026-07
 #: WEEKLY/TOTAL semantics) -- a Monday after the 2026-07-13 input date.
 _DOCKER_EXAMPLE_RUN_DATE: date = date(2026, 7, 15)
 
-#: The 12-row 院所分析 table this scenario produces, first-seen order
-#: (11 seed IPs, then the one brand-new IP last) -- verified by
+#: The 11-row 院所分析 table this scenario produces, first-seen order
+#: (10 seed IPs, then the one brand-new IP last) -- verified by
 #: simulation when this fixture pair was authored (REQ4 example_scenario).
-_DOCKER_EXAMPLE_WEEKLY: tuple[object, ...] = ("-", "-", "-", "-", "-", "-", 1, "-", 2, "-", "-", 1)
-_DOCKER_EXAMPLE_TOTAL: tuple[int, ...] = (1, 1, 1, 1, 1, 1, 4, 1, 9, 1, 1, 1)
+_DOCKER_EXAMPLE_WEEKLY: tuple[object, ...] = ("-", "-", "-", "-", "-", "-", "-", 2, "-", "-", 1)
+_DOCKER_EXAMPLE_TOTAL: tuple[int, ...] = (1, 1, 1, 1, 1, 1, 1, 9, 1, 1, 1)
 
 
 def test_e2e7_docker_example_scenario_demonstrates_weekly_vs_total(tmp_path: Path) -> None:
@@ -641,28 +657,28 @@ def test_e2e7_docker_example_scenario_demonstrates_weekly_vs_total(tmp_path: Pat
         config, run_date=_DOCKER_EXAMPLE_RUN_DATE, reference_path=_REAL_REFERENCE
     )
 
-    assert summary.rows_in == 4
-    assert summary.normal == 4
+    assert summary.rows_in == 3
+    assert summary.normal == 3
     assert summary.dropped_nonnormal == 0
-    assert summary.new_records == 4
+    assert summary.new_records == 3
     assert summary.skipped_cross_state == 0
     assert summary.skipped_intra_batch == 0
-    assert summary.state_total == 23
-    assert summary.unique_ips == 12
+    assert summary.state_total == 19
+    assert summary.unique_ips == 11
     assert summary.batch_seq == 2
     assert summary.unmapped_hosp_ids == 0
 
     agg_sheet = load_workbook(summary.deliverable)["院所分析"]
-    assert agg_sheet.max_row == 13  # header + 12 unique IPs
+    assert agg_sheet.max_row == 12  # header + 11 unique IPs
     rows_by_ip = {row[0].value: row for row in agg_sheet.iter_rows(min_row=2)}
-    assert len(rows_by_ip) == 12
+    assert len(rows_by_ip) == 11
 
     weekly = [row[3].value for row in agg_sheet.iter_rows(min_row=2)]
     total = [row[4].value for row in agg_sheet.iter_rows(min_row=2)]
     assert weekly == list(_DOCKER_EXAMPLE_WEEKLY)
     assert total == list(_DOCKER_EXAMPLE_TOTAL)
-    assert sum(v for v in weekly if isinstance(v, int)) == 4  # == this week's batch size
-    assert sum(total) == 23  # == state_total
+    assert sum(v for v in weekly if isinstance(v, int)) == 3  # == this week's batch size
+    assert sum(total) == 19  # == state_total
 
     # Brand-new IP this week -- WEEKLY ACCESS == TOTAL ACCESS (REQ3 case 1).
     brand_new = rows_by_ip["10.250.77.10"]
@@ -673,8 +689,6 @@ def test_e2e7_docker_example_scenario_demonstrates_weekly_vs_total(tmp_path: Pat
 
     # Overlap: present in both the seed AND this week -- WEEKLY < TOTAL
     # (REQ3 case 2).
-    assert rows_by_ip["192.168.117.104"][3].value == 1
-    assert rows_by_ip["192.168.117.104"][4].value == 4
     assert rows_by_ip["10.245.1.125"][3].value == 2
     assert rows_by_ip["10.245.1.125"][4].value == 9
 
@@ -683,16 +697,16 @@ def test_e2e7_docker_example_scenario_demonstrates_weekly_vs_total(tmp_path: Pat
     assert rows_by_ip["10.243.129.44"][3].value == "-"
     assert rows_by_ip["10.243.129.44"][4].value == 1
 
-    # REQ4 (design.md §3.7.3 per-run 黃底, §4.7.7): this run's 4 imported
+    # REQ4 (design.md §3.7.3 per-run 黃底, §4.7.7): this run's 3 imported
     # batch-2 rows ALL carry the solid yellow highlight; every one of the
-    # 19 pre-existing batch-1 seed rows carries NO fill. This is the exact
+    # 16 pre-existing batch-1 seed rows carries NO fill. This is the exact
     # observation the docker/example quickstart tells the operator to
     # verify by eye, so the demo scenario asserts it explicitly (same
     # check as E2E-3/E2E-4).
     records_sheet = load_workbook(summary.deliverable)["調閱紀錄"]
-    assert records_sheet.max_row == 1 + summary.state_total  # header + 23 rows
-    assert _highlighted_rows(records_sheet) == [21, 22, 23, 24]  # the 4 week batch-2 rows
-    for row_idx in range(2, 21):  # all 19 seed batch-1 rows: no fill
+    assert records_sheet.max_row == 1 + summary.state_total  # header + 19 rows
+    assert _highlighted_rows(records_sheet) == [18, 19, 20]  # the 3 week batch-2 rows
+    for row_idx in range(2, 18):  # all 16 seed batch-1 rows: no fill
         assert records_sheet.cell(row=row_idx, column=1).fill.patternType is None
 
     # The committed seed state itself must stay untouched by this run
@@ -701,7 +715,7 @@ def test_e2e7_docker_example_scenario_demonstrates_weekly_vs_total(tmp_path: Pat
 
 
 # --------------------------------------------------------------------
-# Invariant: transform(source-log NORMAL) == 19 expected records
+# Invariant: transform(source-log NORMAL) == 16 expected records
 # (design.md §7.2 "不變量", §1.5.1). Pure-function level, independent of
 # state/dedup/aggregate/xlsx -- reuses the SAME checked-in golden master
 # as E2E-1 (see _load_expected_transformed_records's docstring).
@@ -714,12 +728,12 @@ def test_invariant_transform_matches_expected_snapshot() -> None:
     assert unknown_status_skipped == 0
 
     normal_rows = transform.filter_normal(numbered_rows)
-    assert len(normal_rows) == 19
+    assert len(normal_rows) == 16
 
     transformed = transform.project(normal_rows, hosp_table)
 
     expected = _load_expected_transformed_records()
-    assert len(expected) == 19
+    assert len(expected) == 16
     assert transformed == expected
 
 
@@ -756,11 +770,11 @@ def test_all_nonnormal_batch_leaves_existing_state_and_highlight_untouched(
 
     assert summary.normal == 0
     assert summary.new_records == 0
-    assert summary.state_total == 19  # unchanged
+    assert summary.state_total == 16  # unchanged
     assert summary.batch_seq == 1  # still the pre-existing latest batch
 
     records_sheet = load_workbook(summary.deliverable)["調閱紀錄"]
-    assert _highlighted_rows(records_sheet) == list(range(2, 21))  # unchanged: all 19, batch 1
+    assert _highlighted_rows(records_sheet) == list(range(2, 18))  # unchanged: all 16, batch 1
 
 
 def test_status_mixed_case_is_all_treated_as_normal(tmp_path: Path) -> None:
@@ -768,9 +782,9 @@ def test_status_mixed_case_is_all_treated_as_normal(tmp_path: Path) -> None:
 
     summary = pipeline.run(config, run_date=_RUN_DATE_1, reference_path=_REAL_REFERENCE)
 
-    assert summary.normal == 3  # "NORMAL" / "Normal" / "normal" all counted (Excel `=` semantics)
-    assert summary.new_records == 3
-    assert summary.state_total == 3
+    assert summary.normal == 2  # "NORMAL" / "normal" all counted (Excel `=` semantics)
+    assert summary.new_records == 2
+    assert summary.state_total == 2
     result = state.load(config.state_dir)
     assert {r.batch_id for r in result.existing} == {1}
 
@@ -782,9 +796,9 @@ def test_unmapped_hosp_abbr_reads_back_as_none(tmp_path: Path) -> None:
     summary = pipeline.run(config, run_date=_RUN_DATE_1, reference_path=small_reference)
 
     # hosp_map_small.csv includes 0937010019 but deliberately omits
-    # 1503190020 -- exactly one of the 19 NORMAL rows' HOSP_ID is unmapped.
+    # 1503190020 -- exactly one of the 16 NORMAL rows' HOSP_ID is unmapped.
     assert summary.unmapped_hosp_ids == 1
-    assert summary.unique_ips == 11  # aggregation is unaffected by the lookup table
+    assert summary.unique_ips == 10  # aggregation is unaffected by the lookup table
 
     workbook = load_workbook(summary.deliverable)
     agg_sheet = workbook["院所分析"]

@@ -41,12 +41,15 @@ def test_load_returns_expected_row_count(hosp_table: dict[str, str]) -> None:
 
 
 def test_known_hosp_id_maps_to_expected_abbr(hosp_table: dict[str, str]) -> None:
-    # design.md §1.5.2 row 9 / §1.5.8 anchor.
+    # design.md §1.5.2 row 8 / §1.5.8 anchor.
     assert hosp_table["0937010019"] == "秀傳醫院"
 
 
 def test_second_known_hosp_id_maps_to_expected_abbr(hosp_table: dict[str, str]) -> None:
-    # design.md §1.5.2 row 7 anchor.
+    # design.md §1.5.8 anchor -- a real HOSP_ID對照表 entry, independent
+    # of §1.5.2's source-log.csv CLIENT_IP table (that IP was removed
+    # from the test-host set; this HOSP_ID/HOSP_ABBR pair is unrelated
+    # reference-master data and still legitimately present there).
     assert hosp_table["3501200000"] == "臺北虛擬診"
 
 

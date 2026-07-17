@@ -107,7 +107,7 @@ docker run --rm \
 件，欄位依英文字母序排序：
 
 ```json
-{"batch_seq": 1, "deliverable": "/data/output/2026-07-16_連線紀錄.xlsx", "dropped_nonnormal": 6, "input": "/data/input/week-2026-07-13.csv", "input_sha256": "2895c8f8bd8f3ed1e8cea6020f17d95374060bb9ddd04029a268ae0d0db5fdf3", "new_records": 19, "normal": 19, "rows_in": 25, "run_date": "2026-07-16", "skipped_cross_state": 0, "skipped_intra_batch": 0, "state_total": 19, "unique_ips": 11, "unknown_status_skipped": 0, "unmapped_hosp_ids": 0}
+{"batch_seq": 1, "deliverable": "/data/output/2026-07-16_連線紀錄.xlsx", "dropped_nonnormal": 6, "input": "/data/input/week-2026-07-13.csv", "input_sha256": "9c6b6f3cb71fd1108e2608bc822fb57e51cc94fa4f3b99b0dc3244ecc16f0ee2", "new_records": 16, "normal": 16, "rows_in": 22, "run_date": "2026-07-16", "skipped_cross_state": 0, "skipped_intra_batch": 0, "state_total": 16, "unique_ips": 10, "unknown_status_skipped": 0, "unmapped_hosp_ids": 0}
 ```
 
 （以上為對 `template/source-log.csv` 之真實空 state 首次執行的實測
@@ -139,8 +139,8 @@ docker run --rm \
 `TIMESTAMP LEVEL logger=NAME msg=MESSAGE [key=val ...]`：
 
 ```
-2026-07-16T10:16:27+0800 INFO     logger=report_export.transform msg=filtered to NORMAL rows dropped_nonnormal=6 normal=19
-2026-07-16T10:16:27+0800 INFO     logger=report_export.pipeline msg=run complete deliverable='/data/output/2026-07-16_連線紀錄.xlsx' new_records=19
+2026-07-16T10:16:27+0800 INFO     logger=report_export.transform msg=filtered to NORMAL rows dropped_nonnormal=6 normal=16
+2026-07-16T10:16:27+0800 INFO     logger=report_export.pipeline msg=run complete deliverable='/data/output/2026-07-16_連線紀錄.xlsx' new_records=16
 ```
 
 - 預設層級 `INFO`；可用環境變數 `REPORT_EXPORT_LOG_LEVEL`（非 CLI 旗
@@ -568,7 +568,7 @@ exit 3 時的人工排除步驟：
 輸入，讓你**不需要準備任何自己的資料**就能實際跑一次，同時驗證兩件
 事：(1) 院所分析的 `WEEKLY ACCESS`／`TOTAL ACCESS`／`-` 三種情形
 （design.md §4.7.7、§7.2 E2E-7）；(2) 調閱紀錄的**本批整列黃底**
-（design.md §3.7.3）——本次匯入的 4 列全部黃底，既有的 19 列 seed
+（design.md §3.7.3）——本次匯入的 3 列全部黃底，既有的 16 列 seed
 全部無底色。這組 fixtures 與 `tests/e2e/test_end_to_end.py` 之
 `test_e2e7_docker_example_scenario_demonstrates_weekly_vs_total` 驅動
 的是同一份資料，手動跑一次與自動化測試斷言的是同一組數字。
@@ -630,34 +630,33 @@ stdout 摘要（各欄位意義見上方「stdout 摘要」）關鍵欄位：
 
 | 欄位 | 值 |
 |------|-----|
-| `new_records` | `4` |
-| `state_total` | `23` |
-| `unique_ips` | `12` |
+| `new_records` | `3` |
+| `state_total` | `19` |
+| `unique_ips` | `11` |
 | `batch_seq` | `2` |
-| `rows_in` / `normal` | `4` / `4` |
+| `rows_in` / `normal` | `3` / `3` |
 | `dropped_nonnormal` / `skipped_cross_state` / `skipped_intra_batch` / `unmapped_hosp_ids` / `unknown_status_skipped` | 皆 `0` |
 | `run_date` / `deliverable` | 容器今日業務日（`TZ=Asia/Taipei`），交付檔名隨之而定 |
 
 交付檔 `example/run/output/{今日日期}_連線紀錄.xlsx` 的「院所分析」
-sheet（12 列）：
+sheet（11 列）：
 
 | CLIENT IP | HOSP_ABBR | WEEKLY ACCESS | TOTAL ACCESS | 情形 |
 |-----------|-----------|----------------|----------------|------|
 | `10.250.77.10` | 瀚田診所 | `1` | `1` | 本週全新 IP——WEEKLY == TOTAL |
-| `192.168.117.104` | 臺北虛擬診 | `1` | `4` | 既有 IP、本週亦有新列——WEEKLY < TOTAL |
 | `10.245.1.125` | 秀傳醫院 | `2` | `9` | 既有 IP、本週亦有新列——WEEKLY < TOTAL |
 | 其餘 9 個 IP（如 `10.243.129.44` 門諾醫院） | — | `-` | `1` | 本週無存取（僅存在於 seed 批次）——WEEKLY 顯示 `-` |
 
-（即 WEEKLY = `['-','-','-','-','-','-',1,'-',2,'-','-',1]`、
-TOTAL = `[1,1,1,1,1,1,4,1,9,1,1,1]`，首見序為 11 個 seed IP + 1 個
+（即 WEEKLY = `['-','-','-','-','-','-','-',2,'-','-',1]`、
+TOTAL = `[1,1,1,1,1,1,1,9,1,1,1]`，首見序為 10 個 seed IP + 1 個
 本週全新 IP。）
 
-「調閱紀錄」sheet（表頭 + 23 列）：
+「調閱紀錄」sheet（表頭 + 19 列）：
 
-- **第 21-24 列**（本批 4 列，`BATCH_ID=2`）**整列黃底 `FFFFFF00`**；
-  **第 2-20 列**（19 列 seed，`BATCH_ID=1`）**皆無底色**
+- **第 18-20 列**（本批 3 列，`BATCH_ID=2`）**整列黃底 `FFFFFF00`**；
+  **第 2-17 列**（16 列 seed，`BATCH_ID=1`）**皆無底色**
   （`fill.patternType is None`）——這正是 E2E-7 以
-  `_highlighted_rows(records_sheet) == [21, 22, 23, 24]`
+  `_highlighted_rows(records_sheet) == [18, 19, 20]`
   明確斷言的同一個觀察（design.md §3.7.3、§4.7.7）。
 
 ### 重跑／重置

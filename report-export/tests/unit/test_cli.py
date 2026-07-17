@@ -31,15 +31,15 @@ def _summary(**overrides: object) -> RunSummary:
         "batch_seq": 1,
         "input": "/data/input/week.csv",
         "input_sha256": "abc123",
-        "rows_in": 25,
-        "normal": 19,
+        "rows_in": 22,
+        "normal": 16,
         "dropped_nonnormal": 6,
-        "new_records": 19,
+        "new_records": 16,
         "skipped_cross_state": 0,
         "skipped_intra_batch": 0,
         "unknown_status_skipped": 0,
-        "state_total": 19,
-        "unique_ips": 11,
+        "state_total": 16,
+        "unique_ips": 10,
         "unmapped_hosp_ids": 0,
     }
     base.update(overrides)
@@ -137,8 +137,8 @@ def test_main_success_prints_single_json_line_to_stdout(
     lines = out.strip().splitlines()
     assert len(lines) == 1
     payload = json.loads(lines[0])
-    assert payload["state_total"] == 19
-    assert payload["unique_ips"] == 11
+    assert payload["state_total"] == 16
+    assert payload["unique_ips"] == 10
 
 
 def test_main_success_json_contains_exactly_the_summary_fields(

@@ -14,7 +14,7 @@ from report_export.errors import InputValidationError
 from report_export.models import InputRow
 
 # report-export/template/source-log.csv -- the real, checked-in e2e
-# fixture (design.md §1.5.6: 25 data rows, CRLF, no BOM, no trailing
+# fixture (design.md §1.5.6: 22 data rows, CRLF, no BOM, no trailing
 # newline on the last line).
 TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "template"
 SOURCE_LOG_PATH = TEMPLATE_DIR / "source-log.csv"
@@ -52,9 +52,9 @@ def _data_row(**overrides: str) -> str:
 # --------------------------------------------------------------------
 
 
-def test_real_fixture_reads_all_25_known_status_rows() -> None:
+def test_real_fixture_reads_all_22_known_status_rows() -> None:
     rows, unknown_status_skipped = csv_reader.read(SOURCE_LOG_PATH)
-    assert len(rows) == 25
+    assert len(rows) == 22
     assert unknown_status_skipped == 0
 
 
@@ -62,14 +62,14 @@ def test_real_fixture_line_numbers_start_at_2() -> None:
     rows, _ = csv_reader.read(SOURCE_LOG_PATH)
     line_numbers = [line_no for line_no, _ in rows]
     assert line_numbers[0] == 2
-    assert line_numbers == list(range(2, 27))
+    assert line_numbers == list(range(2, 24))
 
 
 def test_real_fixture_status_counts_match_design_anchor() -> None:
-    # design.md §1.5.1: NORMAL 19 / ORPHAN 1 / UNVERIFIED 5.
+    # design.md §1.5.1: NORMAL 16 / ORPHAN 1 / UNVERIFIED 5.
     rows, _ = csv_reader.read(SOURCE_LOG_PATH)
     statuses = [row.status for _, row in rows]
-    assert statuses.count("NORMAL") == 19
+    assert statuses.count("NORMAL") == 16
     assert statuses.count("ORPHAN") == 1
     assert statuses.count("UNVERIFIED") == 5
 
@@ -88,7 +88,7 @@ def test_real_fixture_last_row_has_no_trailing_newline_artifact() -> None:
     # all (design.md §1.5.6) -- confirm the last row still parses cleanly.
     rows, _ = csv_reader.read(SOURCE_LOG_PATH)
     last_line_no, last_row = rows[-1]
-    assert last_line_no == 26
+    assert last_line_no == 23
     assert last_row.status == "UNVERIFIED"
     assert not last_row.birthday.endswith("\r")
 

@@ -11,8 +11,8 @@
 1. 院所分析（「院所分析」sheet）的 `WEEKLY ACCESS`／`TOTAL ACCESS`／
    `-` 三種情形——本週全新 IP（weekly == total）、既有 IP 本週亦有
    新列（weekly < total）、既有 IP 本週無存取（weekly 顯示 `-`）。
-2. 調閱紀錄（「調閱紀錄」sheet）的**本批整列黃底**：本次匯入的 4 列
-   全部黃底 `FFFFFF00`，既有的 19 列 seed 全部無底色。
+2. 調閱紀錄（「調閱紀錄」sheet）的**本批整列黃底**：本次匯入的 3 列
+   全部黃底 `FFFFFF00`，既有的 16 列 seed 全部無底色。
 
 這組 fixtures 與
 [`../../tests/e2e/test_end_to_end.py`](../../tests/e2e/test_end_to_end.py)
@@ -25,12 +25,13 @@
 docker/example/
 ├── input/
 │   └── week-2026-07-13.csv   入庫、PRISTINE。this-week 14 欄輸入，
-│                              CRLF，4 列全為 NORMAL，REQUEST_ID 為
-│                              全新的 60000001..60000004。唯讀掛載
-│                              （:ro），本節任何指令都不會寫入它。
+│                              CRLF，3 列全為 NORMAL，REQUEST_ID 為
+│                              全新的 60000001、60000002、60000004。
+│                              唯讀掛載（:ro），本節任何指令都不會寫
+│                              入它。
 ├── state/
 │   └── records.csv           入庫、PRISTINE 的 seed state。10 欄表
-│                              頭 + 19 列，皆 BATCH_ID=1，位元組同
+│                              頭 + 16 列，皆 BATCH_ID=1，位元組同
 │                              tests/fixtures/expected_records_e2e1.csv。
 │                              從不直接掛載——quickstart 一律先把它
 │                              「複製」進 run/state/，工具只讀寫那份
@@ -40,8 +41,8 @@ docker/example/
 │   │                         料的位置）。由 quickstart 的 `mkdir -p`
 │   │                         建立，從不入庫。
 │   ├── state/                 quickstart 把 seed 複製進這裡；工具
-│   │                          會就地變動這份複製（records.csv 19 ->
-│   │                          23 列、新增 records.csv.bak、
+│   │                          會就地變動這份複製（records.csv 16 ->
+│   │                          19 列、新增 records.csv.bak、
 │   │                          runs.jsonl、暫時性 .lock）。掛載為
 │   │                          /data/state（讀寫）。
 │   └── output/                 交付檔 {今日日期}_連線紀錄.xlsx 落地
@@ -51,8 +52,8 @@ docker/example/
 
 **入庫（來源）／執行期（`run/` scratch）分離的理由**：`input/` 與
 `state/records.csv` 是本節的**唯一真實來源**、必須保持 pristine 才
-能無限次重複示範；若讓工具直接讀寫這兩者，跑一次就會把 seed 從 19
-列變成 23 列、並在入庫樹裡留下 `output/`／`.lock`／`runs.jsonl` 等執
+能無限次重複示範；若讓工具直接讀寫這兩者，跑一次就會把 seed 從 16
+列變成 19 列、並在入庫樹裡留下 `output/`／`.lock`／`runs.jsonl` 等執
 行期殘留（這正是本節存在之前的問題）。因此執行期資料一律落在
 `run/`——一個 `.gitignore` 已排除、由 quickstart 當場建立、可隨時
 `rm -rf` 重來的 scratch 目錄，`input/`＋`state/records.csv` 因而永遠
@@ -114,36 +115,35 @@ stdout 摘要關鍵欄位（完整欄位說明見
 
 | 欄位 | 值 |
 |------|-----|
-| `new_records` | `4` |
-| `state_total` | `23` |
-| `unique_ips` | `12` |
+| `new_records` | `3` |
+| `state_total` | `19` |
+| `unique_ips` | `11` |
 | `batch_seq` | `2` |
-| `rows_in` / `normal` | `4` / `4` |
+| `rows_in` / `normal` | `3` / `3` |
 | `dropped_nonnormal` / `skipped_cross_state` / `skipped_intra_batch` / `unmapped_hosp_ids` / `unknown_status_skipped` | 皆 `0` |
-| `input_sha256` | `e9275483547bb3dbeaf120484a7b5d41cdabaf5eba709acf2788d38b9706252c` |
+| `input_sha256` | `f458de0d821629188dc5b2ef2b903b0bf9bfa82b2aa4ce59a51ce65d7eceb301` |
 | `run_date` / `deliverable` | 容器今日業務日（`TZ=Asia/Taipei`），交付檔名隨之而定 |
 
 交付檔 `example/run/output/{今日日期}_連線紀錄.xlsx` 的「院所分析」
-sheet（12 列）：
+sheet（11 列）：
 
 | CLIENT IP | HOSP_ABBR | WEEKLY ACCESS | TOTAL ACCESS | 情形 |
 |-----------|-----------|----------------|----------------|------|
 | `10.250.77.10` | 瀚田診所 | `1` | `1` | 本週全新 IP——WEEKLY == TOTAL |
-| `192.168.117.104` | 臺北虛擬診 | `1` | `4` | 既有 IP、本週亦有新列——WEEKLY < TOTAL |
 | `10.245.1.125` | 秀傳醫院 | `2` | `9` | 既有 IP、本週亦有新列——WEEKLY < TOTAL |
 | 其餘 9 個 IP（如 `10.243.129.44` 門諾醫院） | — | `-` | `1` | 本週無存取（僅存在於 seed 批次）——WEEKLY 顯示 `-` |
 
-（即 WEEKLY = `['-','-','-','-','-','-',1,'-',2,'-','-',1]`、
-TOTAL = `[1,1,1,1,1,1,4,1,9,1,1,1]`，首見序為 11 個 seed IP + 1 個本
+（即 WEEKLY = `['-','-','-','-','-','-','-',2,'-','-',1]`、
+TOTAL = `[1,1,1,1,1,1,1,9,1,1,1]`，首見序為 10 個 seed IP + 1 個本
 週全新 IP。）
 
-「調閱紀錄」sheet（表頭 + 23 列）—— REQ4 黃底驗證：
+「調閱紀錄」sheet（表頭 + 19 列）—— REQ4 黃底驗證：
 
-- **第 21-24 列**（本批 4 列，`BATCH_ID=2`）**整列黃底 `FFFFFF00`**；
-  **第 2-20 列**（19 列 seed，`BATCH_ID=1`）**皆無底色**
+- **第 18-20 列**（本批 3 列，`BATCH_ID=2`）**整列黃底 `FFFFFF00`**；
+  **第 2-17 列**（16 列 seed，`BATCH_ID=1`）**皆無底色**
   （`fill.patternType is None`）。這正是
   `tests/e2e/test_end_to_end.py::test_e2e7_docker_example_scenario_demonstrates_weekly_vs_total`
-  以 `_highlighted_rows(records_sheet) == [21, 22, 23, 24]` 明確斷言
+  以 `_highlighted_rows(records_sheet) == [18, 19, 20]` 明確斷言
   的同一個觀察（design.md §3.7.3、§4.7.7）。
 
 ## 重跑／重置

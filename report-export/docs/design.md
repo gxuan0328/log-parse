@@ -6,7 +6,7 @@
 >
 > 本文件描述 `report-export` **目前實際的**系統設計；全部數值錨點已對
 > `report-export/template/連線紀錄模板.xlsx`（2.3MB、5 sheets）與
-> `report-export/template/source-log.csv`（25 資料列）逐一實測驗證，並
+> `report-export/template/source-log.csv`（22 資料列）逐一實測驗證，並
 > 對照 `src/report_export/` 原始碼確認一致。CLI 使用方式見
 > [`usage.md`](usage.md)；逐欄型別/格式契約見
 > [`data-fidelity.md`](data-fidelity.md)；快速上手見
@@ -59,7 +59,7 @@ Python 3.12.12、openpyxl 3.1.5、Docker 可用；openpyxl 純 Python（相依 e
 
 #### 1.5.1 列數流（e2e 不變量）
 
-25 輸入列（NORMAL 19 / ORPHAN 1 / UNVERIFIED 5）→ `調閱紀錄` **19** 列 → `院所分析` **11** 個唯一 CLIENT IP。
+22 輸入列（NORMAL 16 / ORPHAN 1 / UNVERIFIED 5）→ `調閱紀錄` **16** 列 → `院所分析` **10** 個唯一 CLIENT IP。
 
 #### 1.5.2 院所分析（實測，首見序）
 
@@ -71,17 +71,16 @@ Python 3.12.12、openpyxl 3.1.5、Docker 可用；openpyxl 純 Python（相依 e
 | 4 | 10.238.3.1 | 1532061065 | 大園敏盛 | 1 |
 | 5 | 10.241.189.173 | 3831014971 | 晨軒中醫 | 1 |
 | 6 | 10.241.93.164 | 1111060015 | 基隆長庚 | 1 |
-| 7 | 192.168.117.104 | 3501200000 | 臺北虛擬診 | **3** |
-| 8 | 10.251.166.61 | 3505070032 | 誼仁診所 | 1 |
-| 9 | 10.245.1.125 | 0937010019 | 秀傳醫院 | **7** |
-| 10 | 10.245.11.141 | 1137080017 | 彰基二林醫 | 1 |
-| 11 | 10.238.23.241 | 1503190020 | 長安醫院 | 1 |
+| 7 | 10.251.166.61 | 3505070032 | 誼仁診所 | 1 |
+| 8 | 10.245.1.125 | 0937010019 | 秀傳醫院 | **7** |
+| 9 | 10.245.11.141 | 1137080017 | 彰基二林醫 | 1 |
+| 10 | 10.238.23.241 | 1503190020 | 長安醫院 | 1 |
 
-COUNT = `[1,1,1,1,1,1,3,1,7,1,1]`，合計 **19**。`10.243.129.44` COUNT=1 證明 ORPHAN（row7，共用同一 IP）被排除；若誤含則變 2。
+COUNT = `[1,1,1,1,1,1,1,7,1,1]`，合計 **16**。`10.243.129.44` COUNT=1 證明 ORPHAN（row7，共用同一 IP）被排除；若誤含則變 2。
 
 > 院所分析將模板單一 COUNT 欄拆為兩欄：`TOTAL ACCESS`（= 全 state 該 IP
 > 列數，即上表數值本身）與 `WEEKLY ACCESS`（= 最新批次該 IP 列數）。
-> E2E-1 為單一批次（全 19 列 BATCH_ID=1）首次執行，故 WEEKLY == TOTAL ==
+> E2E-1 為單一批次（全 16 列 BATCH_ID=1）首次執行，故 WEEKLY == TOTAL ==
 > 上表數值、**無** `-` 出現；多批次情境（WEEKLY 只計最新批次、older-only
 > IP WEEKLY 顯示 `-`）見 §7.2 E2E-3/E2E-7。
 
@@ -124,7 +123,7 @@ A2 `fill_type=None`（無填色）——theme9/tint0.8 solid fill 屬**表頭**�
 
 #### 1.5.6 輸入精度與換行（實測）
 
-- `source-log.csv` 為**完整精度**（`2026-07-05 16:03:34.359`），**非** mm:ss.d 失真版 → 可直接作 e2e 輸入 fixture；輸入契約即完整精度 analyze_access 輸出。此檔（25 列、**CRLF、無 BOM、末列無換行**）為入庫基線之一（見 §4.7.7）。
+- `source-log.csv` 為**完整精度**（`2026-07-05 16:03:34.359`），**非** mm:ss.d 失真版 → 可直接作 e2e 輸入 fixture；輸入契約即完整精度 analyze_access 輸出。此檔（22 列、**CRLF、無 BOM、末列無換行**）為入庫基線之一（見 §4.7.7）。
 - `source-log.csv` 行尾為 **CRLF（\r\n）、無 BOM**（首 8 bytes = `REGION,S`）。故讀檔須 `newline=''`（見 §3.2、§3.8 S3）。
 
 #### 1.5.7 BIRTHDAY 型別
@@ -230,7 +229,7 @@ state 存原始 app_time 字串避免浮點漂移、`PYTHONHASHSEED=0`）｜最�
 | M | PATIENT_ID_AES | TEXT hex32（加密） | → PATIENT ID AES |
 | N | BIRTHDAY | **TEXT** `YYYYMMDD`(8) 如 `19560711` | → BIRTHDAY |
 
-> 驗證：25 列 STATUS = NORMAL 19 / ORPHAN 1 / UNVERIFIED 5；25 列 REQUEST_ID 全唯一。dash（`-`）APP_TIME 僅出現於非 NORMAL 列 → **先過濾 NORMAL 再解析 APP_TIME** 可避開全部 dash 解析錯誤。
+> 驗證：22 列 STATUS = NORMAL 16 / ORPHAN 1 / UNVERIFIED 5；22 列 REQUEST_ID 全唯一。dash（`-`）APP_TIME 僅出現於非 NORMAL 列 → **先過濾 NORMAL 再解析 APP_TIME** 可避開全部 dash 解析錯誤。
 >
 > **TEXT 理由分類（資料保真）**：HOSP_ID = 前導零顯著（531 鍵）。PRSN_ID / PATIENT_ID_AES = hex32，可含前導零 hex 位、須 TEXT。BIRTHDAY = **防數值/日期強制轉型**（YYYYMMDD 永為 19xx/20xx、無前導零；模板 紀錄匯入 N 為 int），對齊模板 調閱紀錄 之字串輸出。CLIENT_IP / REQUEST_ID 含點/破折號、本質非數值，仍以 TEXT 儲存。
 
@@ -325,7 +324,7 @@ key_len_hist, dup_keys, blank_abbr, tool_version}`）→ **fail-loud 驗證
 
 #### 3.4.1 為何用 REQUEST_ID
 
-落地驗證：source-log 25 列 REQUEST_ID 全唯一，標準 UUID(36) 不透明鍵
+落地驗證：source-log 22 列 REQUEST_ID 全唯一，標準 UUID(36) 不透明鍵
 （如 `40000930-0002-7a00-b63f-84710c7967bb`），天然去重鍵。**交付欄約
 束**：交付「調閱紀錄」9 欄**不含 REQUEST_ID**（模板 sheet 結構如
 此）；state 層把 REQUEST_ID 當**內部隱藏鍵**保留（records.csv 第 2
@@ -519,13 +518,13 @@ HOSP_ABBR, PRSN_ID, BIRTHDAY, PATIENT ID AES`。逐欄（實測可還原）：
   位數字字串、`-`（WEEKLY 無存取 sentinel）→ 1 碼、`None`（未命中
   HOSP_ABBR 回讀）→ 空字串。`display_width` 以
   `unicodedata.east_asian_width` 為 `W`/`F`（CJK/全形）者計 2、其餘
-  計 1（門諾醫院/臺北虛擬診等中文欄正確計寬）。此為每次執行依當下
+  計 1（門諾醫院/彰基二林醫等中文欄正確計寬）。此為每次執行依當下
   實際資料動態計算（非硬編常數）；標頭字串亦納入 max 比較，確保如
   「WEEKLY ACCESS」（13 碼）等寬表頭不被窄資料截斷。作為所有列都已
   寫入後的一次性 post-pass 套用；空（僅表頭）sheet 仍依表頭寬度取
   值。
 
-#### 3.7.4 Sheet 2「院所分析」（1 表頭 + 11 唯一 IP，依首見序；5 欄）
+#### 3.7.4 Sheet 2「院所分析」（1 表頭 + 10 唯一 IP，依首見序；5 欄）
 
 表頭 A1:E1：`CLIENT IP, HOSP_ID, HOSP_ABBR, WEEKLY ACCESS, TOTAL
 ACCESS`。
@@ -558,6 +557,7 @@ left/right/top=Side(style='thin'))`——粗下框線為強調，thin 三側為�
 格同時存在。欄寬依現有資料＋表頭字串顯示寬度每次執行自動 auto-fit
 （見 §3.7.3 公式），非硬編常數；freeze_panes/auto_filter 不加。
 
+
 #### 3.7.6 保真檢核（產出後自我斷言，寫入 e2e 測試）
 
 回讀交付檔斷言：工作簿**恰 2 sheet、零公式**、無 紀錄匯入/格式轉換/
@@ -575,8 +575,8 @@ int）；未命中 HOSP_ABBR 回讀「空或 None」；WEEKLY/TOTAL 皆為 int
 表頭格 `alignment` 同上、`border.bottom.style=='thick'`、
 `border.left/right/top.style=='thin'`；黃底列同時具備 fill
 `FFFFFF00`、四面 thin 框線、置中對齊（三者互不排斥）；各欄寬等於
-§3.7.3 公式之預期值（E2E-1 錨點：調閱紀錄 A=12.0 B=9.6 C=18.0 D=12.0
-E=12.0 F=12.0 G=38.4 H=9.6 I=38.4；院所分析 A=18.0 B=12.0 C=12.0
+§3.7.3 公式之預期值（E2E-1 錨點：調閱紀錄 A=12.0 B=9.6 C=16.8 D=12.0
+E=12.0 F=12.0 G=38.4 H=9.6 I=38.4；院所分析 A=16.8 B=12.0 C=12.0
 D=15.6 E=14.4——D=15.6 係因表頭「WEEKLY ACCESS」顯示寬度 13 主導單位
 數資料，正是「表頭納入 max」設計理由的具體例證）。
 
@@ -680,9 +680,9 @@ state 重生並正確標最新批次黃底）即可復原，無需任何特殊�
 
 ```json
 {"batch_seq":1,"deliverable":".../2026-07-15_連線紀錄.xlsx","dropped_nonnormal":6,
- "input":".../week.csv","input_sha256":"...","new_records":19,"normal":19,
- "rows_in":25,"run_date":"2026-07-15","skipped_cross_state":0,
- "skipped_intra_batch":0,"state_total":19,"unique_ips":11,
+ "input":".../week.csv","input_sha256":"...","new_records":16,"normal":16,
+ "rows_in":22,"run_date":"2026-07-15","skipped_cross_state":0,
+ "skipped_intra_batch":0,"state_total":16,"unique_ips":10,
  "unknown_status_skipped":0,"unmapped_hosp_ids":0}
 ```
 
@@ -955,14 +955,14 @@ compose（選配）」一節）。
 - **入庫（可追溯基線）**：
   - `template/連線紀錄模板.xlsx` — 來源模板 + 93,781 列 HOSP 參考之
     來源；
-  - `template/source-log.csv` — e2e 輸入 fixture（25 列、CRLF、無
+  - `template/source-log.csv` — e2e 輸入 fixture（22 列、CRLF、無
     BOM）；
   - `reference/hosp_id_map.csv.gz` + `hosp_id_map.manifest.json` —
     由模板匯出之查表；
   - **建置期產生之預期輸出 fixtures**（各階段產生的 expected
     records.csv / 交付 xlsx 值快照等）亦入庫，作為回歸基準；
   - **可重複示範 fixtures**：`docker/example/state/records.csv`
-    （seed state，19 列 batch1，位元組同
+    （seed state，16 列 batch1，位元組同
     `expected_records_e2e1.csv`）+
     `docker/example/input/week-2026-07-13.csv`（this-week 14 欄
     CRLF 輸入）——可重複示範三種 WEEKLY ACCESS 情形（brand-new
@@ -1049,34 +1049,34 @@ CI 階段（對齊 lint→test→analyze→build→deploy）：`ruff`(lint) →
 ### 7.1 單元測試
 
 - `test_csv_reader`：14 欄標題精確比對（錯序/缺欄/多欄→exit 2）；欄數不符→帶行號；**CRLF 輸入以 `newline=''` 讀取、最後一欄不得殘留 `\r`**；utf-8-sig BOM 容忍；引號內逗號；STATUS 未知值→WARN+skip。
-- `test_transform`：NORMAL 過濾（25→19）；**大小寫不敏感（`Normal`/`normal`/`NORMAL` 皆納入，對齊 Excel `=`）**；投影對映；APP_TIME `…34.359`→`datetime(…,359000)`，相容無毫秒；NORMAL 列 APP_TIME=`-`→exit 2；前導零 `0937010019` 維持 str。
+- `test_transform`：NORMAL 過濾（22→16）；**大小寫不敏感（`Normal`/`normal`/`NORMAL` 皆納入，對齊 Excel `=`）**；投影對映；APP_TIME `…34.359`→`datetime(…,359000)`，相容無毫秒；NORMAL 列 APP_TIME=`-`→exit 2；前導零 `0937010019` 維持 str。
 - `test_lookup`：`0937010019`→`秀傳醫院`、`3501200000`→`臺北虛擬診`；未命中→`""`；前導零鍵；gz 載入。
 - `test_dedup`：跨 state / 批次內重複→WARN+skip；重跑同輸入→0 新增。（無 fail 模式。）
 - `test_state`：寫→讀往返（APP_TIME_ISO 毫秒不漂移）；**尾列完整性：寫入後尾列 records/sha 相符；竄改 body→情況4 復原/exit 3；尾列缺失→情況3 WARN+補寫（非致命）**；原子寫入（tmp→replace、產 .bak）；**空 state 起步（無 records.csv → existing=[]、max_batch_seq=0）**；首批 `BATCH_ID=1`；權限 0600/0700；殘留 .tmp 清理；**flock 不可用時 O_CREAT|O_EXCL 備援 + stale 偵測**。
-- `test_aggregate`：11 唯一 IP、首見序 == 模板 A2:A12；單一批次（全 BATCH_ID=1）WEEKLY==TOTAL==`[1,1,1,1,1,1,3,1,7,1,1]` 合計 19；多批次時 WEEKLY 只計 `max(BATCH_ID)` 之列、older-only IP `weekly_access==0`、latest-batch 新 IP `weekly_access==total_access`；first-HOSP 取自調閱紀錄自身；多 HOSP_ID 之 IP→WARN + 取首見。
+- `test_aggregate`：10 唯一 IP、首見序 == 模板 A2:A11；單一批次（全 BATCH_ID=1）WEEKLY==TOTAL==`[1,1,1,1,1,1,1,7,1,1]` 合計 16；多批次時 WEEKLY 只計 `max(BATCH_ID)` 之列、older-only IP `weekly_access==0`、latest-batch 新 IP `weekly_access==total_access`；first-HOSP 取自調閱紀錄自身；多 HOSP_ID 之 IP→WARN + 取首見。
 - `test_xlsx_writer`：A2==B2 datetime（非浮點序列 repr）；`'yyyy' in A2.number_format`、`'h:mm' in B2.number_format`；ID 欄回讀 str；**未命中 HOSP_ABBR 回讀空或 None**；WEEKLY/TOTAL int；`weekly_access==0` → 回讀 `-`（str, `@`）；表頭 5 欄（`CLIENT IP, HOSP_ID, HOSP_ABBR, WEEKLY ACCESS, TOTAL ACCESS`）；黃底 `FFFFFF00`、僅 `batch_id==max(BATCH_ID)` 列、其餘列無 fill；恰 2 sheet、零公式；表頭字面精確；**同日不同 input_sha256 → 檔名加序號**；全格置中、資料格四面 thin 框線、表頭 thick 下框線（+thin 左右上）、欄寬 auto-fit（依 §3.7.3 公式，於代表性資料上核對 E2E-1 錨點欄寬）。
 - `test_logging`：stdout 為單一 JSON 摘要、stderr 為結構化日誌（**stream 分離**）；log record 型別/欄位正確。
 - `test_pipeline` / `test_cli`：退出碼對應各例外；stdout JSON 欄位齊全；**內部 `run_date` 注入決定檔名**；精瘦 CLI 僅接受 INPUT/`--state-dir`/`--out-dir`（未知旗標→exit 1）。
 
 ### 7.2 端對端（驗收）測試
 
-- **E2E-1（複現落地結果；空 state 首次執行）**：空 state + `INPUT=fixtures/source-log.csv`(25) → state 19 列（皆 `BATCH_ID=1`）；交付 調閱紀錄 19 資料列**全黃底**（皆最新批次）；院所分析 11 IP、WEEKLY 欄==TOTAL 欄==`[1,1,1,1,1,1,3,1,7,1,1]` 皆合計 19、無 `-`（單一批次 → WEEKLY==TOTAL）、秀傳醫院=7、臺北虛擬診=3、`10.243.129.44`=1（**證 ORPHAN 排除**）；全格置中、資料格四面 thin 框線、表頭 thick 下框線、欄寬 auto-fit（§3.7.6 錨點數值）。
-- **E2E-2（冪等）**：重跑同輸入 → 0 新增、19 dup 警告、state **尾列/位元不變**；兩次交付檔「儲存格值 + data_type + number_format + fill」**相等**（非 bytes，因 xlsx zip/docProps 時戳非位元組確定），黃底皆落該單一批次 19 列。
-- **E2E-3（新批次；per-run 黃底重置；新增 `-` 案例）**：於 E2E-1 之 state（19 列 batch1）後，ingest N=3 筆全新 REQUEST_ID（`batch_new.csv`）→ state 19+3=22（新列 `BATCH_ID=2`）→ 交付**恰 3 列黃底（batch2）、19 列 batch1 無 fill**；院所分析重算為 12 IP：TOTAL 10.245.1.125==8、192.168.117.104==4、10.250.77.10==1；WEEKLY（該批各 IP 恰 1 列）10.245.1.125==1、192.168.117.104==1、10.250.77.10==1；older-only IP（如 `10.243.129.44`）本批 0 列 → WEEKLY render `-`；brand-new `10.250.77.10` → hosp `1301170017`/`台北醫大`。
-- **E2E-4（重匯重疊）**：於 E2E-3 後，再餵 source-log(19) → 19 皆去重 → state 不變、交付黃底仍落**最新真實批次（batch2 的 N 列）**、重匯的 19 不高亮。
+- **E2E-1（複現落地結果；空 state 首次執行）**：空 state + `INPUT=fixtures/source-log.csv`(22) → state 16 列（皆 `BATCH_ID=1`）；交付 調閱紀錄 16 資料列**全黃底**（皆最新批次）；院所分析 10 IP、WEEKLY 欄==TOTAL 欄==`[1,1,1,1,1,1,1,7,1,1]` 皆合計 16、無 `-`（單一批次 → WEEKLY==TOTAL）、秀傳醫院=7、`10.243.129.44`=1（**證 ORPHAN 排除**）；全格置中、資料格四面 thin 框線、表頭 thick 下框線、欄寬 auto-fit（§3.7.6 錨點數值）。
+- **E2E-2（冪等）**：重跑同輸入 → 0 新增、16 dup 警告、state **尾列/位元不變**；兩次交付檔「儲存格值 + data_type + number_format + fill」**相等**（非 bytes，因 xlsx zip/docProps 時戳非位元組確定），黃底皆落該單一批次 16 列。
+- **E2E-3（新批次；per-run 黃底重置；新增 `-` 案例）**：於 E2E-1 之 state（16 列 batch1）後，ingest N=2 筆全新 REQUEST_ID（`batch_new.csv`）→ state 16+2=18（新列 `BATCH_ID=2`）→ 交付**恰 2 列黃底（batch2）、16 列 batch1 無 fill**；院所分析重算為 11 IP：TOTAL 10.245.1.125==8、10.250.77.10==1；WEEKLY（該批各 IP 恰 1 列）10.245.1.125==1、10.250.77.10==1；older-only IP（如 `10.243.129.44`）本批 0 列 → WEEKLY render `-`；brand-new `10.250.77.10` → hosp `1301170017`/`台北醫大`。
+- **E2E-4（重匯重疊）**：於 E2E-3 後，再餵 source-log(16) → 16 皆去重 → state 不變、交付黃底仍落**最新真實批次（batch2 的 N 列）**、重匯的 16 不高亮。
 - **E2E-5（交付檔重建）**：ingest 一批成功提交 state 後，模擬交付檔遺失，**以最近輸入重跑**（去重 0 新增）→ 交付檔由 state 重生、正確高亮最新批次（無特殊旗標）。
 - **E2E-6（crash-tolerant state）**：手動使 records.csv 尾列與 body 不一致（模擬 manifest-lag 舊模型）→ 驗證載入**不 brick**、循情況 3/4 復原。
-- **E2E-7（docker/example 可重複示範）**：載入 `docker/example/state`（複製至 tmp，保持入庫檔案不變）+ 餵 `docker/example/input/week-2026-07-13.csv`（4 列，其中 2 列 IP 為既有 `10.245.1.125`、1 列 IP 為既有 `192.168.117.104`、1 列為全新 IP `10.250.77.10`）→ 12 IP、`state_total` 23、`unique_ips` 12、`batch_seq` 2；WEEKLY render=`['-'×6, 1, '-', 2, '-', '-', 1]`、TOTAL=`[1×6, 4, 1, 9, 1, 1, 1]`；三種 WEEKLY 情形（brand-new weekly==total、overlap weekly<total、older-only weekly=`-`）齊備於同一次執行，且可無限次重複執行（seed 檔案不受測試影響）。
-- **不變量**：`transform(source-log NORMAL)` == 預期 19 筆 StateRecord。
+- **E2E-7（docker/example 可重複示範）**：載入 `docker/example/state`（複製至 tmp，保持入庫檔案不變）+ 餵 `docker/example/input/week-2026-07-13.csv`（3 列，其中 2 列 IP 為既有 `10.245.1.125`、1 列為全新 IP `10.250.77.10`）→ 11 IP、`state_total` 19、`unique_ips` 11、`batch_seq` 2；WEEKLY render=`['-'×7, 2, '-', '-', 1]`、TOTAL=`[1×7, 9, 1, 1, 1]`；三種 WEEKLY 情形（brand-new weekly==total、overlap weekly<total、older-only weekly=`-`）齊備於同一次執行，且可無限次重複執行（seed 檔案不受測試影響）。
+- **不變量**：`transform(source-log NORMAL)` == 預期 16 筆 StateRecord。
 
 ### 7.3 fixtures（`tests/fixtures/`）
 
-以入庫基線 `template/source-log.csv`（25 列、**CRLF、無 BOM**）為主
+以入庫基線 `template/source-log.csv`（22 列、**CRLF、無 BOM**）為主
 e2e 輸入（可直接引用或複製至 fixtures）；另備 `hosp_map_small.csv`
 （含 `0937010019` 與一未命中鍵）、`batch_new.csv`（全新
 REQUEST_ID，供 E2E-3）、`empty.csv`（僅表頭）、`all_nonnormal.csv`
 （僅 ORPHAN/UNVERIFIED）、`status_mixed_case.csv`（含
-`Normal`/`normal` 驗大小寫不敏感）。**建置期產生之預期輸出
+`NORMAL`/`normal` 驗大小寫不敏感）。**建置期產生之預期輸出
 fixtures**（expected records.csv、交付值快照）入庫作回歸基準（見
 §4.7.7）。**決定論**：內部注入固定 `run_date`；斷言儲存格值集合而
 非 bytes。

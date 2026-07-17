@@ -489,28 +489,28 @@ def test_real_template_input_produces_anchor_state_and_report(tmp_path: Path) ->
 
     summary = pipeline.run(config, run_date=date(2026, 7, 15), reference_path=_REAL_REFERENCE)
 
-    assert summary.rows_in == 25
-    assert summary.normal == 19
+    assert summary.rows_in == 22
+    assert summary.normal == 16
     assert summary.dropped_nonnormal == 6
-    assert summary.new_records == 19
-    assert summary.state_total == 19
-    assert summary.unique_ips == 11
+    assert summary.new_records == 16
+    assert summary.state_total == 16
+    assert summary.unique_ips == 10
     assert summary.batch_seq == 1
 
     workbook = load_workbook(summary.deliverable)
     agg_sheet = workbook["院所分析"]
-    counts = [row[3].value for row in agg_sheet.iter_rows(min_row=2, max_row=12)]
-    assert counts == [1, 1, 1, 1, 1, 1, 3, 1, 7, 1, 1]
-    assert sum(counts) == 19
+    counts = [row[3].value for row in agg_sheet.iter_rows(min_row=2, max_row=11)]
+    assert counts == [1, 1, 1, 1, 1, 1, 1, 7, 1, 1]
+    assert sum(counts) == 16
 
     shuchuan = next(
-        row for row in agg_sheet.iter_rows(min_row=2, max_row=12) if row[1].value == "0937010019"
+        row for row in agg_sheet.iter_rows(min_row=2, max_row=11) if row[1].value == "0937010019"
     )
     assert shuchuan[2].value == "秀傳醫院"
     assert shuchuan[3].value == 7
 
     records_sheet = workbook["調閱紀錄"]
-    assert records_sheet.max_row == 20  # header + 19 NORMAL rows
-    # All 19 rows are batch 1 (the only batch) -> all highlighted.
-    for row_idx in range(2, 21):
+    assert records_sheet.max_row == 17  # header + 16 NORMAL rows
+    # All 16 rows are batch 1 (the only batch) -> all highlighted.
+    for row_idx in range(2, 18):
         assert records_sheet[f"A{row_idx}"].fill.patternType == "solid"

@@ -44,12 +44,12 @@ def _row(line_no: int = 2, **overrides: str) -> tuple[int, InputRow]:
 # --------------------------------------------------------------------
 
 
-def test_real_fixture_filters_25_rows_down_to_19_normal() -> None:
-    # design.md §1.5.1 e2e row-count anchor: 25 input rows -> 19 NORMAL.
+def test_real_fixture_filters_22_rows_down_to_16_normal() -> None:
+    # design.md §1.5.1 e2e row-count anchor: 22 input rows -> 16 NORMAL.
     all_rows, _ = csv_reader.read(SOURCE_LOG_PATH)
-    assert len(all_rows) == 25
+    assert len(all_rows) == 22
     normal_rows = transform.filter_normal(all_rows)
-    assert len(normal_rows) == 19
+    assert len(normal_rows) == 16
 
 
 def test_filter_normal_keeps_only_normal_rows() -> None:
@@ -170,15 +170,15 @@ def test_project_is_pure_does_not_mutate_hosp_table() -> None:
 
 
 # --------------------------------------------------------------------
-# End-to-end against the real 19 NORMAL rows (design.md §7.2 invariant)
+# End-to-end against the real 16 NORMAL rows (design.md §7.2 invariant)
 # --------------------------------------------------------------------
 
 
-def test_real_fixture_all_19_normal_rows_project_without_error() -> None:
+def test_real_fixture_all_16_normal_rows_project_without_error() -> None:
     all_rows, _ = csv_reader.read(SOURCE_LOG_PATH)
     normal_rows = transform.filter_normal(all_rows)
     result = transform.project(normal_rows, hosp_table={})
-    assert len(result) == 19
+    assert len(result) == 16
 
 
 def test_real_fixture_orphan_row_excluded_before_project() -> None:

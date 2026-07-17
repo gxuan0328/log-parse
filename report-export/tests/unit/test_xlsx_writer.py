@@ -383,15 +383,15 @@ def test_column_widths_match_e2e1_anchors_on_a_representative_state() -> None:
     # design.md §3.7.3/§3.7.4 REQ1d: width = round(max(display_width(header),
     # max(display_width(rendered data))) * 1.2, 2). A SINGLE record/row
     # whose fields already hit the same per-column maxima as the real
-    # 19-row/11-IP E2E-1 anchor state (design.md §1.5.1/§1.5.2) reproduces
+    # 16-row/10-IP E2E-1 anchor state (design.md §1.5.1/§1.5.2) reproduces
     # the EXACT same widths, since max() over a superset can never
     # exceed max() over a subset that already holds the maximal value.
     record = _record(
-        client_ip="192.168.117.104",  # longest CLIENT_IP/SERVER_IP-column IP (15 chars)
-        hosp_abbr="臺北虛擬診",  # widest HOSP_ABBR in the anchor dataset (5 CJK = 10)
+        client_ip="10.241.189.173",  # longest CLIENT_IP/SERVER_IP-column IP (14 chars)
+        hosp_abbr="彰基二林醫",  # widest HOSP_ABBR in the anchor dataset (5 CJK = 10)
     )
     report_row = _report_row(
-        client_ip="192.168.117.104", hosp_abbr="臺北虛擬診", weekly_access=1, total_access=1
+        client_ip="10.241.189.173", hosp_abbr="彰基二林醫", weekly_access=1, total_access=1
     )
     workbook = xlsx_writer.build_workbook([record], [report_row])
 
@@ -399,10 +399,10 @@ def test_column_widths_match_e2e1_anchors_on_a_representative_state() -> None:
     expected_records_widths = {
         "A": 12.0,  # DATE: "YYYY-MM-DD" (10) * 1.2
         "B": 9.6,  # TIME: "HH:MM:SS" (8) * 1.2
-        "C": 18.0,  # CLIENT IP: "192.168.117.104" (15) * 1.2
+        "C": 16.8,  # CLIENT IP: "10.241.189.173" (14) * 1.2
         "D": 12.0,  # SERVER IP: "10.21.3.35" (10) * 1.2
         "E": 12.0,  # HOSP_ID: 10-digit string * 1.2
-        "F": 12.0,  # HOSP_ABBR: "臺北虛擬診" (width 10) * 1.2
+        "F": 12.0,  # HOSP_ABBR: "彰基二林醫" (width 10) * 1.2
         "G": 38.4,  # PRSN_ID: hex32 (32) * 1.2
         "H": 9.6,  # BIRTHDAY: "19560711" (8) * 1.2
         "I": 38.4,  # PATIENT ID AES: hex32 (32) * 1.2
@@ -412,7 +412,7 @@ def test_column_widths_match_e2e1_anchors_on_a_representative_state() -> None:
 
     agg_sheet = workbook["院所分析"]
     expected_agg_widths = {
-        "A": 18.0,  # CLIENT IP: same 15-char IP * 1.2
+        "A": 16.8,  # CLIENT IP: same 14-char IP * 1.2
         "B": 12.0,  # HOSP_ID: 10-digit string * 1.2
         "C": 12.0,  # HOSP_ABBR: width 10 * 1.2
         "D": 15.6,  # WEEKLY ACCESS: header "WEEKLY ACCESS" (13) * 1.2 (dominates 1-digit data)

@@ -28,7 +28,7 @@ def _record(
     )
 
 
-# design.md §1.5.2: the 19 NORMAL rows of template/source-log.csv, in
+# design.md §1.5.2: the 16 NORMAL rows of template/source-log.csv, in
 # first-seen CLIENT_IP order -- this module's landed anchor values.
 _ANCHOR_TABLE: tuple[tuple[str, str, str, int], ...] = (
     ("10.243.129.44", "1145010038", "門諾醫院", 1),
@@ -37,7 +37,6 @@ _ANCHOR_TABLE: tuple[tuple[str, str, str, int], ...] = (
     ("10.238.3.1", "1532061065", "大園敏盛", 1),
     ("10.241.189.173", "3831014971", "晨軒中醫", 1),
     ("10.241.93.164", "1111060015", "基隆長庚", 1),
-    ("192.168.117.104", "3501200000", "臺北虛擬診", 3),
     ("10.251.166.61", "3505070032", "誼仁診所", 1),
     ("10.245.1.125", "0937010019", "秀傳醫院", 7),
     ("10.245.11.141", "1137080017", "彰基二林醫", 1),
@@ -60,9 +59,9 @@ def _anchor_full_state() -> list[StateRecord]:
 # --------------------------------------------------------------------
 
 
-def test_anchor_unique_ip_count_is_11() -> None:
+def test_anchor_unique_ip_count_is_10() -> None:
     rows = aggregate.build(_anchor_full_state())
-    assert len(rows) == 11
+    assert len(rows) == 10
 
 
 def test_anchor_first_seen_order_matches_template() -> None:
@@ -76,14 +75,14 @@ def test_anchor_counts_match_template() -> None:
     # ACCESS equals TOTAL ACCESS equals the old COUNT column for every
     # IP, and no "-" appears anywhere.
     rows = aggregate.build(_anchor_full_state())
-    assert [row.total_access for row in rows] == [1, 1, 1, 1, 1, 1, 3, 1, 7, 1, 1]
-    assert [row.weekly_access for row in rows] == [1, 1, 1, 1, 1, 1, 3, 1, 7, 1, 1]
+    assert [row.total_access for row in rows] == [1, 1, 1, 1, 1, 1, 1, 7, 1, 1]
+    assert [row.weekly_access for row in rows] == [1, 1, 1, 1, 1, 1, 1, 7, 1, 1]
 
 
-def test_anchor_counts_sum_to_19() -> None:
+def test_anchor_counts_sum_to_16() -> None:
     rows = aggregate.build(_anchor_full_state())
-    assert sum(row.total_access for row in rows) == 19
-    assert sum(row.weekly_access for row in rows) == 19
+    assert sum(row.total_access for row in rows) == 16
+    assert sum(row.weekly_access for row in rows) == 16
 
 
 def test_anchor_shuchuan_hospital_count_is_7() -> None:
@@ -92,14 +91,6 @@ def test_anchor_shuchuan_hospital_count_is_7() -> None:
     assert row.hosp_abbr == "秀傳醫院"
     assert row.total_access == 7
     assert row.weekly_access == 7
-
-
-def test_anchor_taipei_virtual_clinic_count_is_3() -> None:
-    rows = aggregate.build(_anchor_full_state())
-    [row] = [r for r in rows if r.hosp_id == "3501200000"]
-    assert row.hosp_abbr == "臺北虛擬診"
-    assert row.total_access == 3
-    assert row.weekly_access == 3
 
 
 def test_anchor_orphan_excluded_ip_count_is_1() -> None:
