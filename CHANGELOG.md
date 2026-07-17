@@ -7,7 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `conf/test_hosts.conf` — 4 additional internal/QA test-host IPs
+  added: `192.168.117.90`, `192.168.105.149`, `192.168.117.73`,
+  `192.168.117.104` (seed set now 7 total, up from 3). Pure config
+  addition — none of the 4 IPs appear anywhere in
+  `examples/sample-logs/`, so every baseline in `tests/run_tests.sh`
+  and `examples/sample-outputs/` is unaffected except J16
+  (`load_test_hosts` token-count assertion, updated 3 → 7; Tests
+  remain 275/275). Docs updated for EN/zh-TW parity: `docs/usage.md` +
+  `usage.zh-TW.md` (Test-host filtering section), `docs/design.md` +
+  `design.zh-TW.md` (§3.2.14 seeded-IP list).
+- `report-export` Docker runtime (`docker/Dockerfile`) now runs as
+  **root** by default: removed the `appuser` non-root user (UID/GID
+  10001 `ARG APP_UID`/`APP_GID`, `groupadd`/`useradd`, `USER`
+  directive). `docker run --user "$(id -u):$(id -g)"` is no longer
+  required or documented anywhere (`docker/docker-compose.yml`'s
+  `user:`/`DOCKER_UID`/`DOCKER_GID` removed too); host bind-mount
+  directories need no special ownership regardless of caller uid.
+  Trade-off: files the container writes to the host (`state/`,
+  `output/`) are now root-owned — use `sudo` to remove/edit them from
+  the host side. `docs/usage.md`'s former "HOST 權限前置條件" (HIGH)
+  section is replaced by a short "HOST 權限說明" note covering this.
+  `ENV HOME=/tmp` retained (pairs with optional `--tmpfs /tmp`).
+  Docs updated: `docs/usage.md`, `docs/design.md` (§4.6, §4.7 intro,
+  §4.7.3, §4.7.4, §4.7.6, §5 — section numbers unchanged, content
+  only), `README.md`, `docker/example/README.md`. No `src/*.py` or
+  fixture changes — tool logic, tests (391/391), and coverage
+  unaffected.
+
 ### Added
+- `report-export` — documented production run example: a copy-paste
+  `docker run` / `docker compose run` recipe against a
+  `production/{input,state,output}` directory tree (CWD =
+  `report-export/`), covered in `docs/usage.md`「正式運行
+  （production）」and `README.md`「正式運行（production）」.
+  `production/state` must stay the same directory across weeks
+  (canonical state accumulates there); the deliverable lands in
+  `production/output`; an operator may substitute any absolute path
+  for `production/`. `report-export/.gitignore` gains a `production/`
+  rule (real, root-written runtime data — never committed).
 - `analyze_overview` — single-day 存取紀錄橫條圖 (每小時) bar chart rendered
   after 核心功能存取合計 in 總體概況 (global) and after each per-region
   category block in 分區別, using `agg_access_records` HOUR rows emitted by

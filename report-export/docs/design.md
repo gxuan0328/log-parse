@@ -793,9 +793,9 @@ R8）。
 - **檔案權限衛生（least privilege）**：state_dir/out_dir 以 0700 目
   錄、0600 檔（`umask 077`）建立——僅一般權限衛生，非資料敏感度驅
   動。
-- **最小攻擊面**：非 root、root fs 可選唯讀、`--tmpfs /tmp`（選配硬
-  化）；依賴僅 openpyxl（`--require-hashes` 釘選含 et_xmlfile，供應
-  鏈完整性）；**無 pickle/eval/動態反序列化**（僅 csv/json，防
+- **最小攻擊面**：root fs 可選唯讀、`--tmpfs /tmp`（選配硬化）；依
+  賴僅 openpyxl（`--require-hashes` 釘選含 et_xmlfile，供應鏈完整
+  性）；**無 pickle/eval/動態反序列化**（僅 csv/json，防
   CWE-502）；CI trivy 掃描、基底 digest pin。
 - **路徑校驗**：正規化並校驗所有路徑引數（防 CWE-22）。
 - **交付檔精簡**：交付檔刻意排除 93k 主檔與 紀錄匯入/格式轉換
@@ -807,7 +807,8 @@ R8）。
 
 ### 4.7 Docker 封裝與部署
 
-所有依賴入映像、主機零安裝；精簡、非 root、無網路、批次一次性。
+所有依賴入映像、主機零安裝；精簡、root 執行（簡化 host 權限管理）、
+無網路、批次一次性。
 
 #### 4.7.1 基底映像與多階段建置
 
@@ -851,33 +852,29 @@ openpyxl 純 Python → 不需編譯工具。選項（文件註記）：
 
 #### 4.7.3 寫入權限可攜性
 
-映像內建非 root 使用者，固定 UID（預設 `10001`）。若 host 上的
-`state_dir`/`out_dir` 目錄是**全新建立**、由呼叫者（host 使用者）擁
-有，容器內 UID `10001` 對這兩個目錄**沒有寫入權限**——第一次寫
-`records.csv`／交付 xlsx 就會失敗（exit 5）。這是典型「在開發機
-（bind mount 權限寬鬆）可跑、在正式主機開箱即失敗」陷阱。
+映像**以 root 執行**（無 `USER` 指令；見 §4.7.4）。root 對任何 host
+bind-mount 目錄皆有寫入權限，不論該目錄是否為呼叫者（host 使用者）
+全新建立——不存在「容器內建 UID 對新建目錄沒有寫入權限」的 exit 5
+陷阱，因此不再需要 `docker run --user "$(id -u):$(id -g)"`，也不再
+需要 `APP_UID`/`APP_GID` build-arg 調整。
 
-修正：
+代價與因應：
 
-1. **所有 `docker run` 範例預設 `--user "$(id -u):$(id -g)"`**——程
-   序以掛載目錄的擁有者身分執行，host 目錄可寫，產出檔亦歸操作
-   者。
-2. UID/GID 以 build-arg `APP_UID`/`APP_GID`（預設 10001）可調，供標
-   準化服務帳號的站點。
-3. 因 `--user` 可能對映無 `/etc/passwd` entry 的 uid，映像設 `ENV
-   HOME=/tmp`；本工具不做 pwd lookup。主要 `docker run` 範例不帶
-   `--read-only`，`/tmp` 由容器一般 rw 根檔案系統即可寫（無需額外
-   `--tmpfs /tmp`）——`--tmpfs /tmp` 僅在站點自行加回 `--read-only`
-   （選配硬化，見 §4.7.4）時才需要，`ENV HOME=/tmp` 本身不變。
-4. named volume 情境：文件提供一次性 `docker run --user 0 ...
-   chown` 初始化步驟，或改用 `--user`。
-5. [`usage.md`](usage.md)「HOST 權限前置條件」一節明訂 host 權限前置
-   條件：`state_dir`/`out_dir` 須由執行 `--user` 指定之 uid 可寫。
+1. 容器寫入 host 的檔案（`state_dir`/`out_dir` 下的 `records.csv`、
+   交付 xlsx 等）**歸屬 root**，而非呼叫者的 uid/gid。host 端如需以
+   一般使用者身分刪除或編輯這些檔案，須 `sudo rm`／`sudo chown`。
+2. `ENV HOME=/tmp` 予以保留（見 §4.7.4）：即使 root 通常已有
+   `/etc/passwd` entry，此設定仍將任何附帶的 home-directory 寫入導
+   向可寫的 tmpfs，屬防禦性保留、無副作用，並在站點自行加回
+   `--read-only`（選配硬化，見 §4.7.4）時與 `--tmpfs /tmp` 搭配生
+   效。
+3. [`usage.md`](usage.md)「HOST 權限說明」一節說明此變更：所有
+   `docker run`／`docker compose run` 範例均**不再帶** `--user` 旗
+   標。
 
 #### 4.7.4 安全／確定性環境變數
 
-- 非 root：建 `appuser`(UID/GID `APP_UID`/`APP_GID`)、
-  `USER ${APP_UID}`（作為未給 `--user` 時的預設）。
+- **以 root 執行**（無 `USER` 指令；簡化部署，見 §4.7.3）。
 - `ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
   PYTHONHASHSEED=0 LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=Asia/Taipei
   HOME=/tmp`。
@@ -926,7 +923,7 @@ export HOST_INPUT_DIR=/path/to/your/input-dir    # 使用者自訂，僅需存�
 export HOST_STATE_DIR=/path/to/your/state-dir     # 使用者自訂，須跨週使用同一目錄
 export HOST_OUTPUT_DIR=/path/to/your/output-dir   # 使用者自訂
 
-docker run --rm --user "$(id -u):$(id -g)" \
+docker run --rm \
   -v "$HOST_INPUT_DIR:/data/input:ro" \
   -v "$HOST_STATE_DIR:/data/state" \
   -v "$HOST_OUTPUT_DIR:/data/output" \
@@ -934,22 +931,22 @@ docker run --rm --user "$(id -u):$(id -g)" \
   /data/input/week-2026-07-13.csv
 ```
 
-`--rm`（一次性批次語意）與 `--user "$(id -u):$(id -g)"`（host
-bind-mount 可寫性**必要**，見 §4.7.3）保留；`--network none`、
-`--read-only`、`--tmpfs /tmp`、`-e TZ=Asia/Taipei` 四個旗標預設不
-加——前三者純屬 defense-in-depth、對交付結果無功能性影響，
-`-e TZ=Asia/Taipei` 對已 `ENV TZ=Asia/Taipei` 的映像是冗餘的。容器內
-`--state-dir`/`--out-dir` 預設即 `/data/state`、`/data/output`（與掛
-載點一致），故無需傳旗標；每週只換輸入檔即可。
+`--rm`（一次性批次語意）保留。容器以 root 執行（見 §4.7.3），無需
+`--user` 旗標，host bind-mount 目錄不論擁有者為誰皆可寫入。
+`--network none`、`--read-only`、`--tmpfs /tmp`、`-e TZ=Asia/Taipei`
+四個旗標預設不加——前三者純屬 defense-in-depth、對交付結果無功能性
+影響，`-e TZ=Asia/Taipei` 對已 `ENV TZ=Asia/Taipei` 的映像是冗餘
+的。容器內 `--state-dir`/`--out-dir` 預設即 `/data/state`、
+`/data/output`（與掛載點一致），故無需傳旗標；每週只換輸入檔即可。
 
 > **選配硬化**（安全敏感站點可自行加回，預設不加）：
 > `--network none --read-only --tmpfs /tmp -e TZ=Asia/Taipei`。
 
 選配 `docker/docker-compose.yml` 預接卷
-（`HOST_INPUT_DIR`/`HOST_STATE_DIR`/`HOST_OUTPUT_DIR` +
-`DOCKER_UID`/`DOCKER_GID`，含 `--user` 對應設定；同樣不含上述四個
-硬化選項，見 [`usage.md`](usage.md)「docker compose（選配）」一
-節）。
+（`HOST_INPUT_DIR`/`HOST_STATE_DIR`/`HOST_OUTPUT_DIR`；容器以 root
+執行，compose 檔不含 `user:` 設定，無需 `DOCKER_UID`/`DOCKER_GID`；
+同樣不含上述四個硬化選項，見 [`usage.md`](usage.md)「docker
+compose（選配）」一節）。
 
 #### 4.7.7 封裝與版控界線
 
@@ -1006,8 +1003,8 @@ round-trip 行為、機器託管檔案警告，見 [`data-fidelity.md`](data-fid
 | 冪等重跑 | 相同輸入 → 0 新增、state 位元不變、交付檔等價 | §4.1 |
 | 同日多批消歧 | `input_sha256` 比對；不同→自動 `_NN`；相同→冪等覆寫 | §3.7.2 |
 | 交付檔重建 | 每 run 由 state 重生；復原＝重跑最近輸入 | §4.1 |
-| Docker 非 root | `APP_UID`/`APP_GID`（預設 10001），可 build-arg 覆寫 | §4.7.3 |
-| Host 可寫性 | `--user "$(id -u):$(id -g)"`（必要） | §4.7.3 |
+| Docker 以 root 執行 | 無 `USER` 指令，簡化部署（無 UID/GID 對映問題） | §4.7.4 |
+| Host 可寫性 | root 對任何 bind-mount 目錄皆可寫，無需 `--user` | §4.7.3 |
 | NAS 鎖降級因應 | flock 優先、O_CREAT\|O_EXCL 備援＋stale 偵測；主保證為作業層序列化 | §4.4 |
 | 供應鏈完整性 | `requirements.lock` 全套件 `--require-hashes` | §4.7.1 |
 | 依賴最小化 | 僅 openpyxl（+ et_xmlfile 傳遞相依） | §2.2 |

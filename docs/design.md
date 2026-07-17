@@ -1036,10 +1036,14 @@ Two pre-filters run at the read stage inside `agg_iis_rows` (in
    - `all` — keeps all rows regardless of IP (equivalent to no IP filter).
 
 **`conf/test_hosts.conf`** — one IPv4 per line, `#` comments allowed. The
-seeded IPs are `192.168.139.79`, `192.168.139.110`, `192.168.139.28`.
+seeded IPs are `192.168.139.79`, `192.168.139.110`, `192.168.139.28`,
+`192.168.117.90`, `192.168.105.149`, `192.168.117.73`, and `192.168.117.104`.
 `192.168.139.28` is the health-probe host (95.4% of IIS traffic is `/health`
 from this IP, which is already removed by filter 1). `192.168.139.110` is a
-QA host (209 business requests/week). Note: `192.168.139.119` is the
+QA host (209 business requests/week). The four `192.168.117.x`/`192.168.105.x`
+addresses are additional internal/QA test hosts with zero traffic in the
+bundled sample dataset — a pure config addition that does not shift any
+baseline. Note: `192.168.139.119` is the
 production gateway (712 business hits/week) and must **not** be in this file.
 
 The file is **required** on every `analyze_iis` / `analyze_access` run,

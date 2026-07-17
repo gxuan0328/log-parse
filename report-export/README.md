@@ -30,8 +30,8 @@
 bash/gawk CLI 共用任何程式碼或設定——兩者完全解耦，各自獨立執行。
 
 **PII**：關係人已確認本工具處理的所有欄位皆可正常操作與記錄，**不**含
-資料遮罩、靜態加密或合規緩解機制；安全姿態聚焦於一般工程衛生（非 root
-容器、唯讀根檔案系統、無網路、hash 鎖定依賴）。詳見
+資料遮罩、靜態加密或合規緩解機制；安全姿態聚焦於一般工程衛生（hash
+鎖定依賴；選配加回唯讀根檔案系統、無網路等硬化旗標）。詳見
 [`docs/design.md`](docs/design.md) §4.6。
 
 ---
@@ -63,9 +63,9 @@ cd report-export
 #    「參考主檔（HOSP_ID對照表）更新程序」）
 docker build -t report-export:1.0.0 -f docker/Dockerfile .
 
-# 2. 準備你自己的資料目錄（僅需一次；哪裡都可以，只要存在且可寫；
-#    務必由「將要執行 docker run 的你」建立，否則會撞上 host 權限前
-#    置條件，見 docs/usage.md「HOST 權限前置條件」）
+# 2. 準備你自己的資料目錄（僅需一次；哪裡都可以，只要存在即可；容
+#    器以 root 執行，目錄擁有者為誰皆可寫入，見 docs/usage.md「HOST
+#    權限說明」）
 export HOST_INPUT_DIR=/path/to/your/input-dir
 export HOST_STATE_DIR=/path/to/your/state-dir
 export HOST_OUTPUT_DIR=/path/to/your/output-dir
@@ -73,7 +73,7 @@ mkdir -p "$HOST_INPUT_DIR" "$HOST_STATE_DIR" "$HOST_OUTPUT_DIR"
 
 # 3. 每週：把本週輸入 CSV 放進 HOST_INPUT_DIR，然後一行指令
 cp /path/to/this-weeks-export.csv "$HOST_INPUT_DIR/week-2026-07-13.csv"
-docker run --rm --user "$(id -u):$(id -g)" \
+docker run --rm \
   -v "$HOST_INPUT_DIR:/data/input:ro" \
   -v "$HOST_STATE_DIR:/data/state" \
   -v "$HOST_OUTPUT_DIR:/data/output" \
@@ -81,11 +81,13 @@ docker run --rm --user "$(id -u):$(id -g)" \
   /data/input/week-2026-07-13.csv
 ```
 
-`--rm` 與 `--user "$(id -u):$(id -g)"` 是唯二功能性必要旗標（後者見
-docs/usage.md「HOST 權限前置條件」）；`--network none`/`--read-only`/
-`--tmpfs /tmp`/`-e TZ=Asia/Taipei` 四項純屬選配硬化（預設不加，映像已內建
+容器以 root 執行（docs/usage.md「HOST 權限說明」），`--rm` 是唯一功
+能性必要旗標；`--network none`/`--read-only`/`--tmpfs /tmp`/
+`-e TZ=Asia/Taipei` 四項純屬選配硬化（預設不加，映像已內建
 `TZ=Asia/Taipei`），安全敏感站點可自行加回，詳見
-[`docs/usage.md`](docs/usage.md)「每週單一指令執行」。
+[`docs/usage.md`](docs/usage.md)「每週單一指令執行」。**注意**：容
+器寫入 host 的檔案（`state/`、`output/`）歸屬 root，如需以一般使用
+者身分刪除／編輯請用 `sudo`。
 
 ### 開箱即用快速驗證（`docker/example`）
 
@@ -98,7 +100,7 @@ docs/usage.md「HOST 權限前置條件」）；`--network none`/`--read-only`/
 cd report-export/docker
 mkdir -p example/run/state example/run/output
 cp example/state/records.csv example/run/state/    # protect the committed seed
-docker run --rm --user "$(id -u):$(id -g)" \
+docker run --rm \
   -v "$PWD/example/input:/data/input:ro" \
   -v "$PWD/example/run/state:/data/state" \
   -v "$PWD/example/run/output:/data/output" \
@@ -116,6 +118,27 @@ docker run --rm --user "$(id -u):$(id -g)" \
 執行成功時 stdout 會印出一行 JSON 摘要（新增筆數、去重跳過數、唯一 IP
 數等），stderr 印出結構化日誌；exit code `0` 代表成功（詳見
 [`docs/usage.md`](docs/usage.md)「stdout 摘要」）。
+
+### 正式運行（production）
+
+固定用 `report-export/production/{input,state,output}` 目錄樹（CWD =
+`report-export/`）跑真實週資料，`production/` 可改用任何絕對路徑：
+
+```bash
+cd report-export
+mkdir -p production/input production/state production/output
+# 把本週 CSV 放進 production/input/
+docker run --rm --network none --read-only --tmpfs /tmp \
+  -v "$PWD/production/input:/data/input:ro" \
+  -v "$PWD/production/state:/data/state" \
+  -v "$PWD/production/output:/data/output" \
+  report-export:1.0.0 /data/input/week-YYYY-MM-DD.csv
+```
+
+`production/state` 須**跨週固定為同一目錄**（累積 canonical
+state）；交付檔落在 `production/output`；`production/` 存放真實資
+料，已 `.gitignore` 排除、不入庫。docker compose 形式與完整補充說
+明，見 [`docs/usage.md`](docs/usage.md)「正式運行（production）」。
 
 ---
 
@@ -142,7 +165,7 @@ scratch 則相反、已被 `.gitignore` 排除，見
 | 文件 | 內容 |
 |------|------|
 | [`docs/design.md`](docs/design.md) | 設計規格：系統概觀、架構、模組規格（資料模型、管線階段、CLI 契約）、橫切關注（冪等性、錯誤處理、日誌、並行、效能、安全、Docker）、能力矩陣、邊界案例、測試策略、已知限制。 |
-| [`docs/usage.md`](docs/usage.md) | **CLI 使用參考**：CLI 語法/選項/範例、stdout/stderr/結束碼、Docker 每週執行、host 權限前置條件、NAS 鎖注意事項、交付檔名規則、復原程序、參考主檔更新程序。 |
+| [`docs/usage.md`](docs/usage.md) | **CLI 使用參考**：CLI 語法/選項/範例、stdout/stderr/結束碼、Docker 每週執行、host 權限說明、NAS 鎖注意事項、交付檔名規則、復原程序、參考主檔更新程序。 |
 | [`docs/data-fidelity.md`](docs/data-fidelity.md) | 型別/格式契約逐欄對照表（輸入 14 欄 → state 10 欄 → 交付 9+5 欄）、TEXT/datetime/int 型別理由、落地錨點、openpyxl round-trip 行為、機器託管檔案警告。 |
 
 ---

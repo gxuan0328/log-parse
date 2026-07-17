@@ -84,7 +84,7 @@ mkdir -p "$HOST_INPUT_DIR" "$HOST_STATE_DIR" "$HOST_OUTPUT_DIR"
 
 # 每週：把本週輸入 CSV 放進 HOST_INPUT_DIR，然後一行指令
 cp /path/to/this-weeks-export.csv "$HOST_INPUT_DIR/week-2026-07-13.csv"
-docker run --rm --user "$(id -u):$(id -g)" \
+docker run --rm \
   -v "$HOST_INPUT_DIR:/data/input:ro" \
   -v "$HOST_STATE_DIR:/data/state" \
   -v "$HOST_OUTPUT_DIR:/data/output" \
@@ -94,9 +94,9 @@ docker run --rm --user "$(id -u):$(id -g)" \
 
 交付檔出現在 `$HOST_OUTPUT_DIR/{今日日期}_連線紀錄.xlsx`；
 `$HOST_STATE_DIR/records.csv` 累積本次新批次；stdout 印出一行 JSON
-摘要，stderr 印出結構化日誌。（`--rm` 與
-`--user "$(id -u):$(id -g)"` 為唯二功能性必要旗標，見下方「每週單一
-指令執行」；安全敏感站點的選配硬化旗標亦見同節。）
+摘要，stderr 印出結構化日誌。（容器以 root 執行，`--rm` 是唯一功能
+性必要旗標，見下方「每週單一指令執行」；安全敏感站點的選配硬化旗標
+亦見同節。）
 
 想不用準備自己的資料就先看看效果？見下方「開箱即用快速驗證」，直接用入庫
 的 `docker/example/` 固定 fixtures 跑一次。
@@ -165,7 +165,7 @@ docker run --rm --user "$(id -u):$(id -g)" \
 | `2` | `InputValidationError` | 輸入 CSV 驗證失敗：標題不符、欄數不符、編碼非 UTF-8、NORMAL 列缺/壞 APP_TIME、缺 APP_SERVER/CLIENT_IP。 | 檢視 stderr 錯誤訊息中的行號/欄名，修正上游輸出或本批輸入檔，重跑；state **未被異動**。 |
 | `3` | `StateIntegrityError` | `records.csv` 尾列完整性驗證失敗，且 `.bak` 復原也失敗（見下方「state 完整性問題」）。 | 依下方「state 完整性問題」手動排除；這是本工具最嚴重的失敗模式，需人工介入。 |
 | `4` | `LockBusyError` | `state_dir` 已被另一執行中的程序鎖住；**立即失敗，不等待、不重試**。 | 確認是否真有另一批次在跑（見下方「NAS 鎖與並行注意事項」）；若確定是殘留鎖，依下方「鎖被佔用」排除後重跑。 |
-| `5` | `WriteError` / `ReferenceError` | 交付檔或 state 寫入/IO 失敗（含 host 權限問題，見下方「HOST 權限前置條件」）；或 `reference/hosp_id_map.csv.gz` 缺失/不可讀/格式錯誤。 | 依「HOST 權限前置條件」或「交付檔遺失、被誤刪，或本次寫入失敗」排除；`reference/` 缺失通常代表映像建置不完整，需重建映像。 |
+| `5` | `WriteError` / `ReferenceError` | 交付檔或 state 寫入/IO 失敗（極少數情形與 host 權限有關，見下方「HOST 權限說明」）；或 `reference/hosp_id_map.csv.gz` 缺失/不可讀/格式錯誤。 | 依「HOST 權限說明」或「交付檔遺失、被誤刪，或本次寫入失敗」排除；`reference/` 缺失通常代表映像建置不完整，需重建映像。 |
 
 ---
 
@@ -188,8 +188,8 @@ docker build -t report-export:1.0.0 -f docker/Dockerfile .
   requirements.lock` 解析出 hash 鎖定的 venv（僅 `openpyxl` +
   `et_xmlfile`）；`runtime` 只複製這個 venv + `src/` + `reference/`，
   不含編譯工具鏈、pip cache、dev/test 依賴。
-- 映像內建**非 root**使用者（`APP_UID`/`APP_GID`，預設
-  `10001:10001`，可用 `--build-arg` 覆寫）；
+- 映像**以 root 執行**（無 `USER` 指令，簡化 host bind-mount 權限管
+  理；見下方「HOST 權限說明」）；
   `ENTRYPOINT ["python","-m","report_export"]`。
 - 有效期較長的部署可加上 OCI label 追蹤：`hosp-data-version`（見下
   方「參考主檔更新程序」）、`org.opencontainers.image.version`。
@@ -219,7 +219,7 @@ export HOST_INPUT_DIR=/path/to/your/input-dir
 export HOST_STATE_DIR=/path/to/your/state-dir
 export HOST_OUTPUT_DIR=/path/to/your/output-dir
 
-docker run --rm --user "$(id -u):$(id -g)" \
+docker run --rm \
   -v "$HOST_INPUT_DIR:/data/input:ro" \
   -v "$HOST_STATE_DIR:/data/state" \
   -v "$HOST_OUTPUT_DIR:/data/output" \
@@ -233,13 +233,14 @@ docker run --rm --user "$(id -u):$(id -g)" \
 | 旗標 | 作用 |
 |------|------|
 | `--rm` | 容器結束即刪除，不留殘留容器（一次性批次語意）。 |
-| `--user "$(id -u):$(id -g)"` | **必要**，見下方「HOST 權限前置條件」；否則新建的 host 目錄極可能因 UID 不符而寫入失敗（exit 5）。 |
 | `-v "$HOST_INPUT_DIR:/data/input:ro"` | 本週輸入檔目錄，唯讀掛載。 |
 | `-v "$HOST_STATE_DIR:/data/state"` | canonical state，讀寫掛載，**必須跨週使用同一個目錄**（累積用）。 |
 | `-v "$HOST_OUTPUT_DIR:/data/output"` | 交付 xlsx 落地目錄。 |
 
-每週只需更換指令最後一行的輸入檔路徑（即 `/data/input/<本週檔
-名>`），其餘完全不變。
+容器以 root 執行（無 `USER` 指令），host bind-mount 目錄不論擁有者
+為誰皆可寫入，**不需要** `--user` 旗標；細節與例外情形見下方「HOST
+權限說明」。每週只需更換指令最後一行的輸入檔路徑（即
+`/data/input/<本週檔名>`），其餘完全不變。
 
 > **選配硬化**（預設不加；安全敏感站點可自行加回）：
 > `--network none`、`--read-only`、`--tmpfs /tmp`、
@@ -254,10 +255,9 @@ docker run --rm --user "$(id -u):$(id -g)" \
 `docker/docker-compose.yml` 預接好上述三個掛載，把每週執行縮成一行
 `docker compose run`（volume 來源為 `HOST_INPUT_DIR`/
 `HOST_STATE_DIR`/`HOST_OUTPUT_DIR` 三個環境變數，皆由你指定，不含
-`network_mode`/`read_only`/`tmpfs`/`environment.TZ`）。**注意**：
-compose 不會自動讀你 shell 的 `uid:gid`；且 `UID` 是 bash 唯讀特殊變
-數，`export UID=$(id -u)` 本身就會失敗，因此必須改用（此檔已設計為
-接受）明確命名的 `DOCKER_UID`/`DOCKER_GID`：
+`network_mode`/`read_only`/`tmpfs`/`environment.TZ`）。容器以 root
+執行，compose 檔不含 `user:` 設定，因此不需要 `DOCKER_UID`/
+`DOCKER_GID`：
 
 ```bash
 cd report-export
@@ -267,8 +267,7 @@ export HOST_OUTPUT_DIR=/path/to/your/output-dir
 mkdir -p "$HOST_INPUT_DIR" "$HOST_STATE_DIR" "$HOST_OUTPUT_DIR"
 cp /path/to/this-weeks-export.csv "$HOST_INPUT_DIR/"
 
-DOCKER_UID=$(id -u) DOCKER_GID=$(id -g) \
-  docker compose -f docker/docker-compose.yml run --rm report-export \
+docker compose -f docker/docker-compose.yml run --rm report-export \
   /data/input/this-weeks-export.csv
 ```
 
@@ -278,44 +277,84 @@ DOCKER_UID=$(id -u) DOCKER_GID=$(id -g) \
 `docker/docker-compose.yml` 內自行補上 `network_mode: "none"`、
 `read_only: true`、`tmpfs: [/tmp]`、`environment: {TZ: Asia/Taipei}`。
 
+### 正式運行（production）
+
+上面兩節用 `$HOST_INPUT_DIR`/`$HOST_STATE_DIR`/`$HOST_OUTPUT_DIR` 代
+稱「你自己選定的路徑」；本節給一份可直接複製貼上的具體慣例——固定用
+`report-export/production/{input,state,output}` 目錄樹（CWD =
+`report-export/`，即頂層，`production/` 與 `docker/`、`docs/` 同
+級）存放**真實**週資料。這個相對路徑純屬建議慣例，操作者可自行改用
+任何絕對路徑（例如站點標準的 `/srv/report-export/...`）取代
+`production/`，行為完全相同。
+
+**docker run 形式**：
+
+```bash
+cd report-export
+mkdir -p production/input production/state production/output
+# 把本週 CSV 放進 production/input/，例如
+# production/input/week-2026-07-13.csv
+docker run --rm --network none --read-only --tmpfs /tmp \
+  -v "$PWD/production/input:/data/input:ro" \
+  -v "$PWD/production/state:/data/state" \
+  -v "$PWD/production/output:/data/output" \
+  report-export:1.0.0 /data/input/week-YYYY-MM-DD.csv
+```
+
+**docker compose 形式**（沿用上方「docker compose（選配）」；容器以
+root 執行，`docker-compose.yml` 已無 `user:` 設定，因此不需要
+`DOCKER_UID`/`DOCKER_GID`）：
+
+```bash
+cd report-export
+export HOST_INPUT_DIR="$PWD/production/input"
+export HOST_STATE_DIR="$PWD/production/state"
+export HOST_OUTPUT_DIR="$PWD/production/output"
+mkdir -p "$HOST_INPUT_DIR" "$HOST_STATE_DIR" "$HOST_OUTPUT_DIR"
+cp /path/to/this-weeks-export.csv "$HOST_INPUT_DIR/week-2026-07-13.csv"
+
+docker compose -f docker/docker-compose.yml run --rm report-export \
+  /data/input/week-2026-07-13.csv
+```
+
+補充說明：
+
+- **`production/state` 必須跨週固定為同一個目錄**——canonical state
+  （`records.csv` 等）累積於此；換目錄等於遺失歷史累計（去重基準、
+  `TOTAL ACCESS` 等），見上方「每週單一指令執行」的
+  `$HOST_STATE_DIR` 說明。
+- 交付 xlsx 落在 `production/output`。
+- `production/` 存放**真實資料**，已加入 `.gitignore`（`report-export/
+  .gitignore` 的 `production/` 規則），不入庫——不同於
+  `docker/example/`（入庫、pristine 的固定 demo fixtures，見下方
+  「開箱即用快速驗證」）。
+- 本範例額外帶了選配硬化旗標 `--network none --read-only --tmpfs
+  /tmp`（見上方選配硬化說明）：與 root 執行相容，正式環境建議保
+  留；`production/state`、`production/output` 透過 bind mount 提供
+  的讀寫權限不受 `--read-only` 影響（該旗標只鎖定容器自身的根檔案
+  系統，不影響 bind mount 的掛載模式）。
+
 ---
 
-## HOST 權限前置條件（務必先讀，HIGH）
+## HOST 權限說明
 
-**問題**：映像內建非 root 使用者，固定 UID（預設 `10001`）。若 host
-上的 state/output 目錄是**全新建立**、由呼叫者（host 使用者）擁有，
-容器內 UID `10001` 對這兩個目錄**沒有寫入權限**——第一次寫
-`records.csv`／交付 xlsx 就會失敗。這是典型「在開發機（bind mount
-權限寬鬆）可跑、在正式主機開箱即失敗」陷阱。
+容器**以 root 執行**（無 `USER` 指令；見上方「建置映像」）。root 對
+任何 host bind-mount 目錄皆有寫入權限，不論該目錄的擁有者是誰、是
+否為呼叫者剛建立的全新目錄——不存在「容器內建 UID 對新建目錄沒有寫
+入權限」的失敗模式，因此**不需要** `docker run --user`，也不需要任
+何 `APP_UID`/`APP_GID` build-arg 調整。
 
-實測重現（未加 `--user` 覆寫時的真實失敗訊息）：
+`HOST_STATE_DIR`/`HOST_OUTPUT_DIR` 只需存在且由 root 可寫（絕大多數
+host 目錄皆滿足，即使是 `mkdir -p` 剛建立、由一般使用者擁有的目
+錄）；本工具本身也會在目錄存在時把權限收斂為 `0700`（`os.chmod`）。
 
-```
-exit code: 5
-stderr: ... msg=cannot prepare state_dir for locking: /data/state
-        ([Errno 1] Operation not permitted: '/data/state') exit_code=5
-```
-
-**前置條件（務必遵守）**：
-
-1. **每一次 `docker run`／`docker compose run` 都帶
-   `--user "$(id -u):$(id -g)"`**（compose 用法見上方
-   `DOCKER_UID`/`DOCKER_GID`）——容器程序即以「掛載目錄的擁有者」身
-   分執行，host 目錄天生可寫，產出檔案也歸操作者所有，而非歸
-   `10001`。
-2. `HOST_STATE_DIR`/`HOST_OUTPUT_DIR` 必須由**執行 `docker run` 這
-   個指令的使用者自己**先 `mkdir -p` 建立（或至少存在且該使用者可
-   寫）——這一步不可省略。本工具本身也會在目錄存在時把權限收斂為
-   `0700`（`os.chmod`，只要你是該目錄擁有者就一定成功），但**前提
-   是你已經擁有這個目錄**。
-3. 若你的站點有標準化服務帳號、不想用 `$(id -u):$(id -g)`，可在**
-   建置映像時**用 `--build-arg APP_UID=<uid> --build-arg
-   APP_GID=<gid>` 把映像預設非 root 使用者換成該服務帳號，並確保
-   host 目錄改由該帳號建立/擁有。
-4. 若一定要用 named volume（而非本文件示範的 bind mount）：先以
-   `docker run --user 0 ... chown <uid>:<gid> /data/state
-   /data/output` 之類的一次性指令初始化擁有者，或乾脆改用 bind
-   mount（本文件的標準做法）。
+**注意**：容器寫入 host 的檔案（`state/` 下的 `records.csv` 等、
+`output/` 下的交付 xlsx）會**歸屬 root**，而非啟動容器的那個 host
+使用者。若需要以一般使用者身分刪除或編輯這些檔案，請用 `sudo`（例
+如 `sudo rm -rf "$HOST_STATE_DIR"/*`）。少數例外（NAS/NFS
+`root_squash` 匯出設定、或 `state_dir`/`out_dir` 所在檔案系統本身唯
+讀）仍可能導致 root 也無寫入權限，屆時請調整該匯出/掛載點的權限設
+定。
 
 ---
 
@@ -377,7 +416,7 @@ stderr: ... msg=cannot prepare state_dir for locking: /data/state
 的輸入檔，對同一個 `state_dir` 重新執行一次即可**：
 
 ```bash
-docker run --rm --user "$(id -u):$(id -g)" \
+docker run --rm \
   -v "$HOST_INPUT_DIR:/data/input:ro" \
   -v "$HOST_STATE_DIR:/data/state" \
   -v "$HOST_OUTPUT_DIR:/data/output" \
@@ -512,7 +551,7 @@ exit 3 時的人工排除步驟：
 
 | 現象 | 最可能原因 | 對應章節 |
 |------|-----------|----------|
-| exit 5，訊息含 `Operation not permitted` 或 `Permission denied` | 未加 `--user "$(id -u):$(id -g)"`，或 `state_dir`/`out_dir` 不是由該 uid 建立/擁有 | HOST 權限前置條件 |
+| exit 5，訊息含 `Operation not permitted` 或 `Permission denied` | 容器以 root 執行，一般情形已無此問題；殘留可能原因：`state_dir`/`out_dir` 所在檔案系統本身唯讀，或 NAS/NFS 匯出設定 `root_squash`（root 被映射為無寫入權限的匿名使用者） | HOST 權限說明 |
 | exit 4，訊息含 `state lock busy` | 有其他執行中的批次；或殘留鎖尚未過 stale 門檻 | NAS 鎖與並行注意事項、鎖被佔用 |
 | exit 2，訊息含 `header mismatch` | 輸入檔不是 `analyze_access --format csv` 的 14 欄輸出，或欄名/欄序被改動 | [`data-fidelity.md`](data-fidelity.md) §2 |
 | exit 2，訊息含 `missing APP_TIME`/`APP_SERVER`/`CLIENT_IP` | 該行是 NORMAL 但缺必要欄位——資料契約違反，非本工具問題 | 同上 |
@@ -549,7 +588,7 @@ fixtures**（本節任何指令都不會、也不能修改它們）；
 cd report-export/docker
 mkdir -p example/run/state example/run/output
 cp example/state/records.csv example/run/state/    # protect the committed seed
-docker run --rm --user "$(id -u):$(id -g)" \
+docker run --rm \
   -v "$PWD/example/input:/data/input:ro" \
   -v "$PWD/example/run/state:/data/state" \
   -v "$PWD/example/run/output:/data/output" \
@@ -572,7 +611,6 @@ cp example/state/records.csv example/run/state/    # protect the committed seed
 HOST_INPUT_DIR="$PWD/example/input" \
 HOST_STATE_DIR="$PWD/example/run/state" \
 HOST_OUTPUT_DIR="$PWD/example/run/output" \
-DOCKER_UID=$(id -u) DOCKER_GID=$(id -g) \
   docker compose run --rm report-export /data/input/week-2026-07-13.csv
 
 # `docker compose` (no -f) auto-discovers docker-compose.yml in CWD (report-export/docker/);

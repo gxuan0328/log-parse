@@ -1934,10 +1934,10 @@ fi
 bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --test-hosts bogus >/dev/null 2>&1; rc_j15=$?
 _err J15 "access --test-hosts bogus → non-zero exit (assert_enum)" "$rc_j15"
 
-# J16: load_test_hosts reads exactly 3 test-host IP tokens from conf/test_hosts.conf
+# J16: load_test_hosts reads exactly 7 test-host IP tokens from conf/test_hosts.conf
 th_set=$(bash -c "source \"${PROJECT_DIR}/lib/common.sh\"; load_test_hosts \"${PROJECT_DIR}/conf/test_hosts.conf\"")
 th_count=$(printf '%s\n' "$th_set" | wc -w | tr -d ' ')
-_eq J16 "load_test_hosts 返回恰好 3 個測試主機 IP tokens" "$th_count" "3"
+_eq J16 "load_test_hosts 返回恰好 7 個測試主機 IP tokens" "$th_count" "7"
 
 # J17: analyze_errors --test-hosts only → non-zero exit (Unknown option; no flag support)
 bash "$ERRORS" --log-dir "$LOG_DIR" --date 2026-05-21 --test-hosts only >/dev/null 2>&1; rc_j17=$?

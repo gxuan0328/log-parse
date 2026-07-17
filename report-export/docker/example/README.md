@@ -75,7 +75,7 @@ docker build -t report-export:1.0.0 -f docker/Dockerfile .
 cd report-export/docker
 mkdir -p example/run/state example/run/output
 cp example/state/records.csv example/run/state/    # protect the committed seed
-docker run --rm --user "$(id -u):$(id -g)" \
+docker run --rm \
   -v "$PWD/example/input:/data/input:ro" \
   -v "$PWD/example/run/state:/data/state" \
   -v "$PWD/example/run/output:/data/output" \
@@ -95,7 +95,6 @@ cp example/state/records.csv example/run/state/    # protect the committed seed
 HOST_INPUT_DIR="$PWD/example/input" \
 HOST_STATE_DIR="$PWD/example/run/state" \
 HOST_OUTPUT_DIR="$PWD/example/run/output" \
-DOCKER_UID=$(id -u) DOCKER_GID=$(id -g) \
   docker compose run --rm report-export /data/input/week-2026-07-13.csv
 
 # `docker compose` (no -f) auto-discovers docker-compose.yml in CWD (report-export/docker/);

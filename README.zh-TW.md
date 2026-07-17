@@ -4,7 +4,7 @@
 > 比對存取 Token、揭露 IIS 異常、追蹤應用程式生命週期事件，
 > 涵蓋兩個區域共六台 API / APP 伺服器。
 
-[![Tests](https://img.shields.io/badge/tests-258%2F258-brightgreen)](tests/run_tests.sh)
+[![Tests](https://img.shields.io/badge/tests-275%2F275-brightgreen)](tests/run_tests.sh)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bash 4+](https://img.shields.io/badge/bash-4%2B-lightgrey)](https://www.gnu.org/software/bash/)
 

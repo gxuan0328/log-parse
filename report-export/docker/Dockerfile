@@ -60,8 +60,6 @@ FROM python:3.12-slim@${PYTHON_DIGEST} AS runtime
 # ARGs used after a stage's own FROM must be re-declared inside that
 # stage (a global ARG declared above is visible only to FROM lines).
 ARG PYTHON_DIGEST
-ARG APP_UID=10001
-ARG APP_GID=10001
 # design.md §3.3: identifies which HOSP_ID master-table snapshot
 # this image bundles. Bump alongside every `reference/` refresh
 # (recompute with:
@@ -80,25 +78,15 @@ LABEL org.opencontainers.image.title="report-export" \
       org.opencontainers.image.base.digest="${PYTHON_DIGEST}" \
       hosp-data-version="${HOSP_DATA_VERSION}"
 
-# Non-root by default (design.md §4.7.4). `docker run --user
-# "$(id -u):$(id -g)"` overrides this at run time for host bind-mount
-# writability (design.md §4.7.3 HIGH finding: a fixed image UID cannot
-# write a freshly-created, caller-owned host directory -- EACCES on a
-# real host even though it "worked" on a bind-mount that happened to be
-# world-writable in a dev environment).
-RUN groupadd --gid "${APP_GID}" appuser \
-    && useradd --uid "${APP_UID}" --gid "${APP_GID}" \
-       --no-create-home --no-log-init --shell /usr/sbin/nologin appuser
-
 # PYTHONHASHSEED=0: deterministic hash-dependent iteration order
 # (design.md §2.4 ethos: "確定性可重放"). LANG/LC_ALL=C.UTF-8: correct
 # handling of the Chinese deliverable filenames/sheet names (design.md
 # §3.7.2/§6-16) without depending on locale packages being installed.
 # TZ=Asia/Taipei: the business-day boundary for `run_date` (design.md
 # §3.8 S0, §6-17); the base image ships tzdata, no extra package needed.
-# HOME=/tmp: `--user` may select a uid with no /etc/passwd entry, so no
-# component may rely on home-directory lookup (design.md §4.7.3) --
-# paired with `docker run --tmpfs /tmp` at the call site.
+# HOME=/tmp: runs as root; HOME=/tmp keeps any incidental home writes
+# on the writable tmpfs -- paired with `docker run --tmpfs /tmp` at the
+# call site (relevant when a site adds `--read-only`, design.md §4.7.4).
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONHASHSEED=0 \
@@ -128,7 +116,9 @@ COPY src/ /app/src/
 # (design.md §3.3, §4.7.2).
 COPY reference/hosp_id_map.csv.gz reference/hosp_id_map.manifest.json /app/reference/
 
-USER ${APP_UID}:${APP_GID}
+# Runs as root (no USER directive) -- simplifies host bind-mount
+# writability: no image-baked uid to reconcile against caller-owned
+# host directories, no `docker run --user` needed (design.md §4.7.3).
 
 # No HEALTHCHECK: this is a one-shot batch process, not a long-running
 # service (design.md §1.1, §1.3 "非常駐、非服務、非資料庫") -- there is no

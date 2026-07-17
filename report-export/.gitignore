@@ -21,6 +21,14 @@ htmlcov/
 # docker/example/run/state and writes the deliverable to
 # docker/example/run/output, so a demo run never mutates the committed
 # fixtures nor drops output/.lock/runs.jsonl into the committed tree
-# (design.md §4.7.7 pristine-fixture guarantee). This is the sole in-repo
+# (design.md §4.7.7 pristine-fixture guarantee). This is an in-repo
 # runtime location and is never committed.
 docker/example/run/
+
+# Production runtime data (docs/usage.md「正式運行（production）」,
+# README.md「正式運行（production）」). An operator-convenience default
+# location for real weekly input/state/output -- an alternative to
+# pointing HOST_INPUT_DIR/HOST_STATE_DIR/HOST_OUTPUT_DIR at a path
+# outside the repo. Holds real data and, since the container runs as
+# root, root-owned output; never committed.
+production/

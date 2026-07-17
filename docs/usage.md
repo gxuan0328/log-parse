@@ -75,8 +75,9 @@ artifacts.
 
 All `analyze_iis` and `analyze_access` runs require **`conf/test_hosts.conf`** — a
 plain-text list of internal QA / health-probe client IPs (one IPv4 per line).
-The file seeds three addresses: `192.168.139.79`, `192.168.139.110`, and
-`192.168.139.28`. A missing file is a fatal error even with `--test-hosts all`
+The file seeds seven addresses: `192.168.139.79`, `192.168.139.110`,
+`192.168.139.28`, `192.168.117.90`, `192.168.105.149`, `192.168.117.73`, and
+`192.168.117.104`. A missing file is a fatal error even with `--test-hosts all`
 (fail-fast, consistent with `regions.conf`).
 
 The `--test-hosts` flag controls how those IPs are treated at the read stage:

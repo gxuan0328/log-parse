@@ -4,23 +4,19 @@
 # three bind mounts from that same example so a weekly run reduces to
 # one `docker compose run` line.
 #
-# IMPORTANT -- host bind-mount writability (design.md §4.7.3, HIGH):
-# this container must run as the uid:gid that OWNS the host
-# state/output directories, or every write fails with EACCES the first
-# time a fresh (caller-owned) host directory is used. Compose does NOT
-# read your shell's real uid/gid automatically, and `${UID}`/`${GID}`
-# are NOT usable for this: `UID` is a readonly/special shell variable
-# in bash, so `export UID=$(id -u)` fails outright. Pass distinctly
-# named variables instead, every time you invoke this file:
+# The container runs as root (design.md §4.7.3/§4.7.4), so host
+# bind-mount directories need no special ownership -- no uid/gid
+# reconciliation, no `user:` directive below. NOTE: files the container
+# writes to the host (state/, output/) will be owned by root; use
+# `sudo` on the host if you need to remove or edit them directly.
 #
 #   export HOST_INPUT_DIR=/path/to/your/input-dir    # user-defined
 #   export HOST_STATE_DIR=/path/to/your/state-dir    # user-defined
 #   export HOST_OUTPUT_DIR=/path/to/your/output-dir  # user-defined
 #   mkdir -p "$HOST_INPUT_DIR" "$HOST_STATE_DIR" "$HOST_OUTPUT_DIR"
 #   cp /path/to/this-weeks-export.csv "$HOST_INPUT_DIR/"
-#   DOCKER_UID=$(id -u) DOCKER_GID=$(id -g) \
-#     docker compose -f docker/docker-compose.yml run --rm report-export \
-#       /data/input/this-weeks-export.csv
+#   docker compose -f docker/docker-compose.yml run --rm report-export \
+#     /data/input/this-weeks-export.csv
 #
 # (build once beforehand with `docker build -t report-export:1.0.0 -f
 # docker/Dockerfile .` from report-export/, or let `docker compose run`
@@ -40,9 +36,6 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    # See the IMPORTANT note above -- these defaults (1000:1000) are a
-    # dev-box convenience only; always override via DOCKER_UID/DOCKER_GID.
-    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     volumes:
       # Weekly raw 14-column input CSV (design.md §4.7.5) -- read-only.
       # HOST_INPUT_DIR is user-defined; the ":?" form fails fast with a
@@ -52,7 +45,8 @@ services:
         target: /data/input
         read_only: true
       # Canonical state -- read-write; single source of truth
-      # (design.md §3.5.1). Must be writable by DOCKER_UID:DOCKER_GID.
+      # (design.md §3.5.1). Writable by any owner: the container runs
+      # as root.
       - type: bind
         source: ${HOST_STATE_DIR:?set HOST_STATE_DIR to your canonical state directory}
         target: /data/state
