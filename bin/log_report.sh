@@ -33,6 +33,7 @@ source "${SCRIPT_DIR}/../lib/common.sh"
 source "${SCRIPT_DIR}/../lib/date_utils.sh"
 source "${SCRIPT_DIR}/../lib/fmt_utils.sh"
 source "${SCRIPT_DIR}/../lib/output_utils.sh"
+source "${SCRIPT_DIR}/../lib/notify_utils.sh"
 
 # ---------------------------------------------------------------------------
 # Defaults  (OPT_OUTPUT_DIR="" is mandatory — never ./log-parse here, C1)
@@ -52,6 +53,11 @@ OPT_SLOW_API_MS=2000
 OPT_SLOW_APP_MS=5000
 OPT_MERGE=0
 OPT_TEST_HOSTS="exclude"
+OPT_NOTIFY=0
+OPT_NOTIFY_DRY_RUN=0
+OPT_NOTIFY_ATTACH="all"
+OPT_NOTIFY_URL=""          # "" = not supplied; resolved in parse_args
+RECEIVERS_CONF=""          # "" = not supplied; mirrors REGIONS_CONF
 REGIONS_CONF=""
 INTERVAL_ARGS=()
 
@@ -95,6 +101,15 @@ Options:
                         Forwarded to overview + iis; applies to APP-role servers.
   --merge               flag: merge all regions into one correlation/analysis pass.
                         REQUIRES --region all (default). Forwarded to access and iis.
+  --notify              mail the persisted report bundle to the SMTP API
+                        (optional deps: curl, base64; recipients: conf/receivers.conf)
+                        A delivery failure is FATAL; use '|| true' to tolerate it.
+  --notify-dry-run      build the payload, never call curl (offline check)
+  --notify-attach MODE  all|summary                     (default: all)
+                        'all' mails client IPs and JWT-derived birthday fields
+  --notify-url URL      SMTP API endpoint  (default: \$LOG_PARSE_NOTIFY_URL or
+                        http://haididev.intra.nhi.gov.tw:8080/api/email/send)
+  --receivers-conf FILE recipients file    (default: conf/receivers.conf)
   -v, --verbose         enable debug logging
   -h, --help            show this help
 
@@ -106,6 +121,7 @@ Capability matrix (forwarding targets):
   --top                no      no   yes   yes
   --slow-api-ms       yes      no   yes    no
   --slow-app-ms       yes      no   yes    no
+  --notify*            no      no    no     no   (log_report only, never forwarded)
 
 Common scenarios (runnable against the bundled dataset):
 
@@ -124,6 +140,10 @@ Common scenarios (runnable against the bundled dataset):
   # 4. Detail view, CSV export
   $(basename "$0") --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \\
        --date 2026-05-21 --view detail --format csv
+
+  # 5. Daily report, mailed to conf/receivers.conf (all persisted files attached)
+  $(basename "$0") --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \\
+       --date 2026-05-21 --notify
 EOF
 }
 
@@ -150,6 +170,11 @@ parse_args() {
             --slow-app-ms)  OPT_SLOW_APP_MS="$2";   shift 2 ;;
             --merge)        OPT_MERGE=1;             shift ;;
             --test-hosts)   OPT_TEST_HOSTS="$2";     shift 2 ;;
+            --notify)          OPT_NOTIFY=1;             shift ;;
+            --notify-dry-run)  OPT_NOTIFY_DRY_RUN=1;     shift ;;
+            --notify-attach)   OPT_NOTIFY_ATTACH="$2";   shift 2 ;;
+            --notify-url)      OPT_NOTIFY_URL="$2";      shift 2 ;;
+            --receivers-conf)  RECEIVERS_CONF="$2";      shift 2 ;;
             -v|--verbose)   LOG_LEVEL=DEBUG;         shift ;;
             -h|--help)      usage; exit 0 ;;
             *) die "Unknown option: $1" ;;
@@ -168,6 +193,34 @@ parse_args() {
     assert_uint "--slow-app-ms"  "$OPT_SLOW_APP_MS"
     if [[ "$OPT_MERGE" -eq 1 && "$OPT_REGION" != "all" ]]; then
         die "--merge requires --region all (got: '$OPT_REGION')"
+    fi
+    if [[ "$OPT_NOTIFY" -eq 0 ]]; then
+        if [[ "$OPT_NOTIFY_ATTACH" != "all" || "$OPT_NOTIFY_DRY_RUN" -eq 1 \
+              || -n "$OPT_NOTIFY_URL" || -n "$RECEIVERS_CONF" ]]; then
+            die "--notify-attach/--notify-dry-run/--notify-url/--receivers-conf require --notify"
+        fi
+    else
+        assert_enum "--notify-attach" "$OPT_NOTIFY_ATTACH" all summary
+        RECEIVERS_CONF="${RECEIVERS_CONF:-${SCRIPT_DIR}/../conf/receivers.conf}"
+        if [[ ! -f "$RECEIVERS_CONF" ]]; then die "conf file not found: $RECEIVERS_CONF"; fi
+        OPT_NOTIFY_URL="${OPT_NOTIFY_URL:-${LOG_PARSE_NOTIFY_URL:-$NOTIFY_DEFAULT_URL}}"
+        notify_assert_url "$OPT_NOTIFY_URL"      # validated even in dry-run
+        # FIX F: LOG_PARSE_NOTIFY_FROM_ADDR and the FULL CONTENT of
+        # receivers.conf (not just its existence, already checked above)
+        # used to be validated only at send time, inside notify_send --
+        # i.e. AFTER a full analysis pass, contradicting docs/usage.md's
+        # exit-code table ("fails in argument parsing, before any analysis
+        # module runs"). Validate both here instead, alongside
+        # notify_assert_url/notify_preflight, so a config typo surfaces in
+        # well under a second, not after burning a multi-minute analysis.
+        # Cache the parsed receivers into NOTIFY_RECEIVERS_TSV (read by
+        # notify_send) so the file is parsed exactly once per run, not
+        # twice.
+        notify_assert_address "LOG_PARSE_NOTIFY_FROM_ADDR" "$NOTIFY_FROM_ADDR"
+        if ! NOTIFY_RECEIVERS_TSV="$(load_receivers "$RECEIVERS_CONF")"; then
+            die "invalid receivers config: $RECEIVERS_CONF"
+        fi
+        notify_preflight
     fi
 }
 
@@ -293,6 +346,11 @@ main() {
     for m in "${ORDERED_MODULES[@]}"; do
         run_module "analyze_${m}"
     done
+
+    if [[ "$OPT_NOTIFY" -eq 1 ]]; then
+        init_tmpdir        # first and only trap registration in this process
+        notify_run
+    fi
 }
 
 main "$@"

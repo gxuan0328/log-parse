@@ -78,12 +78,14 @@ Each server emits three log families:
   │  lib/output_utils.sh  always-on persistence (D6)     │
   │  lib/aggregate_utils.sh  AGG_IIS_AWK, AGG_CSV_FUNC,  │
   │                           agg_iis_rows, agg_access_rows│
+  │  lib/notify_utils.sh  load_receivers, notify_send (D12)│
   └──────────────────────────────────────────────────────┘
                                │ reads
                                ▼
   ┌─────────────────────────────────────────────────────────────┐
   │   conf/regions.conf    (region → server mapping)            │
   │   conf/test_hosts.conf (QA/probe client IPs — single source)│
+  │   conf/receivers.conf    (mail recipients, --notify)        │
   └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -99,7 +101,10 @@ Each server emits three log families:
 3. **Configuration layer** (`conf/`) — plain text files with no executable
    content. `regions.conf` is pipe-delimited and consumed by the per-bin
    `load_regions()`. `test_hosts.conf` lists one IPv4 per line and is consumed
-   by `load_test_hosts` in `lib/common.sh` (see §3.2.14).
+   by `load_test_hosts` in `lib/common.sh` (see §3.2.14). `receivers.conf`
+   lists mail recipients (`DISPLAY_NAME|ADDRESS`, one per line) for
+   `--notify` and is consumed by `load_receivers` in `lib/notify_utils.sh`
+   (see §3.4.7).
 
 ### 2.2 Process model
 
@@ -223,6 +228,28 @@ Single-quoted `\033` literals are kept; `printf "%b"` and gawk `-v C_*=...`
 both expand them to real ESC bytes at output time. This single toggle covers
 every ANSI emitter: `fmt_h1/h2/h3`, `fmt_kv/fmt_kv_color`, `fmt_ok/warn/err`,
 `_log`, and the direct `-v C_*="$C_*"` gawk passes in `analyze_access.sh`.
+
+#### `lib/notify_utils.sh` — SMTP-API notification dispatch (D12)
+
+Sourced-only library backing the opt-in `bin/log_report.sh --notify` stage
+(full contract in §3.4.7). Owns: recipient loading (`load_receivers`,
+gawk-based like `load_test_hosts` above, not the `IFS='|' read` idiom
+`load_regions` duplicates), attachment enumeration
+(`notify_collect_attachments`), subject derivation (`notify_subject`), Body
+extraction from the run's own `overview_summary.txt` (`notify_build_body`),
+JSON assembly (`notify_build_payload`, built on the single `jesc()` byte-wise
+escaper in `NOTIFY_JSON_FUNC`), the `curl` transport (`notify_post`), and
+machine-parseable result logging (`notify_result_line`). `notify_send` is
+the library's public entry point (usable directly from tests without any
+CLI); `notify_run` is the thin `bin/log_report.sh` adapter that turns a
+delivery failure into a fatal error. This is the **single source of truth**
+for every byte of the payload — no other code path in the repo may build or
+emit JSON for this feature.
+
+`curl` and `base64` are named only in this one file and are checked lazily,
+only once `--notify` is actually requested, by `notify_preflight` — see
+§4.9 for the full conditional-dependency treatment of this CLAUDE.md §6
+deviation.
 
 ---
 
@@ -1227,9 +1254,188 @@ the resolved dir (see §3.4.3).
 | `--slow-app-ms` | F→{overview,iis} | F | — | APP-role servers | — | default 5000 ms |
 | `--merge` | F→{access,iis} | — | cross-region | two-bucket | — | requires `--region all` |
 | `--test-hosts` | F→{overview,iis,access} | F | F | F | **no** | `exclude`; errors has no client IP |
+| `--notify`, `--notify-dry-run`, `--notify-attach`, `--notify-url`, `--receivers-conf` | own | — | — | — | — | never forwarded; handled entirely in-process, after every module has run (D12) |
 
 Legend: `own` = log_report acts on this flag itself · `F` = forwarded to child ·
 `env` = carried via `LOG_PARSE_OUTPUT_DIR` env var · `—` = not accepted.
+
+#### 3.4.7 Notification dispatch (D12)
+
+**Hook point.** `bin/log_report.sh` gains exactly five flags (`--notify`,
+`--notify-dry-run`, `--notify-attach`, `--notify-url`, `--receivers-conf`).
+`notify_run` runs as the **last statement of `main()`**, strictly after the
+module loop:
+
+```bash
+for m in "${ORDERED_MODULES[@]}"; do
+    run_module "analyze_${m}"
+done
+
+if [[ "$OPT_NOTIFY" -eq 1 ]]; then
+    init_tmpdir        # first and only trap registration in this process
+    notify_run
+fi
+```
+
+The call is **in-process** (a sourced library function, not a subprocess
+spawn) — no argument re-quoting, one dependency gate, one `WORK_TMPDIR` for
+the whole run. The four `analyze_*.sh` scripts are **untouched** and
+continue to `die "Unknown option: --notify"`; `build_module_args()` never
+forwards any `--notify*` flag to a child (§3.4.5, §3.4.6).
+
+**The API contract (owner-supplied, verbatim; the sole authority for the
+payload shape):**
+
+```
+POST <url>   header: Content-Type: application/json
+{
+  "From": { "DisplayName": "系統通知", "Address": "notify@nhi.gov.tw" },
+  "To": [ { "DisplayName": "...", "Address": "..." } ],
+  "Subject": "【肺癌報告】 調閱紀錄彙整資訊 - YYYY-MM-DD",
+  "Body": "...",
+  "Attachments": { "file1.txt": "<base64>", "file2.txt": "<base64>" }
+}
+```
+
+`From` is a single object; `To` is an **array** of objects, one element per
+`conf/receivers.conf` row, in file order; `Attachments` is a **key–value
+MAP** — key = attachment **filename**, value = its **base64 string** — not
+an array of objects. There are no `isBodyHtml`, `cc`, `bcc`, `fileName`, or
+`contentBase64` keys; introducing any of them is a defect. Because a
+filename is a JSON *key*, it passes through the identical `jesc()` escaper
+used for every string *value* (a single byte-wise gawk walker under
+`LC_ALL=C`, `NOTIFY_JSON_FUNC`) — keys and values are never escaped by two
+different code paths (CWE-116/CWE-91 mitigation). `notify_assert_url` and
+the receivers-loader's strict address allow-list similarly close off
+CWE-78/CWE-88 (no `eval`, no shell-built command lines reach `curl`'s
+argv) — see the transport paragraph below for **C11**, the companion rule
+that no payload byte ever reaches argv either.
+
+**Subject derivation** (`notify_subject`). `LOG_PARSE_NOTIFY_SUBJECT`, when
+set, wins verbatim (still passed through `jesc()` like every other string).
+Otherwise the date label is derived from `build_date_list` (date math stays
+in `date_utils`, rule 2) — **never** a `date` call at send time, which is
+what makes two consecutive dry-runs over the same fixture byte-identical:
+a single-day range renders `【肺癌報告】 調閱紀錄彙整資訊 - 2026-05-21`; a
+multi-day range renders the `... - 2026-05-18 ~ 2026-05-25` form. The
+region is deliberately absent from the subject (it already appears on the
+Body's `Region` line).
+
+**Body extraction — coupled to `overview_render`'s literal headings.** The
+Body is not boilerplate: `NOTIFY_BODY_AWK` extracts the real KEY SUMMARY
+from the run's own `overview_summary.txt` — the envelope, `分析期間`,
+`涵蓋範圍`, and the whole `▶ 總體概況` block including `整體健康判定` and
+the `■ 核心功能效能` table. Extraction stops at the first line matching the
+hourly-bar-chart heading (`■ 存取紀錄橫條圖`, a wall of `U+2588` glyphs
+that is ~70% of the file and unreadable in a proportional mail font) or at
+the **second** `▶ ` section heading, whichever comes first, plus a hard
+60-printed-line cap. **This is a literal-string coupling, not a structured
+read**: if `bin/analyze_overview.sh`'s `overview_render` ever renames or
+reorders these headings, the extractor's stop conditions silently extract
+the wrong slice rather than failing loudly — recorded as a known limitation
+in §7. When `overview_summary.txt` is absent (e.g. `--modules iis`), the
+Body falls back to the first 25 lines of the lexicographically-first
+`*_summary.txt` present (`log_warn`); with no summary file at all, to a
+literal placeholder line (`log_warn`) — never a blank Body, which would
+itself be a silent fallback (rule 1). The whole Body is separately hard-
+capped at 65536 bytes with a visible truncation marker on overflow; this is
+safe only because the authoritative file is always attached in full.
+
+**Attachment assembly.** Enumeration is a plain `shopt -s nullglob` bash
+glob over the run directory — never `find` (not in the sanctioned
+`{bash gawk sort date mktemp}` set) — which is already lexicographically
+sorted (deterministic, golden-payload comparable) and needs no GNU-only
+`-print0`/`sort -z`. `--notify-attach all` (the **default**) keeps every
+regular file; `summary` narrows to `*_summary.txt`. A 0-byte file is
+skipped (`log_warn`, counted in the result line, listed as `SKIPPED
+(empty)` in the Body manifest) rather than attached as an empty MIME part.
+Size is measured in raw bytes and checked against
+`LOG_PARSE_NOTIFY_MAX_ATTACH_BYTES` (2 MiB/file) and
+`LOG_PARSE_NOTIFY_MAX_TOTAL_BYTES` (8 MiB/run) **before** base64 encoding;
+a breach aborts the whole send (`status=skipped`, no `curl` call at all) —
+never a partial or truncated bundle, which would look complete and would
+not be. Each base64 blob is streamed straight from `base64 <file>` onto the
+payload file descriptor and never enters a shell or gawk variable; the
+result is asserted against `^[A-Za-z0-9+/=]*$` before its closing quote is
+written.
+
+**Transport (`notify_post`).** Exactly these `curl` options: `--silent
+--show-error --request POST --header 'Content-Type: application/json'
+--data-binary @<payload> --connect-timeout 5 --max-time 60 --max-redirs 0
+--proto '=http,https' --output <resp> --write-out '%{http_code}
+%{time_total}'`. The payload is **always a 0600 file under `$WORK_TMPDIR`,
+passed as `--data-binary @<path>`** — never argv, never stdin (**C11**: no
+payload byte and no attacker-influenced content ever appears on argv; the
+only variable argv elements are the allow-list-validated URL and a tmpdir
+path). This avoids an opaque `ARG_MAX` failure on a medium attachment and
+keeps the access-log-derived payload out of `ps -ef` / `/proc/<pid>/cmdline`
+(CWE-214). `--data-binary`, not `--data`, because `--data @file` strips
+newlines/CRs from the file. `--max-redirs 0` and `--proto '=http,https'`
+bound a compromised endpoint's blast radius (CWE-918). There is no
+`--config`/curlrc indirection and no auth header of any kind — the contract
+defines none.
+
+In `--notify-dry-run` mode the assembled payload is written to
+`<RUN_OUTPUT_DIR>/notify_payload.json` (mode 0600) instead of the transient
+`$WORK_TMPDIR`, specifically so it survives past process exit for the
+operator to inspect: `init_tmpdir` installs an `EXIT`/`INT`/`TERM` trap that
+removes `$WORK_TMPDIR`, and a payload written there would already be gone
+by the time anyone looked. **This is the one documented exception to
+`RUN_OUTPUT_DIR` holding only the analyzer modules' own persisted files
+(§4.2)**: a dry run's file count is one HIGHER than the same run without
+`--notify-dry-run` (the payload itself), not unchanged. The payload can
+never enumerate itself — or an earlier run's leftover payload — as an
+attachment: `notify_collect_attachments` unconditionally excludes the
+literal filename `notify_payload.json` from its enumeration in every
+`--notify-attach` mode, the same way it already excludes subdirectories.
+This is a **name-based exclusion, not an ordering argument** — it holds
+even when a later invocation reuses this exact directory via the
+documented `LOG_PARSE_RUN_TS` override (`lib/output_utils.sh`) and finds an
+earlier run's payload already sitting there; relying on "collection always
+precedes the write" would NOT hold across two such separate invocations. A
+real send keeps the historical, purely transient
+`$WORK_TMPDIR/notify_payload.json` location — `curl` consumes it within the
+same process, so there is no inspection need.
+
+**No automatic retry — a deliberate, narrowed exception.** There is no
+`--retry`, `--retry-delay`, or idempotency-key header of any kind. The API
+defines no idempotency mechanism (no request key, no dedupe contract), so a
+retry whose first response was merely lost would deliver the mail twice; a
+duplicated report mail to an external recipient is a real incident, whereas
+a failed send is fatal (below) and therefore impossible to miss silently.
+**This is a recorded, narrow deviation from the user-level guidance**
+("retry, circuit breaker, and graceful degradation for external
+dependencies"): it applies **only** to this one non-idempotent POST, on the
+grounds that that guidance presupposes an idempotent or deduplicable call;
+every other external interaction in the toolkit is read-only and
+unaffected.
+
+**Fatal-on-failure policy (`notify_run`).** A delivery failure is
+**fatal** — `die "notify failed; reports are intact in <dir> ..."` — for
+three reasons: (1) the operator explicitly typed `--notify`; a run that
+could not deliver it did not do what was asked, and reporting success would
+misstate the outcome; (2) there is no standalone resend binary (a
+dedicated `bin/send_report.sh` was considered and rejected — see the
+placement rationale above `notify_run`'s definition in
+`lib/notify_utils.sh`), so exiting 0 would strand a real operational
+failure behind a green cron job; (3) CLAUDE.md rule 1 is fail fast, loud —
+a silent-ish degradation is exactly what that rule forbids. An operator who
+wants tolerance composes it explicitly: `bash bin/log_report.sh ... --notify
+|| true`. Any analysis module failing is likewise fatal to the whole run
+(unchanged, `set -e`) and, because the module loop precedes `notify_run`,
+guarantees **no mail is ever sent** for a run that did not fully succeed.
+
+**`NOTIFY_RESULT` — the one machine-parseable result line per run**, on
+stderr, `INFO` for `sent`/`dry-run` and `ERROR` for `failed`/`skipped`:
+
+```
+NOTIFY_RESULT status=sent http=200 ms=143 to=1 files=6 skipped_empty=0 raw_bytes=14897 b64_bytes=19864 payload_bytes=21492 run_ts=20260521_090000 reason=-
+```
+
+Closed `reason=` token set: `-`, `attachment_too_large:<name>`,
+`total_too_large`, `http_error`, `curl_exit_<n>`, `dry_run`. There is no
+`attempts=` field (with retries removed, it could only ever be `1`) and no
+`cc=`/`bcc=` fields (the contract has no such recipients).
 
 ---
 
@@ -1371,6 +1577,60 @@ combined logs, per-region join inputs, restart event TSVs, `iis_stats.tsv`,
 
 KV rows and stat blocks are padded by **display width** (wcwidth: CJK ideographs = 2 columns) via the `FMT_AWK_WIDTH` engine in `lib/fmt_utils.sh`, so CJK and ASCII labels align correctly in the terminal.
 
+### 4.9 Conditional dependencies for report delivery (D12)
+
+CLAUDE.md §6 bans new runtime dependencies beyond `bash gawk sort date
+mktemp` for this toolkit. `--notify` needs `curl` (HTTP POST) and `base64`
+(attachment encoding) — delivering a report over HTTP has no gawk-native
+escape hatch, and re-implementing RFC 4648 base64 as a pure-gawk *encoder*
+(as opposed to the existing pure-gawk base64url *decoder* already used for
+the JWT `dob` claim, §3.1.5) was evaluated and rejected: an encoder must
+handle whole files, not ~20-byte JWT segments, needs a 256-entry ORD table
+under `LC_ALL=C`, whole-file slurping with embedded NUL bytes, and its own
+byte-exactness test matrix — strictly more new surface than one
+`require_cmds base64`, in the least-reviewed place. This is stated openly
+as a **deliberate, narrow exception** to CLAUDE.md §6, not a silent
+violation of it:
+
+- The dependency boundary coincides exactly with a code boundary — only
+  `lib/notify_utils.sh` names `curl` or `base64` anywhere in the repo.
+- The gate is **lazy and flag-triggered**, never unconditional. Sourcing
+  `lib/notify_utils.sh` (which `bin/log_report.sh` always does) is free — it
+  contains no top-level executable statement beyond constant assignments.
+  `notify_preflight` is the only code path that ever calls `command -v curl`
+  or `require_cmds base64`, and it runs only when `OPT_NOTIFY=1`.
+- **Unused == uninvoked, provably.** A host with neither binary installed
+  runs every existing workflow — and the entire pre-existing regression
+  suite — unchanged: `bash bin/log_report.sh --log-dir ... --date ...` (no
+  `--notify`) exits 0 identically whether or not `curl`/`base64` exist on
+  `$PATH`. Test L01 pins exactly this: a full run with
+  `LOG_PARSE_NOTIFY_CURL_BIN=curl-does-not-exist` and **no** `--notify`
+  still exits 0 with all persisted files present.
+
+**Two gates, both fail loud:**
+
+1. **Pre-flight** — in `bin/log_report.sh`'s argument parsing, immediately
+   once `--notify` is set (before any analysis module runs). An operator
+   whose cron box lost `curl` learns this in well under a second, not after
+   a multi-minute analysis run.
+2. **Point of use** — the first statement of `notify_send`, for any caller
+   that reaches the library directly (unit tests; future callers).
+   Idempotent via `NOTIFY_PREFLIGHT_DONE`.
+
+`--notify-dry-run` only ever requires `base64` (no network is touched); a
+real send requires both. A missing `curl` produces three named, actionable
+stderr lines (not a bare dependency-list error) and exits 1:
+
+```
+[ERROR] --notify needs the optional dependency 'curl' (HTTP client for the SMTP API).
+[ERROR] Install curl, or use --notify-dry-run to build the payload without sending.
+[ERROR] missing required commands: curl
+```
+
+A missing `base64` falls through to the existing `require_cmds` format
+(`ERROR: missing required commands: base64`) unchanged — `require_cmds`
+itself (`lib/common.sh`) is not modified by this feature.
+
 ---
 
 ## 5. Capability matrix
@@ -1393,6 +1653,7 @@ KV rows and stat blocks are padded by **display width** (wcwidth: CJK ideographs
 | `--output-dir` | yes | yes | yes | yes | yes | `""` → `./log-parse` |
 | `--emit-stats` | — | yes | yes | — | — | off |
 | `--modules` | — | — | — | — | yes | `overview,iis,access` |
+| `--notify*` (5 flags, §3.4.7) | — | — | — | — | own | `off` |
 | `--conf` | yes | yes | yes | yes | yes | `conf/regions.conf` |
 | `-v`/`--verbose`, `-h` | yes | yes | yes | yes | yes | off |
 | `--output FILE` | REMOVED | REMOVED | REMOVED | REMOVED | REMOVED | n/a |
@@ -1443,3 +1704,20 @@ test suite to confirm baselines still hold (or update them deliberately).
 - `analyze_errors` summary is persisted to disk but not selectable to the
   console (no `--view` flag on errors). Add `--view` to errors only on
   explicit future request.
+- **No mail is sent when a module fails.** `set -e` aborts `main()` at the
+  first failing `run_module` call, strictly before `notify_run` is ever
+  reached — a partially-completed run therefore never notifies anyone.
+  Surfacing a failure notification would need a trap-chaining helper that
+  does not exist in this toolkit today.
+- The notify Body extractor (`NOTIFY_BODY_AWK`, §3.4.7) is coupled to the
+  **literal rendered strings** `bin/analyze_overview.sh`'s `overview_render`
+  emits (the `■ 存取紀錄橫條圖` heading and the count of `▶ ` headings) —
+  not to a structured data source. A future rename or reorder of those
+  headings would silently change what the mail Body extracts, rather than
+  failing loudly.
+- The default `--notify-url` endpoint is **plain HTTP**
+  (`http://haididev.intra.nhi.gov.tw:8080/api/email/send`), per the owner's
+  contract. The tool logs an explicit, unsuppressable warning on every send
+  against an `http://` URL, but transmits the payload — including every
+  attachment — unencrypted unless the operator supplies an `https://`
+  endpoint via `--notify-url` or `$LOG_PARSE_NOTIFY_URL`.

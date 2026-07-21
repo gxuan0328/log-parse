@@ -9,10 +9,10 @@ Loaded when editing `tests/run_tests.sh` or any new test file.
 
 ## Single source of truth
 
-`tests/run_tests.sh` is the only regression suite. Currently 275 tests
-across eleven sections (A access · B iis · C errors · D log_report ·
+`tests/run_tests.sh` is the only regression suite. Currently 316 tests
+across twelve sections (A access · B iis · C errors · D log_report ·
 E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
-J test-host/health · K timezone+core-function).
+J test-host/health · K timezone+core-function · L notification dispatch).
 
 Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
 
@@ -33,7 +33,7 @@ Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
 - B01–B40  `analyze_iis` (B39: Top-端點 avg; B40: rank-fix)
 - C01–C25  `analyze_errors`
 - D01–D35  `log_report`
-- E01–E26  validation paths
+- E01–E38  validation paths (E27–E37: `--notify*` negatives — bad enum, missing `--notify`, bad URL/receivers/From-address, missing curl, duplicate address; E38: receivers.conf content validation dies in parse_args, before persist_init)
 - F01–F18  user scenarios
 - G01–G05  CJK display-width alignment (+ A35, A36, C22; G04: fmt_bar determinism; G05: agg_access_records malformed-APP_TIME guard)
 - H01–H25  `analyze_overview` (H16-H21: per-region N/O/U + verdict boundaries; H22: single-day global chart; H23: per-region chart counts; H24: multi-day no chart; H25: today-cap + midnight)
@@ -41,6 +41,15 @@ Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
 - J01–J20  test-host filter + /health exclusion
 - K01–K16  timezone correction + core-function CATEGORY
   (K13/K14 intentionally vacant — gap preserved per commit history; K15/K16 continue past gap)
+- L01–L29  notification dispatch (`--notify`/`--notify-dry-run`/`--notify-attach`)
+  — golden payload shape, attach-mode scoping, escaping round-trips, size
+  caps, transport shim, fatal-on-failure; offline only, no test contacts a
+  real endpoint. L23–L29: adversarial-review regression fixes — backslash
+  in `--output-dir` still attaches correctly + an unreadable attachment
+  dies (L23/L24), pinned `LOG_PARSE_RUN_TS` never self-attaches the dry-run
+  payload (L25), empty-`DISPLAY_NAME` external-domain audit (L26), UTF-8
+  safe body truncation (L27), no-trailing-newline byte count (L28), TAB in
+  a filename dies (L29)
 
 When inserting tests, keep numbering monotonic — append new tests at the
 end of the relevant section, do not renumber existing ones.

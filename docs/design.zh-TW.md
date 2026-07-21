@@ -77,12 +77,14 @@ LUNG-CANCER-REPORT 系統為兩家醫院（台北 / 台中）提供臨床研究�
   │  lib/output_utils.sh  常開式持久化（D6）              │
   │  lib/aggregate_utils.sh  AGG_IIS_AWK、AGG_CSV_FUNC、 │
   │                           agg_iis_rows、agg_access_rows│
+  │  lib/notify_utils.sh  收件者載入、寄送通知（D12）     │
   └──────────────────────────────────────────────────────┘
                                │ read
                                ▼
   ┌─────────────────────────────────────────────────────────────┐
   │   conf/regions.conf    （區域 → 伺服器 對應表）             │
   │   conf/test_hosts.conf （QA/探測用戶端 IP — 單一事實來源）  │
+  │   conf/receivers.conf    （收件者，--notify 使用）          │
   └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -97,7 +99,9 @@ LUNG-CANCER-REPORT 系統為兩家醫院（台北 / 台中）提供臨床研究�
 3. **設定檔層**（`conf/`） — 純文字檔，不含可執行內容。`regions.conf`
    為管道字元分隔格式，由各 bin 內的 `load_regions()` 讀取。
    `test_hosts.conf` 每行一個 IPv4，由 `lib/common.sh` 中的
-   `load_test_hosts` 讀取（見 §3.2.14）。
+   `load_test_hosts` 讀取（見 §3.2.14）。`receivers.conf` 每行一筆
+   `DISPLAY_NAME|ADDRESS` 郵件收件者，供 `--notify` 使用，由
+   `lib/notify_utils.sh` 中的 `load_receivers` 讀取（見 §3.4.7）。
 
 ### 2.2 程序模型
 
@@ -212,6 +216,24 @@ fmt_set_color_state() {
 輸出時將其展開為真實 ESC 位元組。此單一切換涵蓋所有 ANSI 發射點：
 `fmt_h1/h2/h3`、`fmt_kv/fmt_kv_color`、`fmt_ok/warn/err`、`_log`，
 以及 `analyze_access.sh` 內的直接 `-v C_*="$C_*"` gawk 參數傳遞。
+
+#### `lib/notify_utils.sh` — SMTP-API 通知派送（D12）
+
+Sourced-only 函式庫，支撐 `bin/log_report.sh --notify` 這個選配階段
+（完整契約見 §3.4.7）。負責：收件者載入（`load_receivers`，採 gawk 實作，
+與上方的 `load_test_hosts` 同一模式，而非 `load_regions` 沿用的
+`IFS='|' read` 慣例）、附件列舉（`notify_collect_attachments`）、主旨
+推導（`notify_subject`）、從本次執行自身的 `overview_summary.txt` 擷取
+郵件內文（`notify_build_body`）、JSON 組裝（`notify_build_payload`，
+建構於單一 byte-wise 跳脫函式 `NOTIFY_JSON_FUNC` 之上）、`curl` 傳輸層
+（`notify_post`），以及可機器解析的結果紀錄（`notify_result_line`）。
+`notify_send` 為此函式庫的公開進入點（測試可直接呼叫，無需經過任何
+CLI）；`notify_run` 則是 `bin/log_report.sh` 呼叫的輕量轉接函式，負責將
+寄送失敗轉為致命錯誤。這是本 payload **每一個位元組的單一事實來源**
+——本儲存庫中沒有任何其他程式碼路徑可以組裝或輸出此功能的 JSON。
+
+`curl` 與 `base64` 僅在此單一檔案中被具名引用，且僅由 `notify_preflight`
+延遲檢查——完整的條件式依賴處理（此為 CLAUDE.md §6 的一項偏離）見 §4.9。
 
 ---
 
@@ -1133,9 +1155,169 @@ for m in "${MODULES[@]}"; do run_module "analyze_${m}"; done
 | `--slow-app-ms` | F→{overview,iis} | F | — | APP 角色伺服器 | — | 預設 5000 ms |
 | `--merge` | F→{access,iis} | — | 跨區域 | 雙語料桶 | — | 需要 `--region all` |
 | `--test-hosts` | F→{overview,iis,access} | F | F | F | **不接受** | `exclude`；errors 無 client IP |
+| `--notify`、`--notify-dry-run`、`--notify-attach`、`--notify-url`、`--receivers-conf` | own | — | — | — | — | 從不轉傳；全部模組執行完畢後、完全在行程內處理（D12） |
 
 圖例：`own` = log_report 自身處理 · `F` = 轉傳至子模組 ·
 `env` = 透過 `LOG_PARSE_OUTPUT_DIR` 環境變數傳遞 · `—` = 不接受。
+
+#### 3.4.7 通知派送（D12）
+
+**掛載點。** `bin/log_report.sh` 恰好新增五個旗標（`--notify`、
+`--notify-dry-run`、`--notify-attach`、`--notify-url`、
+`--receivers-conf`）。`notify_run` 作為 **`main()` 的最後一個陳述式**，
+嚴格於模組迴圈之後執行：
+
+```bash
+for m in "${ORDERED_MODULES[@]}"; do
+    run_module "analyze_${m}"
+done
+
+if [[ "$OPT_NOTIFY" -eq 1 ]]; then
+    init_tmpdir        # 本行程中第一次、也是唯一一次註冊 trap
+    notify_run
+fi
+```
+
+此呼叫**在行程內**完成（呼叫一個 sourced 函式庫函式，而非另開子行程）
+——無需重新加引號、只有一個依賴檢查閘門、整次執行共用一個
+`WORK_TMPDIR`。四支 `analyze_*.sh` **完全未被觸碰**，遇到未知旗標仍會
+`die "Unknown option: --notify"`；`build_module_args()` 從不將任何
+`--notify*` 旗標轉傳給子模組（見 §3.4.5、§3.4.6）。
+
+**API 契約（業主提供，逐字照錄；為 payload 形狀的唯一權威來源）：**
+
+```
+POST <url>   header: Content-Type: application/json
+{
+  "From": { "DisplayName": "系統通知", "Address": "notify@nhi.gov.tw" },
+  "To": [ { "DisplayName": "...", "Address": "..." } ],
+  "Subject": "【肺癌報告】 調閱紀錄彙整資訊 - YYYY-MM-DD",
+  "Body": "...",
+  "Attachments": { "file1.txt": "<base64>", "file2.txt": "<base64>" }
+}
+```
+
+`From` 為單一物件；`To` 為物件**陣列**，`conf/receivers.conf` 每一列
+對應一個元素，順序與檔案內順序一致；`Attachments` 為**key-value 對照
+表**——key 為附件**檔名**，value 為其**base64 字串**——並非物件陣列。
+不存在 `isBodyHtml`、`cc`、`bcc`、`fileName`、`contentBase64` 任何一個
+鍵；出現其中任何一個皆屬缺陷。由於檔名本身即是一個 JSON *key*，它會
+經過與每個字串 *value* 完全相同的 `jesc()` 跳脫函式（單一 byte-wise
+gawk walker，執行於 `LC_ALL=C` 之下，即 `NOTIFY_JSON_FUNC`）——key 與
+value 從不透過兩條不同的程式碼路徑跳脫（CWE-116/CWE-91 之緩解）。
+`notify_assert_url` 與收件者載入器的嚴格位址允許清單，同樣封閉了
+CWE-78/CWE-88（沒有 `eval`，也沒有以字串組建指令列傳給 `curl` 的
+argv）——payload 本身不出現於 argv 的對應規則（**C11**）詳見下方傳輸
+段落。
+
+**主旨推導**（`notify_subject`）。`LOG_PARSE_NOTIFY_SUBJECT` 一旦設定，
+逐字勝出（仍會如同其他字串一樣經過 `jesc()`）。否則日期標籤衍生自
+`build_date_list`（日期運算留在 `date_utils`，rule 2）——**寄送當下絕不
+呼叫** `date`，這正是兩次連續 dry-run 對同一 fixture 產出逐位元組相同
+payload 的關鍵：單日範圍渲染為
+`【肺癌報告】 調閱紀錄彙整資訊 - 2026-05-21`；多日範圍渲染為
+`... - 2026-05-18 ~ 2026-05-25` 形式。區域刻意不出現於主旨中（Body 的
+`Region` 行已經顯示）。
+
+**Body 擷取——耦合於 `overview_render` 的字面渲染字串。** Body **並非**
+慣例樣板文字：`NOTIFY_BODY_AWK` 從本次執行自身的 `overview_summary.txt`
+擷取真實 KEY SUMMARY——信封資訊、`分析期間`、`涵蓋範圍`，以及整個
+`▶ 總體概況` 區塊（含 `整體健康判定` 與 `■ 核心功能效能` 表格）。擷取
+於符合每小時橫條圖標題（`■ 存取紀錄橫條圖`，一整片 `U+2588` 字元、
+約佔檔案 70%、在等寬字型以外的郵件字型中不可讀）的第一行、或第二個
+`▶ ` 區段標題（兩者以先到者為準）時停止，另加 60 行的硬上限。**這是
+一種字面字串耦合，而非結構化讀取**：若 `bin/analyze_overview.sh` 的
+`overview_render` 未來更名或重新排序這些標題，擷取器的停止條件會靜默
+擷取到錯誤的區段，而非大聲失敗——已記錄為 §7 的已知限制之一。當
+`overview_summary.txt` 不存在時（例如 `--modules iis`），Body 會退回
+顯示字典序最前的 `*_summary.txt` 之前 25 行（`log_warn`）；若完全沒有
+任何 `*_summary.txt`，則退回一行文字提示（`log_warn`）——Body 永不為
+空，空白本身即是一種靜默回退（rule 1 所禁止）。整個 Body 另外獨立上限
+為 65536 bytes，超出時附上明顯的截斷提示——此舉安全，因為權威檔案本身
+永遠會完整附上。
+
+**附件組裝。** 列舉方式為單純的 `shopt -s nullglob` bash glob，走訪執行
+目錄——從不使用 `find`（不在核可的 `{bash gawk sort date mktemp}`
+集合內）——glob 結果本身已依字典序排序（具決定性、可與 golden payload
+比對），且不需要 GNU 專屬的 `-print0`/`sort -z`。`--notify-attach all`
+（**預設值**）保留每一個一般檔案；`summary` 收斂為 `*_summary.txt`。
+0 位元組的檔案會被跳過（`log_warn`，計入結果列，於 Body 清單中列為
+`SKIPPED (empty)`），而非以空的 MIME part 附上。大小以原始位元組測量，
+於 base64 編碼**之前**即比對
+`LOG_PARSE_NOTIFY_MAX_ATTACH_BYTES`（單檔 2 MiB）與
+`LOG_PARSE_NOTIFY_MAX_TOTAL_BYTES`（單次執行 8 MiB）；超限時中止整個
+寄送流程（`status=skipped`，完全不呼叫 `curl`）——絕不寄出部分或截斷的
+附件包，那樣的結果看似完整實則不然。每個 base64 區塊皆由 `base64 <file>`
+直接串流寫入 payload 檔案描述符，從不進入任何 shell 或 gawk 變數；結果
+於寫入結尾引號之前會先以 `^[A-Za-z0-9+/=]*$` 驗證。
+
+**傳輸層（`notify_post`）。** 恰好使用這些 `curl` 選項：`--silent
+--show-error --request POST --header 'Content-Type: application/json'
+--data-binary @<payload> --connect-timeout 5 --max-time 60 --max-redirs 0
+--proto '=http,https' --output <resp> --write-out '%{http_code}
+%{time_total}'`。payload **永遠是位於 `$WORK_TMPDIR` 下、權限 0600 的
+檔案，以 `--data-binary @<path>` 傳遞**——從不透過 argv，也從不透過
+stdin（**C11**：payload 位元組與任何可能受攻擊者影響的內容永不出現於
+argv；argv 中僅有的可變元素是經允許清單驗證過的 URL 與一個 tmpdir 路
+徑）。此設計避開了中型附件即可能觸發的隱晦 `ARG_MAX` 失敗，也讓源自
+存取日誌的 payload 不會出現在 `ps -ef` / `/proc/<pid>/cmdline` 中
+（CWE-214）。使用 `--data-binary` 而非 `--data`，因為 `--data @file` 會
+剝除檔案中的換行與 CR。`--max-redirs 0` 與 `--proto '=http,https'` 限縮
+了遭入侵端點的影響範圍（CWE-918）。不使用 `--config`/curlrc 間接手法，
+也沒有任何形式的驗證標頭——契約本身未定義任何驗證機制。
+
+`--notify-dry-run` 模式下，組裝完成的 payload 會寫入
+`<RUN_OUTPUT_DIR>/notify_payload.json`（權限 0600），而非暫存性質的
+`$WORK_TMPDIR`，目的是讓其在行程結束後仍然存在、供操作者檢視：
+`init_tmpdir` 會安裝 `EXIT`/`INT`/`TERM` trap 移除 `$WORK_TMPDIR`，若
+payload 寫在該處，操作者查看時它早已消失。**這是「`RUN_OUTPUT_DIR` 只
+存放各分析模組自身持久化檔案」（§4.2）此一規則唯一有文件記載的例外**：
+dry run 的檔案數量會比不加 `--notify-dry-run` 的同一次執行多一個
+（payload 本身），而非維持不變。payload 永遠不可能把自己、或前一次
+執行遺留的 payload，列為附件：`notify_collect_attachments` 在任何
+`--notify-attach` 模式下，都會無條件排除字面檔名 `notify_payload.json`，
+如同它原本就會排除子目錄一樣。這是**以檔名為準的排除規則，而非仰賴
+寫入順序的論證**——即便後續某次執行透過有文件記載的 `LOG_PARSE_RUN_TS`
+覆寫機制（`lib/output_utils.sh`）重複使用同一個目錄、發現前一次執行的
+payload 已經存在該處，此排除規則依然成立；若僅仰賴「列舉必定先於寫入」
+的順序論證，在這種跨兩次獨立執行的情境下就不成立。正式寄送則維持既有、
+純暫存性質的 `$WORK_TMPDIR/notify_payload.json` 位置——`curl` 於同一
+行程內即消耗此檔案，故無檢視需求。
+
+**不自動重試——一項刻意、範圍受限的例外。** 不存在任何 `--retry`、
+`--retry-delay`，也沒有任何形式的冪等鍵標頭。此 API 未定義任何冪等機制
+（無請求鍵、無去重契約），因此若第一次回應僅是遺失，自動重試將導致
+郵件被重複寄出兩次；對外部收件者重複寄出一封報告郵件是真實的事故，
+而寄送失敗（見下）為致命錯誤、因此絕不可能被忽略。**此為對使用者層級
+指引的一項刻意、範圍受限之偏離記錄**（「對外部依賴採取重試、斷路器與
+優雅降級」）：此偏離**僅**適用於這一個非冪等的 POST 請求，理由是該項
+指引預設呼叫具冪等性或可去重——本工具組中其餘所有對外互動皆為唯讀，
+不受影響。
+
+**失敗即致命政策（`notify_run`）。** 寄送失敗為**致命錯誤**——
+`die "notify failed; reports are intact in <dir> ..."`——理由有三：
+(1) 操作者明確輸入了 `--notify`；若郵件無法送達，代表這次執行並未完成
+所要求之事，回報成功將是對結果的誤導；(2) 不存在獨立的補寄執行檔
+（曾評估並否決一支獨立的 `bin/send_report.sh`——理由見
+`lib/notify_utils.sh` 中 `notify_run` 定義上方的說明），故回傳 0 會讓
+真實的運維失敗被隱藏在一次「綠燈」的排程工作之後；(3) CLAUDE.md 規則
+一為快速失敗、大聲失敗——一種近乎靜默的降級正是該規則所禁止的行為。
+需要容忍此失敗的操作者，應明確組合：`bash bin/log_report.sh ... --notify
+|| true`。任一分析模組本身失敗同樣會使整次執行致命（`set -e`，行為
+不變），且由於模組迴圈先於 `notify_run` 執行，可保證**未完全成功的
+執行絕不會寄出郵件**。
+
+**`NOTIFY_RESULT`——每次執行僅有一行、可供機器解析的結果列**，輸出於
+stderr，`sent`/`dry-run` 使用 `INFO`，`failed`/`skipped` 使用 `ERROR`：
+
+```
+NOTIFY_RESULT status=sent http=200 ms=143 to=1 files=6 skipped_empty=0 raw_bytes=14897 b64_bytes=19864 payload_bytes=21492 run_ts=20260521_090000 reason=-
+```
+
+封閉的 `reason=` token 集合：`-`、`attachment_too_large:<name>`、
+`total_too_large`、`http_error`、`curl_exit_<n>`、`dry_run`。不存在
+`attempts=` 欄位（重試機制已移除，該值永遠只會是 `1`），也不存在
+`cc=`/`bcc=` 欄位（此契約無此類收件者）。
 
 ---
 
@@ -1265,6 +1447,57 @@ interval flags are mutually exclusive
 
 KV 與統計區塊以顯示寬度（wcwidth；CJK 全形字 = 2 欄）對齊，由 `lib/fmt_utils.sh` 中的 `FMT_AWK_WIDTH` 引擎統一處理，CJK 與 ASCII 標籤在終端機中正確對齊。
 
+### 4.9 報告寄送之條件式依賴（D12）
+
+CLAUDE.md §6 禁止此工具組新增超出 `bash gawk sort date mktemp` 的執行期
+依賴。`--notify` 需要 `curl`（HTTP POST）與 `base64`（附件編碼）——透過
+HTTP 寄送報告沒有原生 gawk 出路，而以純 gawk 重新實作 RFC 4648 base64
+**編碼器**（相對於已存在、用於 JWT `dob` claim 的純 gawk base64url
+**解碼器**，見 §3.1.5）此一方案已評估並否決：編碼器必須處理整個檔案
+而非約 20 bytes 的 JWT 區段，需要在 `LC_ALL=C` 下建立 256 項 ORD
+對照表、需吞入含 NUL 位元組的整檔內容，並需要自己的一整套位元組精確性
+測試矩陣——這比一行 `require_cmds base64` 帶來更多新增的程式碼表面，
+且落在本專案審查最不徹底之處。此為**刻意、範圍受限的例外**，並非對
+CLAUDE.md §6 的靜默違反：
+
+- 依賴邊界恰好與程式碼邊界重合——整個儲存庫中，只有
+  `lib/notify_utils.sh` 具名引用 `curl` 或 `base64`。
+- 檢查閘門是**延遲且由旗標觸發**，絕非無條件執行。Source
+  `lib/notify_utils.sh`（`bin/log_report.sh` 永遠會這麼做）本身是免費
+  的——它除了常數指派外，不含任何頂層可執行陳述式。`notify_preflight`
+  是唯一會呼叫 `command -v curl` 或 `require_cmds base64` 的程式碼路徑，
+  且僅在 `OPT_NOTIFY=1` 時執行。
+- **未使用 == 未被呼叫，可被證明。** 一台兩者皆未安裝的主機執行任何既
+  有工作流程——包括整套既有回歸測試——皆不受影響：
+  `bash bin/log_report.sh --log-dir ... --date ...`（未帶 `--notify`）
+  無論 `$PATH` 上是否存在 `curl`/`base64`，結果一律 exit 0。測試 L01
+  正是釘住這一點：完整執行、`LOG_PARSE_NOTIFY_CURL_BIN=curl-does-not-exist`
+  且**未**帶 `--notify`，仍以 exit 0 完成、所有持久化檔案皆存在。
+
+**兩道檢查閘門，皆大聲失敗：**
+
+1. **預檢（pre-flight）**——位於 `bin/log_report.sh` 的參數解析階段，
+   一旦設定 `--notify` 即刻執行（早於任何分析模組）。cron 主機遺失
+   `curl` 的操作者能在遠低於一秒的時間內得知，而非等到數分鐘的分析
+   執行結束之後。
+2. **使用當下（point of use）**——`notify_send` 的第一個陳述式，供任何
+   直接呼叫此函式庫的呼叫端使用（單元測試；未來的呼叫端）。透過
+   `NOTIFY_PREFLIGHT_DONE` 保持冪等。
+
+`--notify-dry-run` 僅需要 `base64`（絕不觸碰網路）；正式寄送兩者皆需。
+`curl` 缺失時會輸出三行具名、可操作的 stderr 訊息（而非一行籠統的依賴
+清單錯誤）並以 exit 1 中止：
+
+```
+[ERROR] --notify needs the optional dependency 'curl' (HTTP client for the SMTP API).
+[ERROR] Install curl, or use --notify-dry-run to build the payload without sending.
+[ERROR] missing required commands: curl
+```
+
+`base64` 缺失時則沿用既有的 `require_cmds` 格式
+（`ERROR: missing required commands: base64`），不作變更——
+`require_cmds` 本身（`lib/common.sh`）不因本功能而修改。
+
 ---
 
 ## 5. 能力矩陣
@@ -1287,6 +1520,7 @@ KV 與統計區塊以顯示寬度（wcwidth；CJK 全形字 = 2 欄）對齊，�
 | `--output-dir` | 是 | 是 | 是 | 是 | 是 | `""` → `./log-parse` |
 | `--emit-stats` | — | 是 | 是 | — | — | 關閉 |
 | `--modules` | — | — | — | — | 是 | `overview,iis,access` |
+| `--notify*`（5 個旗標，§3.4.7） | — | — | — | — | 自身 | `off` |
 | `--conf` | 是 | 是 | 是 | 是 | 是 | `conf/regions.conf` |
 | `-v`/`--verbose`, `-h` | 是 | 是 | 是 | 是 | 是 | 關閉 |
 | `--output FILE` | 已移除 | 已移除 | 已移除 | 已移除 | 已移除 | n/a |
@@ -1333,3 +1567,18 @@ KV 與統計區塊以顯示寬度（wcwidth；CJK 全形字 = 2 欄）對齊，�
   以避免提交預設目錄的輸出。
 - `analyze_errors` 摘要持久化於磁碟但不可選擇輸出至 console（errors 無
   `--view` 旗標）。如需對 errors 提供完整視圖同等功能，為加法性變更。
+- **任一模組失敗時不會寄出郵件。** `set -e` 會在第一個失敗的
+  `run_module` 呼叫處中止 `main()`，時機嚴格早於 `notify_run` 被觸及之
+  前——因此未完全跑完的執行絕不會通知任何人。若要在失敗時仍寄出通知，
+  需要一個目前本工具組尚不存在的 trap-chaining 輔助機制。
+- 通知功能的 Body 擷取器（`NOTIFY_BODY_AWK`，§3.4.7）耦合於
+  `bin/analyze_overview.sh` 的 `overview_render` 所輸出的**字面渲染字串**
+  （`■ 存取紀錄橫條圖` 標題，以及 `▶ ` 標題出現的次數）——而非結構化的
+  資料來源。未來若這些標題被更名或重新排序，會靜默改變郵件 Body 實際
+  擷取到的內容，而非大聲失敗。
+- 預設的 `--notify-url` 端點為**明文 HTTP**
+  （`http://haididev.intra.nhi.gov.tw:8080/api/email/send`），依業主提供
+  之契約而定。工具在每次對 `http://` 端點寄送時都會輸出一則明確、無法
+  關閉的警告，但除非操作者透過 `--notify-url` 或
+  `$LOG_PARSE_NOTIFY_URL` 提供 `https://` 端點，否則 payload（含所有
+  附件）皆以未加密方式傳輸。

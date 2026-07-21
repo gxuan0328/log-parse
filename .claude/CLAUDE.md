@@ -40,9 +40,9 @@ NOT a daemon. NOT a database. NOT a service. Do not introduce one.
 | Path        | Purpose                                                              |
 |-------------|----------------------------------------------------------------------|
 | `bin/`      | CLI entry points; one file = one command.                            |
-| `lib/`      | Sourced-only helpers (common, date_utils, csv_utils, fmt_utils).     |
-| `conf/`     | `regions.conf` — region ↔ server mapping read by `load_regions`.     |
-| `tests/`    | `run_tests.sh` — single-file regression suite (currently 275 tests). |
+| `lib/`      | Sourced-only helpers (common, date_utils, csv_utils, fmt_utils, notify_utils). |
+| `conf/`     | `regions.conf` — region ↔ server mapping read by `load_regions`; `receivers.conf` — `--notify` recipients. |
+| `tests/`    | `run_tests.sh` — single-file regression suite (currently 316 tests). |
 | `docs/`     | `design.md` + `usage.md` (+ zh-TW). Update both languages together.  |
 | `examples/` | `sample-logs/` (dataset), `sample-outputs/` (expected reports), `*.sh`.|
 | `.claude/`  | Project rules (this file + `rules/` + `skills/`).                    |
@@ -85,7 +85,10 @@ numerics (e.g. `Tests: 108/108`).
 
 ## 6. Hard "no"s
 
-- ❌ New runtime dependencies beyond `bash gawk sort date mktemp`.
+- ❌ New runtime dependencies beyond `bash gawk sort date mktemp` — EXCEPT
+  `curl` and `base64`, which are OPTIONAL, used only by
+  `lib/notify_utils.sh`, and gated lazily behind `--notify`
+  (see `docs/design.md` §4.9).
 - ❌ Silent fallbacks (`2>/dev/null || true` without a justifying comment).
 - ❌ `git add -A` / `git add .` in helper scripts — stage explicit paths.
 - ❌ Interactive prompts in CLI paths.

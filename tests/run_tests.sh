@@ -5,10 +5,10 @@
 # and error handling. Baselines are derived from the examples/sample-logs/LUNG-CANCER-REPORT-LOG
 # sample data included in the project (dates 2026-05-18 ~ 2026-05-25).
 #
-# Total: 275 tests across eleven sections (A access · B iis · C errors · D log_report ·
+# Total: 316 tests across twelve sections (A access · B iis · C errors · D log_report ·
 #        E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
-#        J test-host/health · K timezone+core-function).
-# Note: Sections J and K exist beyond I; K13/K14 are intentionally vacant (gap preserved).
+#        J test-host/health · K timezone+core-function · L notify SMTP-API delivery).
+# Note: Sections J, K and L exist beyond I; K13/K14 are intentionally vacant (gap preserved).
 #
 # Usage:  bash tests/run_tests.sh
 # Exit:   0 = all passed,  1 = one or more failures
@@ -929,6 +929,172 @@ _err E23 "log_report --view bogus 應 die (assert_enum)" "$rc"
 bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 \
     --modules foo >/dev/null 2>&1; rc=$?
 _err E26 "log_report --modules foo 未知模組應 die" "$rc"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section E (continued) — E27–E37  --notify validation paths (D12)
+# All offline, and ALL die in parse_args before persist_init ever runs (FIX F:
+# receivers.conf CONTENT + LOG_PARSE_NOTIFY_FROM_ADDR validation moved there
+# too, alongside notify_assert_url/notify_preflight, so a config typo now
+# surfaces before any analysis module runs -- matching docs/usage.md's
+# exit-code table. Previously E31-E35/E37 died only inside notify_send's
+# load_receivers/From-address checks, after a full bundled-dataset analysis
+# pass; E38 below proves the "zero subdirectories" half of the new timing
+# directly, mirroring E36's existing dependency-gate idiom). None resolves a
+# real curl except E36, which proves the opposite (dependency gate fires
+# first).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# E27: --notify --notify-attach bogus → assert_enum message naming --notify-attach
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 \
+    --notify --notify-attach bogus 2>&1 >/dev/null); rc=$?
+if [[ "$rc" -ne 0 ]] && printf '%s\n' "$out" | grep -qF -- "--notify-attach must be one of:"; then
+    _pass "E27  --notify --notify-attach bogus 應 die (assert_enum 訊息含 --notify-attach)"
+else
+    _fail "E27  --notify --notify-attach bogus 應 die [rc=$rc]"
+fi
+
+# E28: --notify-attach summary without --notify → "...require --notify"
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 \
+    --notify-attach summary 2>&1 >/dev/null); rc=$?
+if [[ "$rc" -ne 0 ]] && printf '%s\n' "$out" | grep -qF "require --notify"; then
+    _pass "E28  --notify-attach summary 缺少 --notify 應 die (…require --notify)"
+else
+    _fail "E28  --notify-attach summary 缺少 --notify 應 die [rc=$rc]"
+fi
+
+# E29: --notify --notify-dry-run --notify-url ftp://x/y → URL validated even in dry-run
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 \
+    --notify --notify-dry-run --notify-url ftp://x/y 2>&1 >/dev/null); rc=$?
+if [[ "$rc" -ne 0 ]] && printf '%s\n' "$out" | grep -qF "unsupported endpoint URL: ftp://x/y"; then
+    _pass "E29  --notify-url ftp://x/y 應 die (URL 於 dry-run 亦驗證)"
+else
+    _fail "E29  --notify-url ftp://x/y 應 die [rc=$rc]"
+fi
+
+# E30: --notify --receivers-conf /nonexistent/receivers.conf → "conf file not found:"
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 \
+    --notify --receivers-conf /nonexistent/receivers.conf 2>&1 >/dev/null); rc=$?
+if [[ "$rc" -ne 0 ]] && printf '%s\n' "$out" | \
+   grep -qF "conf file not found: /nonexistent/receivers.conf"; then
+    _pass "E30  --receivers-conf 指向不存在檔案應 die"
+else
+    _fail "E30  --receivers-conf 指向不存在檔案應 die [rc=$rc]"
+fi
+
+# ---- Shared malformed-receivers.conf fixtures for E31-E34, E37 -------------
+TMPD_ECONF=$(mktemp -d /tmp/lp_econf.XXXXXX)
+
+# E31: receivers.conf containing only comments/blank lines → "no recipient defined"
+printf '# comment\n\n   \n' > "${TMPD_ECONF}/e31.conf"
+TMPD_E31=$(mktemp -d /tmp/lp_e31.XXXXXX)
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_E31" \
+    --notify --notify-dry-run --receivers-conf "${TMPD_ECONF}/e31.conf" 2>&1 >/dev/null); rc=$?
+if [[ "$rc" -ne 0 ]] && printf '%s\n' "$out" | grep -qF "receivers.conf: no recipient defined"; then
+    _pass "E31  receivers.conf 僅含註解/空白行應 die (no recipient defined)"
+else
+    _fail "E31  receivers.conf 僅含註解/空白行應 die [rc=$rc]"
+fi
+rm -rf "$TMPD_E31"
+
+# E32: a 3-field row → "expected 2 pipe-separated fields ..., got 3", names the line
+printf 'A|B|C\n' > "${TMPD_ECONF}/e32.conf"
+TMPD_E32=$(mktemp -d /tmp/lp_e32.XXXXXX)
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_E32" \
+    --notify --notify-dry-run --receivers-conf "${TMPD_ECONF}/e32.conf" 2>&1 >/dev/null); rc=$?
+if [[ "$rc" -ne 0 ]] && printf '%s\n' "$out" | \
+   grep -qF "receivers.conf:1: expected 2 pipe-separated fields (DISPLAY_NAME|ADDRESS), got 3"; then
+    _pass "E32  receivers.conf 3 欄位應 die (含行號)"
+else
+    _fail "E32  receivers.conf 3 欄位應 die [rc=$rc]"
+fi
+rm -rf "$TMPD_E32"
+
+# E33: address 'jason.chao@' (no TLD) → "invalid address"
+printf 'Jason|jason.chao@\n' > "${TMPD_ECONF}/e33.conf"
+TMPD_E33=$(mktemp -d /tmp/lp_e33.XXXXXX)
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_E33" \
+    --notify --notify-dry-run --receivers-conf "${TMPD_ECONF}/e33.conf" 2>&1 >/dev/null); rc=$?
+if [[ "$rc" -ne 0 ]] && printf '%s\n' "$out" | grep -qF "invalid address"; then
+    _pass "E33  receivers.conf 無效 address 應 die"
+else
+    _fail "E33  receivers.conf 無效 address 應 die [rc=$rc]"
+fi
+rm -rf "$TMPD_E33"
+
+# E34: display name 'Bad"Name' → "display name contains"
+printf 'Bad"Name|jason.chao@cohesiondata.com\n' > "${TMPD_ECONF}/e34.conf"
+TMPD_E34=$(mktemp -d /tmp/lp_e34.XXXXXX)
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_E34" \
+    --notify --notify-dry-run --receivers-conf "${TMPD_ECONF}/e34.conf" 2>&1 >/dev/null); rc=$?
+if [[ "$rc" -ne 0 ]] && printf '%s\n' "$out" | grep -qF "display name contains"; then
+    _pass "E34  receivers.conf 無效 display name 應 die"
+else
+    _fail "E34  receivers.conf 無效 display name 應 die [rc=$rc]"
+fi
+rm -rf "$TMPD_E34"
+
+# E35: LOG_PARSE_NOTIFY_FROM_ADDR=not-an-address with --notify → validated From address
+TMPD_E35=$(mktemp -d /tmp/lp_e35.XXXXXX)
+out=$(LOG_PARSE_NOTIFY_FROM_ADDR='not-an-address' bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_E35" \
+    --notify --notify-dry-run 2>&1 >/dev/null); rc=$?
+if [[ "$rc" -ne 0 ]] && printf '%s\n' "$out" | \
+   grep -qF "LOG_PARSE_NOTIFY_FROM_ADDR is not a valid address: not-an-address"; then
+    _pass "E35  LOG_PARSE_NOTIFY_FROM_ADDR 無效應 die"
+else
+    _fail "E35  LOG_PARSE_NOTIFY_FROM_ADDR 無效應 die [rc=$rc]"
+fi
+rm -rf "$TMPD_E35"
+
+# E36: --notify with curl missing → 3-line dependency-gate message; run aborts
+# BEFORE any module executes (no RUN_OUTPUT_DIR subdirectory ever created)
+TMPD_E36=$(mktemp -d /tmp/lp_e36.XXXXXX)
+out=$(LOG_PARSE_NOTIFY_CURL_BIN=curl-does-not-exist bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_E36" \
+    --notify 2>&1 >/dev/null); rc=$?
+e36_subdirs=$(find "$TMPD_E36" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$rc" -ne 0 ]] \
+   && printf '%s\n' "$out" | grep -qF "needs the optional dependency 'curl'" \
+   && printf '%s\n' "$out" | grep -qF "missing required commands: curl" \
+   && [[ "$e36_subdirs" -eq 0 ]]; then
+    _pass "E36  curl 缺失應 die (3 行訊息) 且未建立任何 run 目錄 (before any module)"
+else
+    _fail "E36  curl 缺失應 die 且未建立任何 run 目錄 [rc=$rc subdirs=$e36_subdirs]"
+fi
+rm -rf "$TMPD_E36"
+
+# E37: same address twice, differing case → "duplicate address", naming both lines
+printf 'Jason|Jason.Chao@Cohesiondata.com\nBob|jason.chao@cohesiondata.com\n' > "${TMPD_ECONF}/e37.conf"
+TMPD_E37=$(mktemp -d /tmp/lp_e37.XXXXXX)
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_E37" \
+    --notify --notify-dry-run --receivers-conf "${TMPD_ECONF}/e37.conf" 2>&1 >/dev/null); rc=$?
+if [[ "$rc" -ne 0 ]] && printf '%s\n' "$out" | \
+   grep -qF "receivers.conf:2: duplicate address 'jason.chao@cohesiondata.com' (first seen on line 1)"; then
+    _pass "E37  receivers.conf 重複 address (大小寫不同) 應 die (含兩行行號)"
+else
+    _fail "E37  receivers.conf 重複 address 應 die [rc=$rc]"
+fi
+rm -rf "$TMPD_E37" "$TMPD_ECONF"
+
+# E38: FIX F regression -- receivers.conf CONTENT validation (not merely its
+# existence, already covered by E30) now happens in parse_args, BEFORE
+# persist_init ever runs: zero subdirectories are created under
+# --output-dir, exactly like E36's curl-dependency-gate proof. Previously
+# this died only after a full (fast, bundled-dataset) analysis pass, inside
+# notify_send's load_receivers call.
+TMPD_E38=$(mktemp -d /tmp/lp_e38.XXXXXX)
+printf '# comment only, no recipient rows\n' > "${TMPD_E38}/bad.conf"
+out=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_E38" \
+    --notify --notify-dry-run --receivers-conf "${TMPD_E38}/bad.conf" 2>&1 >/dev/null); rc=$?
+e38_subdirs=$(find "$TMPD_E38" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$rc" -ne 0 ]] \
+   && printf '%s\n' "$out" | grep -qF "receivers.conf: no recipient defined" \
+   && [[ "$e38_subdirs" -eq 0 ]]; then
+    _pass "E38  FIX F：無效 receivers.conf 於 parse_args 即 die，未建立任何 run 目錄 (before any module)"
+else
+    _fail "E38  FIX F 提前失敗檢查失敗 [rc=$rc subdirs=$e38_subdirs]"
+fi
+rm -rf "$TMPD_E38"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section F — 使用情境模擬 (User Scenario Smoke Tests)
@@ -2118,6 +2284,849 @@ if printf '%s\n' "$k16_block" | grep -qF "呼叫次數 427" && \
 else
     _fail "K16  總體概況 缺少 呼叫次數 427 或 回應時間 0.93s"
 fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section L — bin/log_report.sh --notify: SMTP-API report delivery (D12)
+# Baselines (fixed date 2026-05-21, default modules overview,iis,access):
+#   log_report.sh always persists exactly 6 files: access_detail.txt,
+#   access_ip_counts.tsv, access_summary.txt, iis_detail.txt, iis_summary.txt,
+#   overview_summary.txt. overview_summary.txt's KEY SUMMARY block contains
+#   整體健康判定 and 核心功能存取合計 624 (same H/J/K anchors reused here) and
+#   the ■ 存取紀錄橫條圖 bar-chart heading NOTIFY_BODY_AWK must stop before.
+#   conf/receivers.conf ships exactly one row: Jason Chao / jason.chao@cohesiondata.com.
+#   No test in this section ever contacts a real network endpoint: dry-run
+#   never resolves curl at all, and every real-send test pins
+#   LOG_PARSE_NOTIFY_CURL_BIN at a local fake-curl shim (below) that only
+#   touches the local filesystem, never a socket.
+# ─────────────────────────────────────────────────────────────────────────────
+
+section "L  bin/log_report.sh --notify — SMTP-API report delivery (D12)"
+
+# ---- Shared fixtures for this section ---------------------------------------
+
+# _L_SRC_RUN: one real run directory (6 files), built once. Mechanism-3 tests
+# below take a fresh `cp -r` copy each via _l_fixture rather than sharing this
+# directory directly: a dry-run now writes notify_payload.json INSIDE the
+# directory it enumerates (see notify_send's own ORCHESTRATOR OVERRIDE
+# docblock comment), so re-using one directory across repeated dry-runs would
+# let one test's leftover payload be picked up as a 7th attachment by the next.
+_L_SRC=$(mktemp -d /tmp/lp_L_src.XXXXXX)
+bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$_L_SRC" >/dev/null 2>&1
+_L_SRC_RUN=$(find "$_L_SRC" -mindepth 1 -maxdepth 1 -type d | head -1)
+
+# _l_fixture: echo the path of a fresh, isolated copy of _L_SRC_RUN.
+_l_fixture() {
+    local d
+    d=$(mktemp -d /tmp/lp_Lfix.XXXXXX)
+    cp -r "${_L_SRC_RUN}/." "$d/"
+    printf '%s' "$d"
+}
+
+# _L_SHIMDIR/fake_curl.sh: an offline stand-in for curl (spec §10.1 mechanism
+# 2, G05-style inline fixture). Records one space-joined argv line per
+# invocation to curl.calls (never the referenced payload file's CONTENT --
+# only its "@path" argv token, which is the entire point of
+# --data-binary @path, C11); counts invocations in curl.count; writes an
+# empty response body to the path following --output; replies on stdout with
+# a canned "%{http_code} %{time_total}" (mirrors curl --write-out); exits
+# with the code in curl_rc (default 0, i.e. success). Never opens a socket.
+_L_SHIMDIR=$(mktemp -d /tmp/lp_Lshim.XXXXXX)
+cat > "${_L_SHIMDIR}/fake_curl.sh" <<'SHIMEOF'
+#!/usr/bin/env bash
+out="" prev=""
+for a in "$@"; do
+    if [[ "$prev" == "--output" ]]; then out="$a"; fi
+    prev="$a"
+done
+{ printf '%s ' "$@"; printf '\n---\n'; } >> "${SHIM_LOG_DIR}/curl.calls"
+printf 'x' >> "${SHIM_LOG_DIR}/curl.count"
+if [[ -n "$out" ]]; then : > "$out"; fi
+code=200
+if [[ -f "${SHIM_LOG_DIR}/curl_code" ]]; then code="$(cat "${SHIM_LOG_DIR}/curl_code")"; fi
+printf '%s %s' "$code" "0.010"
+rc=0
+if [[ -f "${SHIM_LOG_DIR}/curl_rc" ]]; then rc="$(cat "${SHIM_LOG_DIR}/curl_rc")"; fi
+exit "$rc"
+SHIMEOF
+chmod +x "${_L_SHIMDIR}/fake_curl.sh"
+export SHIM_LOG_DIR="$_L_SHIMDIR"
+
+# _l_shim_reset: clear the shim's call log + canned response between tests.
+_l_shim_reset() {
+    : > "${_L_SHIMDIR}/curl.calls"
+    : > "${_L_SHIMDIR}/curl.count"
+    rm -f "${_L_SHIMDIR}/curl_rc" "${_L_SHIMDIR}/curl_code"
+}
+
+# L01: dependency is genuinely conditional -- curl missing never matters
+# unless --notify is actually requested.
+TMPD_L01=$(mktemp -d /tmp/lp_l01.XXXXXX)
+LOG_PARSE_NOTIFY_CURL_BIN=curl-does-not-exist bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_L01" \
+    >/dev/null 2>/dev/null; rc=$?
+l01_cnt=$(find "$TMPD_L01" -type f 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$rc" -eq 0 && "$l01_cnt" -eq 6 ]]; then
+    _pass "L01  無 --notify 時 LOG_PARSE_NOTIFY_CURL_BIN 不存在也不影響：exit 0 且 6 檔"
+else
+    _fail "L01  依賴應為條件式 [rc=$rc files=$l01_cnt]"
+fi
+rm -rf "$TMPD_L01"
+
+# L02: --notify --notify-dry-run exits 0 and logs an existing, mode-0600 path.
+TMPD_L02=$(mktemp -d /tmp/lp_l02.XXXXXX)
+bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_L02" \
+    --notify --notify-dry-run >/dev/null 2>"${TMPD_L02}.stderr"; rc=$?
+l02_path=$(grep -oE 'payload written: .*' "${TMPD_L02}.stderr" | sed 's/^payload written: //')
+if [[ "$rc" -eq 0 && -n "$l02_path" && -f "$l02_path" \
+      && "$(stat -c '%a' "$l02_path" 2>/dev/null)" == "600" ]]; then
+    _pass "L02  --notify --notify-dry-run exit 0，payload written: 路徑存在且 mode 0600"
+else
+    _fail "L02  --notify-dry-run payload 檢查失敗 [rc=$rc path=${l02_path:-NONE}]"
+fi
+rm -rf "$TMPD_L02" "${TMPD_L02}.stderr"
+
+# L03: GOLDEN PAYLOAD SHAPE -- PascalCase From/To/Subject/Body, Attachments is
+# a map, and none of the removed contract tokens ever appear.
+_d03=$(_l_fixture)
+bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$_d03'
+" >/dev/null 2>&1
+_c03="$(cat "${_d03}/notify_payload.json" 2>/dev/null)"
+if [[ "$_c03" == '{"From":{"DisplayName":"'* ]] \
+   && [[ "$_c03" == *'","Address":"'* ]] \
+   && [[ "$_c03" == *'"To":[{"DisplayName":"'* ]] \
+   && [[ "$_c03" == *'"Subject":"【肺癌報告】'* ]] \
+   && [[ "$_c03" == *'"Body":"'* ]] \
+   && [[ "$_c03" == *'"Attachments":{'* ]] \
+   && [[ "$_c03" == *'}}' ]] \
+   && [[ "$_c03" != *'isBodyHtml'* ]] \
+   && [[ "$_c03" != *'"cc"'* ]] \
+   && [[ "$_c03" != *'"bcc"'* ]] \
+   && [[ "$_c03" != *'fileName'* ]] \
+   && [[ "$_c03" != *'contentBase64'* ]]; then
+    _pass "L03  GOLDEN PAYLOAD SHAPE：From/To/Subject/Body/Attachments 齊全，無禁用欄位"
+else
+    _fail "L03  GOLDEN PAYLOAD SHAPE 檢查失敗"
+fi
+rm -rf "$_d03"
+
+# L04: default attach scope is all -- key count equals the run's 6 files,
+# and access_detail.txt is among them.
+_d04=$(_l_fixture)
+bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$_d04'
+" >/dev/null 2>&1
+l04_keys=$(grep -oE '"[^"]+":"[A-Za-z0-9+/=]*"' "${_d04}/notify_payload.json" | wc -l | tr -d ' ')
+if [[ "$l04_keys" -eq 6 ]] && grep -qF '"access_detail.txt":"' "${_d04}/notify_payload.json"; then
+    _pass "L04  預設 attach scope = all：6 個附件 key，含 access_detail.txt"
+else
+    _fail "L04  預設 attach scope 應為 all [keys=$l04_keys]"
+fi
+rm -rf "$_d04"
+
+# L05: --notify-attach summary narrows to the 3 *_summary.txt files;
+# access_detail.txt is not a key.
+_d05=$(_l_fixture)
+bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=summary
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$_d05'
+" >/dev/null 2>&1
+l05_keys=$(grep -oE '"[^"]+":"[A-Za-z0-9+/=]*"' "${_d05}/notify_payload.json" | wc -l | tr -d ' ')
+if [[ "$l05_keys" -eq 3 ]] && ! grep -qF '"access_detail.txt":"' "${_d05}/notify_payload.json"; then
+    _pass "L05  --notify-attach summary：3 個附件 key，access_detail.txt 不在其中"
+else
+    _fail "L05  --notify-attach summary 應窄化為 3 [keys=$l05_keys]"
+fi
+rm -rf "$_d05"
+
+# L06: boundary -- fixture dir with only a *_detail file, mode summary ->
+# empty Attachments map + explicit "no summary available" body fallback.
+TMPD_L06=$(mktemp -d /tmp/lp_l06.XXXXXX)
+printf 'hello world\n' > "${TMPD_L06}/foo_detail.tsv"
+bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=summary
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$TMPD_L06'
+" >/dev/null 2>/dev/null; rc=$?
+if [[ "$rc" -eq 0 ]] \
+   && grep -qF '"Attachments":{}' "${TMPD_L06}/notify_payload.json" \
+   && grep -qF '(no summary view available for this run)' "${TMPD_L06}/notify_payload.json"; then
+    _pass "L06  邊界：僅 *_detail 檔且 mode=summary -> Attachments:{} 且 body 顯示無摘要可用"
+else
+    _fail "L06  邊界情境檢查失敗 [rc=$rc]"
+fi
+rm -rf "$TMPD_L06"
+
+# L07: a 3-byte file abc.txt produces the exact pair "abc.txt":"YWJj".
+TMPD_L07=$(mktemp -d /tmp/lp_l07.XXXXXX)
+printf 'abc' > "${TMPD_L07}/abc.txt"
+bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$TMPD_L07'
+" >/dev/null 2>/dev/null
+_has L07 "3-byte abc.txt -> 精確配對 \"abc.txt\":\"YWJj\"" \
+    "$(cat "${TMPD_L07}/notify_payload.json" 2>/dev/null)" '"abc.txt":"YWJj"'
+rm -rf "$TMPD_L07"
+
+# L08: body carries the run's real KEY SUMMARY (never boilerplate).
+_d08=$(_l_fixture)
+bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$_d08'
+" >/dev/null 2>&1
+_c08="$(cat "${_d08}/notify_payload.json" 2>/dev/null)"
+if [[ "$_c08" == *'整體健康判定'* && "$_c08" == *'核心功能存取合計'* ]]; then
+    _pass "L08  body 含真實 KEY SUMMARY (整體健康判定 + 核心功能存取合計)"
+else
+    _fail "L08  body 缺少 KEY SUMMARY 關鍵字"
+fi
+rm -rf "$_d08"
+
+# L09: body excludes the hourly bar chart and carries zero ANSI ESC bytes
+# (I08 idiom: grep -cP '\x1b').
+_d09=$(_l_fixture)
+bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$_d09'
+" >/dev/null 2>&1
+l09_p="${_d09}/notify_payload.json"
+l09_esc=$(grep -cP '\x1b' "$l09_p" 2>/dev/null || true)
+if ! grep -qF '存取紀錄橫條圖' "$l09_p" && [[ "${l09_esc:-0}" -eq 0 ]]; then
+    _pass "L09  body 不含 存取紀錄橫條圖，且無 ANSI ESC 位元組 (I08 idiom)"
+else
+    _fail "L09  body 應排除橫條圖且無 ESC [esc=${l09_esc:-?}]"
+fi
+rm -rf "$_d09"
+
+# L10: stdout of --notify --notify-dry-run is byte-identical to the same run
+# without the flags (rule 3 -- notify never touches stdout).
+TMPD_L10A=$(mktemp -d /tmp/lp_l10a.XXXXXX)
+TMPD_L10B=$(mktemp -d /tmp/lp_l10b.XXXXXX)
+out10a=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_L10A" 2>/dev/null)
+out10b=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_L10B" \
+    --notify --notify-dry-run 2>/dev/null)
+if [[ "$out10a" == "$out10b" ]]; then
+    _pass "L10  --notify --notify-dry-run 之 stdout 與未加旗標逐位元組相同 (rule 3)"
+else
+    _fail "L10  --notify --notify-dry-run 之 stdout 應與未加旗標相同"
+fi
+rm -rf "$TMPD_L10A" "$TMPD_L10B"
+
+# L11: shimmed real send on a 4-module run -- the shim fires exactly once with
+# the expected argv shape, and no module ever received a --notify* argument.
+# (Non-forwarding is doubly proven: build_module_args never adds --notify*, and
+# if it somehow had, the receiving analyze_* would die on "Unknown option" and
+# main() would abort under set -e before ever reaching notify_run -- so the
+# shim would show ZERO calls, not one. C11: no payload byte on argv.)
+_l_shim_reset
+TMPD_L11=$(mktemp -d /tmp/lp_l11.XXXXXX)
+LOG_PARSE_NOTIFY_CURL_BIN="${_L_SHIMDIR}/fake_curl.sh" bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_L11" \
+    --modules overview,iis,access,errors --notify >/dev/null 2>"${TMPD_L11}.stderr"
+l11_calls=$(cat "${_L_SHIMDIR}/curl.calls" 2>/dev/null)
+l11_ncalls=$(wc -c < "${_L_SHIMDIR}/curl.count" 2>/dev/null | tr -d ' ')
+if [[ "${l11_ncalls:-0}" -eq 1 ]] \
+   && [[ "$l11_calls" == *'--data-binary @'* ]] \
+   && [[ "$l11_calls" == *'http://haididev.intra.nhi.gov.tw:8080/api/email/send'* ]] \
+   && [[ "$l11_calls" != *'Attachments'* ]]; then
+    _pass "L11  shim curl 恰呼叫一次；argv 含 --data-binary @ 與 URL 且無 payload 位元組；子模組未收到 --notify*"
+else
+    _fail "L11  shim/非轉發檢查失敗 [ncalls=${l11_ncalls:-0}]"
+fi
+rm -rf "$TMPD_L11" "${TMPD_L11}.stderr"
+
+# L12: escaping round-trip, keys included -- From identity with a quote+
+# backslash (also regression-pins the gawk -v backslash-doubling fix), a
+# filename that is itself a JSON key containing a quote, and
+# LOG_PARSE_NOTIFY_SUBJECT containing TAB + newline + CJK.
+TMPD_L12=$(mktemp -d /tmp/lp_l12.XXXXXX)
+printf 'weird\n' > "${TMPD_L12}/we\"ird.txt"
+LOG_PARSE_NOTIFY_FROM_NAME='Jason "Bad\Name"' \
+LOG_PARSE_NOTIFY_SUBJECT=$'Subj\twith\nCJK 台北' \
+bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$TMPD_L12'
+" >/dev/null 2>&1
+_c12="$(cat "${TMPD_L12}/notify_payload.json" 2>/dev/null)"
+if [[ "$_c12" == *'Jason \"Bad\\Name\"'* ]] \
+   && [[ "$_c12" == *'"we\"ird.txt":"'* ]] \
+   && [[ "$_c12" == *'\t'* ]] \
+   && [[ "$_c12" == *'\n'* ]] \
+   && [[ "$_c12" == *'台北'* ]]; then
+    _pass "L12  escaping round-trip：From 引號+反斜線、檔名 key、Subject TAB/換行/CJK 均正確"
+else
+    _fail "L12  escaping round-trip 檢查失敗"
+fi
+rm -rf "$TMPD_L12"
+
+# L13: real-send payload is mode 0600 and lives OUTSIDE the run directory
+# (under WORK_TMPDIR) -- unlike the dry-run payload, which the documented
+# ORCHESTRATOR OVERRIDE deliberately places inside the run dir instead (see
+# L02/L14 for that half of the contract).
+_l_shim_reset
+TMPD_L13=$(mktemp -d /tmp/lp_l13.XXXXXX)
+printf 'x' > "${TMPD_L13}/f.txt"
+_l13_res=$(SHIM_LOG_DIR="$_L_SHIMDIR" LOG_PARSE_NOTIFY_CURL_BIN="${_L_SHIMDIR}/fake_curl.sh" bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=0; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://haididev.intra.nhi.gov.tw:8080/api/email/send'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$TMPD_L13' >/dev/null 2>&1
+    if [[ -f \"\$NOTIFY_PAYLOAD_PATH\" ]]; then
+        printf '%s %s\n' \"\$(stat -c '%a' \"\$NOTIFY_PAYLOAD_PATH\")\" \"\$NOTIFY_PAYLOAD_PATH\"
+    fi
+")
+l13_mode="${_l13_res%% *}"
+l13_path="${_l13_res#* }"
+if [[ "$l13_mode" == "600" && -n "$l13_path" && "$l13_path" != "${TMPD_L13}"/* ]]; then
+    _pass "L13  正式送出 payload mode 0600，路徑不在 run dir 內 (WORK_TMPDIR)"
+else
+    _fail "L13  正式送出 payload mode/路徑檢查失敗 [mode=$l13_mode path=$l13_path]"
+fi
+rm -rf "$TMPD_L13"
+
+# L14: a real (shimmed) send never changes the run dir's persisted file count
+# (preserves the I12 "nothing transient in RUN_OUTPUT_DIR" invariant). Tested
+# against a real send rather than dry-run, since Override #1 deliberately
+# makes the DRY-RUN payload the one documented exception to that invariant
+# (see L02/L13); this test guards the invariant for the path where it still
+# holds unconditionally.
+_l_shim_reset
+TMPD_L14A=$(mktemp -d /tmp/lp_l14a.XXXXXX)
+TMPD_L14B=$(mktemp -d /tmp/lp_l14b.XXXXXX)
+bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_L14A" >/dev/null 2>&1
+LOG_PARSE_NOTIFY_CURL_BIN="${_L_SHIMDIR}/fake_curl.sh" bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_L14B" --notify >/dev/null 2>&1
+l14a_cnt=$(find "$TMPD_L14A" -type f 2>/dev/null | wc -l | tr -d ' ')
+l14b_cnt=$(find "$TMPD_L14B" -type f 2>/dev/null | wc -l | tr -d ' ')
+_eq L14 "run dir 檔案數與 --notify(正式送出) 無關 (I12 持久化不變量)" "$l14b_cnt" "$l14a_cnt"
+rm -rf "$TMPD_L14A" "$TMPD_L14B"
+
+# L15: a 0-byte file is SKIPPED, counted, and never becomes an attachment key.
+TMPD_L15=$(mktemp -d /tmp/lp_l15.XXXXXX)
+: > "${TMPD_L15}/empty.txt"
+printf 'x' > "${TMPD_L15}/nonempty.txt"
+out15=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$TMPD_L15'
+" 2>&1); rc=$?
+_c15="$(cat "${TMPD_L15}/notify_payload.json" 2>/dev/null)"
+if [[ "$rc" -eq 0 ]] \
+   && printf '%s\n' "$out15" | grep -qF 'skipped_empty=1' \
+   && [[ "$_c15" != *'"empty.txt":"'* ]]; then
+    _pass "L15  0-byte 檔案 SKIPPED，skipped_empty=1，未成為附件 key (exit 0)"
+else
+    _fail "L15  0-byte 檔案處理檢查失敗 [rc=$rc]"
+fi
+rm -rf "$TMPD_L15"
+
+# L16: From identity -- default 系統通知/notify@nhi.gov.tw; env override wins.
+TMPD_L16A=$(mktemp -d /tmp/lp_l16a.XXXXXX)
+printf 'x' > "${TMPD_L16A}/f.txt"
+bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$TMPD_L16A'
+" >/dev/null 2>&1
+TMPD_L16B=$(mktemp -d /tmp/lp_l16b.XXXXXX)
+printf 'x' > "${TMPD_L16B}/f.txt"
+LOG_PARSE_NOTIFY_FROM_NAME='維運' LOG_PARSE_NOTIFY_FROM_ADDR='ops@nhi.gov.tw' bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$TMPD_L16B'
+" >/dev/null 2>&1
+_c16a="$(cat "${TMPD_L16A}/notify_payload.json" 2>/dev/null)"
+_c16b="$(cat "${TMPD_L16B}/notify_payload.json" 2>/dev/null)"
+if [[ "$_c16a" == '{"From":{"DisplayName":"系統通知","Address":"notify@nhi.gov.tw"},'* ]] \
+   && [[ "$_c16b" == '{"From":{"DisplayName":"維運","Address":"ops@nhi.gov.tw"},'* ]]; then
+    _pass "L16  From 身分：預設 系統通知/notify@nhi.gov.tw；覆寫後 維運/ops@nhi.gov.tw"
+else
+    _fail "L16  From 身分預設/覆寫檢查失敗"
+fi
+rm -rf "$TMPD_L16A" "$TMPD_L16B"
+
+# L17: per-file cap breach -- nothing sent, no curl call at all.
+_l_shim_reset
+TMPD_L17=$(mktemp -d /tmp/lp_l17.XXXXXX)
+out17=$(LOG_PARSE_NOTIFY_MAX_ATTACH_BYTES=16 \
+    LOG_PARSE_NOTIFY_CURL_BIN="${_L_SHIMDIR}/fake_curl.sh" bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_L17" \
+    --notify 2>&1 >/dev/null); rc=$?
+l17_calls=$(wc -c < "${_L_SHIMDIR}/curl.calls" 2>/dev/null | tr -d ' ')
+if [[ "$rc" -ne 0 ]] \
+   && printf '%s\n' "$out17" | grep -qF 'status=skipped' \
+   && printf '%s\n' "$out17" | grep -qF 'reason=attachment_too_large:' \
+   && [[ "${l17_calls:-1}" -eq 0 ]]; then
+    _pass "L17  單檔超過上限：status=skipped，curl 從未被呼叫，log_report 非零 exit"
+else
+    _fail "L17  容量上限檢查失敗 [rc=$rc curl_calls_bytes=${l17_calls:-?}]"
+fi
+rm -rf "$TMPD_L17"
+
+# L18: fatal on send failure -- shim exit 22 propagates to a die, with the
+# NOTIFY_RESULT marker and no stale bin/send_report.sh resend advice.
+_l_shim_reset
+echo 22 > "${_L_SHIMDIR}/curl_rc"
+TMPD_L18=$(mktemp -d /tmp/lp_l18.XXXXXX)
+out18=$(LOG_PARSE_NOTIFY_CURL_BIN="${_L_SHIMDIR}/fake_curl.sh" bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_L18" \
+    --notify 2>&1 >/dev/null); rc=$?
+if [[ "$rc" -ne 0 ]] \
+   && printf '%s\n' "$out18" | grep -qF 'NOTIFY_RESULT status=failed' \
+   && printf '%s\n' "$out18" | grep -qF 'reports are intact in' \
+   && ! printf '%s\n' "$out18" | grep -qF 'send_report'; then
+    _pass "L18  送出失敗應 fatal：status=failed、reports are intact in，且無 send_report 建議"
+else
+    _fail "L18  送出失敗 fatal 檢查失敗 [rc=$rc]"
+fi
+rm -rf "$TMPD_L18"
+rm -f "${_L_SHIMDIR}/curl_rc"
+
+# L19: determinism -- two dry-runs over the SAME fixture dir (leftover payload
+# removed between runs, restoring the enumerated precondition -- see the
+# ORCHESTRATOR OVERRIDE note on L13) produce byte-identical payloads; also
+# pins that Subject derives from the resolved interval, never send-time date.
+TMPD_L19=$(_l_fixture)
+# FIX J: stage the first payload under a dedicated mktemp -d directory --
+# never a literal /tmp/<name> path (bash.md: "Never hardcode /tmp/foo").
+TMPD_L19STAGE=$(mktemp -d /tmp/lp_l19_stage.XXXXXX)
+bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$TMPD_L19'
+" >/dev/null 2>&1
+cp "${TMPD_L19}/notify_payload.json" "${TMPD_L19STAGE}/p1.json"
+rm -f "${TMPD_L19}/notify_payload.json"
+bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$TMPD_L19'
+" >/dev/null 2>&1
+cmp -s "${TMPD_L19STAGE}/p1.json" "${TMPD_L19}/notify_payload.json"; l19_rc=$?
+_eq L19 "同一 fixture 兩次 dry-run 產生逐位元組相同的 payload (determinism)" "$l19_rc" "0"
+rm -rf "$TMPD_L19" "$TMPD_L19STAGE"
+
+# L20: load_receivers -- a messy fixture (inline/indented comments,
+# whitespace-only line, CRLF, padded fields) normalises identically to a
+# clean fixture; the shipped conf/receivers.conf yields exactly one row.
+TMPD_L20=$(mktemp -d /tmp/lp_l20.XXXXXX)
+printf 'Jason Chao|jason.chao@cohesiondata.com\n' > "${TMPD_L20}/clean.conf"
+printf '# whole-line comment\r\n   # indented comment\r\n   \r\nJason Chao   |   jason.chao@cohesiondata.com   # inline comment\r\n' \
+    > "${TMPD_L20}/messy.conf"
+l20_clean=$(bash -c "source '${PROJECT_DIR}/lib/common.sh'; source '${PROJECT_DIR}/lib/notify_utils.sh'; load_receivers '${TMPD_L20}/clean.conf'")
+l20_messy=$(bash -c "source '${PROJECT_DIR}/lib/common.sh'; source '${PROJECT_DIR}/lib/notify_utils.sh'; load_receivers '${TMPD_L20}/messy.conf'")
+l20_shipped=$(bash -c "source '${PROJECT_DIR}/lib/common.sh'; source '${PROJECT_DIR}/lib/notify_utils.sh'; load_receivers '${PROJECT_DIR}/conf/receivers.conf'")
+if [[ "$l20_messy" == "$l20_clean" ]] \
+   && [[ "$l20_shipped" == $'Jason Chao\tjason.chao@cohesiondata.com' ]]; then
+    _pass "L20  load_receivers：亂格式 fixture 與乾淨 fixture 輸出相同；已上線 conf 恰一行"
+else
+    _fail "L20  load_receivers 正規化檢查失敗"
+fi
+rm -rf "$TMPD_L20"
+
+# L21: subject derivation -- single-day, multi-day, and env-override forms.
+l21_single=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'; source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    INTERVAL_ARGS=(--date 2026-05-21); notify_subject
+")
+l21_multi=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'; source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    INTERVAL_ARGS=(--from 2026-05-18 --to 2026-05-25); notify_subject
+")
+l21_override=$(LOG_PARSE_NOTIFY_SUBJECT='X' bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'; source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    INTERVAL_ARGS=(--date 2026-05-21); notify_subject
+")
+if [[ "$l21_single" == "【肺癌報告】 調閱紀錄彙整資訊 - 2026-05-21" ]] \
+   && [[ "$l21_multi" == "【肺癌報告】 調閱紀錄彙整資訊 - 2026-05-18 ~ 2026-05-25" ]] \
+   && [[ "$l21_override" == "X" ]]; then
+    _pass "L21  Subject 推導：單日/多日格式正確，LOG_PARSE_NOTIFY_SUBJECT 覆寫優先"
+else
+    _fail "L21  Subject 推導檢查失敗 [single=$l21_single multi=$l21_multi override=$l21_override]"
+fi
+
+# L22: To is an array built from receivers.conf in file order; an empty
+# display name renders as "" (never omitted).
+TMPD_L22=$(mktemp -d /tmp/lp_l22.XXXXXX)
+printf 'x' > "${TMPD_L22}/f.txt"
+TMPD_L22CONF=$(mktemp -d /tmp/lp_l22conf.XXXXXX)
+printf '|noname@example.com\nBob Lee|bob@example.com\n' > "${TMPD_L22CONF}/receivers.conf"
+bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${TMPD_L22CONF}/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$TMPD_L22'
+" >/dev/null 2>&1
+_c22="$(cat "${TMPD_L22}/notify_payload.json" 2>/dev/null)"
+l22_expect='"To":[{"DisplayName":"","Address":"noname@example.com"},{"DisplayName":"Bob Lee","Address":"bob@example.com"}]'
+if [[ "$_c22" == *"$l22_expect"* ]]; then
+    _pass "L22  To 陣列依 receivers.conf 檔案順序；空白 DisplayName 呈現為 \"\" (非省略)"
+else
+    _fail "L22  To 陣列順序/空白 DisplayName 檢查失敗"
+fi
+rm -rf "$TMPD_L22" "$TMPD_L22CONF"
+
+# ── Regression tests for the multi-lens adversarial-review fixes (below) ────
+
+# L23: FIX A regression (1/2) -- a backslash inside --output-dir (a live risk
+# on this OneDrive/WSL-mounted tree) must not corrupt attachment size
+# probing. Before the fix, gawk's `-v f="$path"` C-string-unescaped the
+# backslash, silently mis-resolving the path, so every report file measured
+# 0 bytes, all six were dropped as "empty", Attachments was {}, and the run
+# still logged status=sent/dry-run -- a false-success report (CLAUDE.md
+# rule 1). raw_bytes in the NOTIFY_RESULT line is cross-checked against the
+# files' true on-disk size.
+TMPD_L23_BASE=$(mktemp -d /tmp/lp_l23.XXXXXX)
+TMPD_L23="${TMPD_L23_BASE}/back\\slash"
+mkdir -p "$TMPD_L23"
+out23=$(LOG_PARSE_RUN_TS=20260521_150000 bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --output-dir "$TMPD_L23" \
+    --notify --notify-dry-run 2>&1 >/dev/null); rc23=$?
+run23="${TMPD_L23}/20260521_150000"
+l23_keys=$(grep -oE '"[^"]+":"[A-Za-z0-9+/=]*"' "${run23}/notify_payload.json" 2>/dev/null | wc -l | tr -d ' ')
+l23_disk_bytes=$(cat "${run23}"/access_detail.txt "${run23}"/access_ip_counts.tsv "${run23}"/access_summary.txt \
+    "${run23}"/iis_detail.txt "${run23}"/iis_summary.txt "${run23}"/overview_summary.txt 2>/dev/null \
+    | wc -c | tr -d ' ')
+l23_raw=$(printf '%s\n' "$out23" | grep -oE 'raw_bytes=[0-9]+' | head -1 | cut -d= -f2)
+if [[ "$rc23" -eq 0 ]] && [[ "$l23_keys" -eq 6 ]] \
+   && [[ -n "$l23_raw" ]] && [[ "${l23_raw:-0}" -gt 0 ]] && [[ "$l23_raw" -eq "$l23_disk_bytes" ]]; then
+    _pass "L23  FIX A：--output-dir 含反斜線仍附加全部 6 檔，raw_bytes 與磁碟實際位元組相符 ($l23_raw)"
+else
+    _fail "L23  FIX A 反斜線路徑檢查失敗 [rc=$rc23 keys=$l23_keys raw=$l23_raw disk=$l23_disk_bytes]"
+fi
+rm -rf "$TMPD_L23_BASE"
+
+# L24: FIX A regression (2/2) -- an attachment that EXISTS (passes the `-f`
+# check) but cannot actually be read must be fatal, never a silent
+# "0 bytes -> SKIPPED -> status=sent" false success. Simulated with
+# chmod 000 (this suite runs as a non-root user; verified separately that
+# chmod 000 genuinely blocks even the owner's read on this host).
+TMPD_L24=$(_l_fixture)
+chmod 000 "${TMPD_L24}/access_detail.txt"
+out24=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$TMPD_L24'
+" 2>&1); rc24=$?
+chmod 700 "${TMPD_L24}/access_detail.txt"   # restore first so cleanup rm -rf never fails
+if [[ "$rc24" -ne 0 ]] \
+   && printf '%s\n' "$out24" | grep -qF "could not read attachment for size probe" \
+   && ! printf '%s\n' "$out24" | grep -qF "status=sent" \
+   && ! printf '%s\n' "$out24" | grep -qF "status=dry-run"; then
+    _pass "L24  FIX A：無法讀取的附件應 die，絕不降級為 status=sent/dry-run"
+else
+    _fail "L24  FIX A 無法讀取附件檢查失敗 [rc=$rc24]"
+fi
+rm -rf "$TMPD_L24"
+
+# L25: FIX B regression -- two --notify-dry-run runs sharing ONE directory
+# via a pinned LOG_PARSE_RUN_TS (a documented, supported knob,
+# lib/output_utils.sh) must not let the second run attach the first run's
+# leftover notify_payload.json as a 7th attachment.
+TMPD_L25=$(mktemp -d /tmp/lp_l25.XXXXXX)
+LOG_PARSE_RUN_TS=20260521_160000 bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 \
+    --output-dir "$TMPD_L25" --notify --notify-dry-run >/dev/null 2>&1
+LOG_PARSE_RUN_TS=20260521_160000 bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 \
+    --output-dir "$TMPD_L25" --notify --notify-dry-run >/dev/null 2>&1; rc25=$?
+run25="${TMPD_L25}/20260521_160000"
+l25_keys=$(grep -oE '"[^"]+":"[A-Za-z0-9+/=]*"' "${run25}/notify_payload.json" 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$rc25" -eq 0 ]] && [[ "$l25_keys" -eq 6 ]] \
+   && ! grep -qF '"notify_payload.json":"' "${run25}/notify_payload.json"; then
+    _pass "L25  FIX B：pinned LOG_PARSE_RUN_TS 下第二次 dry-run 不會把前次 payload 當附件 (仍 6 個)"
+else
+    _fail "L25  FIX B pinned RUN_TS 重跑檢查失敗 [rc=$rc25 keys=$l25_keys]"
+fi
+rm -rf "$TMPD_L25"
+
+# L26: FIX C regression -- a receivers.conf row with an empty DISPLAY_NAME
+# must still produce a correct To entry (shape already covered by L22) AND
+# still be considered by the external-recipient audit. Before the fix, TAB
+# is bash IFS *whitespace* regardless of what IFS is set to, so
+# `IFS=$'\t' read -r rname raddr` silently stripped the leading tab and
+# shifted the address into rname, leaving raddr empty and the row silently
+# skipped from the audit entirely.
+TMPD_L26=$(mktemp -d /tmp/lp_l26.XXXXXX)
+printf 'x' > "${TMPD_L26}/f.txt"
+TMPD_L26CONF=$(mktemp -d /tmp/lp_l26conf.XXXXXX)
+printf '|noname@external-example.com\n' > "${TMPD_L26CONF}/receivers.conf"
+out26=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${TMPD_L26CONF}/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$TMPD_L26'
+" 2>&1 >/dev/null)
+_c26="$(cat "${TMPD_L26}/notify_payload.json" 2>/dev/null)"
+if [[ "$_c26" == *'"To":[{"DisplayName":"","Address":"noname@external-example.com"}]'* ]] \
+   && printf '%s\n' "$out26" | grep -qF "recipient on external domain: noname@external-example.com"; then
+    _pass "L26  FIX C：空白 DisplayName 列同時產生正確 To 項目與外部網域稽核警告"
+else
+    _fail "L26  FIX C 空白 DisplayName 稽核檢查失敗"
+fi
+rm -rf "$TMPD_L26" "$TMPD_L26CONF"
+
+# _l_utf8_tail_ok FILE NOTICE -- prints "ok" if FILE's content, with the
+# exact trailing string NOTICE first stripped off (if present), does not
+# end mid-UTF-8-sequence; prints a "bad_*" diagnostic otherwise. Used only
+# by L27 (FIX D); reuses the same byte-ordinal-table trick as this file's
+# own jesc_init(), applied here purely for test verification.
+_l_utf8_tail_ok() {
+    local file="$1" notice="$2"
+    LC_ALL=C gawk -v f="$file" -v notice="$notice" '
+        BEGIN {
+            for (i = 0; i < 256; i++) ORD[sprintf("%c", i)] = i
+            while ((getline line < f) > 0) content = (content == "") ? line : content "\n" line
+            nlen = length(notice)
+            if (nlen > 0 && nlen <= length(content) \
+                && substr(content, length(content) - nlen + 1) == notice) {
+                content = substr(content, 1, length(content) - nlen)
+            }
+            n = length(content)
+            if (n == 0) { print "ok"; exit }
+            i = n; cont = 0
+            while (i >= 1 && cont < 4) {
+                b = ORD[substr(content, i, 1)]
+                if (b < 128 || b > 191) break
+                cont++; i--
+            }
+            if (i < 1) { print "bad_all_continuation"; exit }
+            b = ORD[substr(content, i, 1)]
+            if (cont == 0) {
+                if (b >= 192) { print "bad_dangling_leader"; exit }
+                print "ok"; exit
+            }
+            need = 0
+            if (b >= 194 && b <= 223) need = 1
+            else if (b >= 224 && b <= 239) need = 2
+            else if (b >= 240 && b <= 244) need = 3
+            else { print "bad_orphan_continuation"; exit }
+            if (need == cont) print "ok"; else print "bad_need" need "_cont" cont
+        }
+    '
+}
+
+# L27: FIX D regression -- body truncation must never split a multi-byte
+# UTF-8 sequence. NOTIFY_MAX_BODY_BYTES is reassigned after sourcing (a
+# plain var, deliberately not `readonly` -- see this file's own header
+# comment) to a small cap so the fixture can stay tiny. Three paddings (0,
+# 1, 2 extra ASCII bytes before a long run of the 3-byte CJK character 測)
+# shift the naive byte-wise cut through all 3 possible alignments relative
+# to a 3-byte character, so at least one iteration would have split a
+# character under the pre-fix plain substr().
+l27_notice="... [body truncated at 200 bytes]"$'\n'
+l27_ok=1
+l27_detail=""
+for pad in 0 1 2; do
+    TMPD_L27=$(mktemp -d /tmp/lp_l27.XXXXXX)
+    padstr=""
+    for (( _p27 = 0; _p27 < pad; _p27++ )); do padstr="${padstr}X"; done
+    gawk -v p="$padstr" 'BEGIN {
+        s = p
+        for (i = 0; i < 200; i++) s = s "測"
+        print "▶ 總體概況"
+        print s
+    }' > "${TMPD_L27}/overview_summary.txt"
+    bash -c "
+        source '${PROJECT_DIR}/lib/common.sh'
+        source '${PROJECT_DIR}/lib/date_utils.sh'
+        source '${PROJECT_DIR}/lib/output_utils.sh'
+        source '${PROJECT_DIR}/lib/notify_utils.sh'
+        NOTIFY_MAX_BODY_BYTES=200
+        RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+        OPT_REGION='all'; OPT_MODULES='overview,iis,access'; OPT_NOTIFY_ATTACH=all
+        RUN_OUTPUT_DIR='${TMPD_L27}'
+        notify_build_body '${TMPD_L27}' '${TMPD_L27}/body.txt'
+    " >/dev/null 2>&1
+    l27_res="$(_l_utf8_tail_ok "${TMPD_L27}/body.txt" "$l27_notice")"
+    if [[ "$l27_res" != "ok" ]]; then l27_ok=0; l27_detail="pad=${pad}:${l27_res}"; fi
+    rm -rf "$TMPD_L27"
+done
+if [[ "$l27_ok" -eq 1 ]]; then
+    _pass "L27  FIX D：body 截斷一律落在合法 UTF-8 邊界 (3 種位移量皆驗證)"
+else
+    _fail "L27  FIX D：body 截斷可能切斷多位元組 UTF-8 序列 [$l27_detail]"
+fi
+
+# L28: FIX E regression -- a file with NO trailing newline must report its
+# TRUE byte count, not one byte more. The old `n += length(line) + 1`
+# per-line idiom assumed every file ends in LF; `printf 'abc'` (3 bytes, no
+# trailing newline) would have been over-counted as 4. Checked both at the
+# helper level and end-to-end via a real dry-run's NOTIFY_RESULT line.
+TMPD_L28=$(mktemp -d /tmp/lp_l28.XXXXXX)
+printf 'abc' > "${TMPD_L28}/noeol.txt"
+l28_direct=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    _notify_file_bytes '${TMPD_L28}/noeol.txt'
+")
+out28=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$TMPD_L28'
+" 2>&1 >/dev/null)
+if [[ "$l28_direct" == "3" ]] && printf '%s\n' "$out28" | grep -qF "raw_bytes=3 "; then
+    _pass "L28  FIX E：無結尾換行的 3-byte 檔案於 helper 與完整 dry-run 皆回報真實位元組數 3"
+else
+    _fail "L28  FIX E 無結尾換行位元組數檢查失敗 [direct=$l28_direct]"
+fi
+rm -rf "$TMPD_L28"
+
+# L29: FIX I regression -- a filename containing a TAB byte must die at
+# collection time (it would otherwise corrupt the manifest's own
+# `IFS=$'\t' read -r tag name bytes path` parsing), not silently attach
+# with a garbled name.
+TMPD_L29=$(mktemp -d /tmp/lp_l29.XXXXXX)
+badname="bad$(printf '\t')name.txt"
+printf 'x' > "${TMPD_L29}/${badname}"
+out29=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    notify_collect_attachments '$TMPD_L29' all '${TMPD_L29}/manifest.tsv'
+" 2>&1); rc29=$?
+if [[ "$rc29" -ne 0 ]] && printf '%s\n' "$out29" | grep -qF "contains a TAB or newline byte"; then
+    _pass "L29  FIX I：檔名含 TAB 應於收集階段 die，避免破壞附件清單 TSV"
+else
+    _fail "L29  FIX I 檔名含 TAB 檢查失敗 [rc=$rc29]"
+fi
+rm -rf "$TMPD_L29"
+
+# ---- Section L cleanup ------------------------------------------------------
+rm -rf "$_L_SRC" "$_L_SHIMDIR"
+unset SHIM_LOG_DIR
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Summary

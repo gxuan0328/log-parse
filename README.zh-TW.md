@@ -4,7 +4,7 @@
 > 比對存取 Token、揭露 IIS 異常、追蹤應用程式生命週期事件，
 > 涵蓋兩個區域共六台 API / APP 伺服器。
 
-[![Tests](https://img.shields.io/badge/tests-275%2F275-brightgreen)](tests/run_tests.sh)
+[![Tests](https://img.shields.io/badge/tests-316%2F316-brightgreen)](tests/run_tests.sh)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bash 4+](https://img.shields.io/badge/bash-4%2B-lightgrey)](https://www.gnu.org/software/bash/)
 
@@ -23,14 +23,16 @@
 | `analyze_access`      | API + APP 存取 CSV                            | Token 簽發 ↔ 驗證流程、孤兒存取、未使用簽發；`--view summary|detail`           |
 | `analyze_iis`         | IIS W3C 擴充欄位日誌                          | 純業務請求指標：慢請求、端點分析、狀態碼分布；`--view summary|detail`          |
 | `analyze_errors`      | `app-all` / `app-error` / `app-lifetime`     | OracleDB 中斷、Top 錯誤模式、應用程式重啟停機時間                               |
-| `log_report`          | 上述全部                                      | 統籌排程器；預設模組：`overview,iis,access`；errors 須透過 `--modules` 明確加入 |
+| `log_report`          | 上述全部                                      | 統籌排程器；預設模組：`overview,iis,access`；errors 須透過 `--modules` 明確加入；可選擇透過 `--notify` 將持久化報告包寄出（見[通知功能](docs/usage.zh-TW.md#通知功能)） |
 
 所有報告預設僅反映**真實業務流量**：`/health` 請求無條件從所有 IIS 聚合中排除，`conf/test_hosts.conf` 所列的內部測試主機 IP 則透過 `--test-hosts exclude|only|all`（預設：`exclude`）在讀取階段即予以預先過濾。因此 `Total requests` / `IIS 總請求數` 僅反映真實外部用戶流量。
 
 每次執行均會自動將報告寫入當前工作目錄下的 `./log-parse/`（可透過
-`--output-dir DIR` 或 `$LOG_PARSE_OUTPUT_DIR` 覆寫）。檔案命名格式為
-`<模組>_<類型>_<YYYYMMDD_HHMMSS>.<副檔名>`，且均為無色彩純文字；stdout
-始終輸出所選視圖（`--view summary|detail`）的可管線化報告。
+`--output-dir DIR` 或 `$LOG_PARSE_OUTPUT_DIR` 覆寫）。佈局：
+`<base>/<YYYYMMDD_HHMMSS>/<模組>_<類型>.<副檔名>`，其中時間戳為執行子目錄
+名稱（同一次執行的所有檔案共用同一時間戳，並非附加於檔名之後）。檔案
+永遠為無色彩純文字；stdout 始終輸出所選視圖（`--view summary|detail`）
+的可管線化報告。
 
 完整資料流與欄位語意請參閱 [`docs/design.zh-TW.md`](docs/design.zh-TW.md)，
 每個 CLI 旗標說明請參閱 [`docs/usage.zh-TW.md`](docs/usage.zh-TW.md)。
@@ -96,10 +98,12 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── csv_utils.sh         Access / IIS / app log 欄位擷取
 │   ├── fmt_utils.sh         報告版面格式化
 │   ├── output_utils.sh      常時持久化輸出（persist_init / persist_views）
-│   └── aggregate_utils.sh   共用指標計算與 CSV quoter（AGG_IIS_AWK）
+│   ├── aggregate_utils.sh   共用指標計算與 CSV quoter（AGG_IIS_AWK）
+│   └── notify_utils.sh      SMTP-API 報告寄送（--notify；curl/base64 為選配）
 ├── conf/
 │   ├── regions.conf         區域 ↔ 伺服器對應表
-│   └── test_hosts.conf      QA / 健康探針用戶端 IP（搭配 --test-hosts 使用）
+│   ├── test_hosts.conf      QA / 健康探針用戶端 IP（搭配 --test-hosts 使用）
+│   └── receivers.conf       --notify 收件者清單（DISPLAY_NAME|ADDRESS）
 ├── docs/
 │   ├── design.md / design.zh-TW.md   架構與資料流規格
 │   └── usage.md  / usage.zh-TW.md    完整 CLI 參考
@@ -108,7 +112,7 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── sample-outputs/      範例輸出報告
 │   └── *.sh                 情境驅動腳本
 ├── tests/
-│   └── run_tests.sh         275 項功能測試套件
+│   └── run_tests.sh         316 項功能測試套件
 ├── report-export/           獨立 Python 子工具：週報 xlsx 匯出
 │   ├── src/report_export/   套件本體（純函式核心 + I/O 邊界）
 │   ├── docs/                design.md · usage.md · data-fidelity.md（zh-TW）
@@ -134,6 +138,9 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 - **GNU date** — 處理日期運算（Linux 內建；macOS 請安裝 `coreutils` 並
   將 `gdate` 別名為 `date`）
 - **coreutils**：`sort`、`mktemp`、`head`、`tail`
+- **選配**（僅 `--notify` 使用時需要）：`curl`（HTTP POST）、`base64`
+  （附件編碼）——延遲檢查；其餘所有工作流程即使未安裝兩者亦不受影響。
+  詳見[通知功能](docs/usage.zh-TW.md#通知功能)。
 
 執行 `make install-deps` 可一次驗證。
 

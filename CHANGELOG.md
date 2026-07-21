@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `lib/notify_utils.sh` + `conf/receivers.conf` — opt-in delivery of a persisted
+  run to the internal SMTP API. `bin/log_report.sh` gains `--notify`,
+  `--notify-dry-run`, `--notify-attach`, `--notify-url` and `--receivers-conf`
+  (never forwarded to child modules); no new binary is added. The payload
+  follows the owner's API contract exactly: PascalCase From/To/Subject/Body plus
+  an `Attachments` MAP keyed by filename with base64 values. The mail body
+  carries the real KEY SUMMARY extracted from the run's own
+  `overview_summary.txt`; every persisted file of the run is attached by
+  default, never a zip. curl and base64 are OPTIONAL dependencies, gated lazily
+  and only on the notify path — a deliberate, narrow deviation from CLAUDE.md
+  section 6, justified in design.md section 4.9 and regression-tested by L01.
+  A delivery failure is fatal (compose with `|| true` to tolerate it), and no
+  automatic curl retry is performed because the API defines no idempotency key.
+  Hardened after a multi-lens adversarial review, before first release: file
+  paths crossing the `gawk -v` boundary (attachment/body/payload byte counts,
+  the receivers-file join) are now passed as gawk operands instead, so a
+  backslash in `--output-dir` (a live risk on this OneDrive/WSL-mounted tree)
+  can no longer be silently mis-resolved into a 0-byte/empty read — an
+  unopenable attachment now dies loudly instead of degrading to
+  `status=sent`; `notify_payload.json` is now unconditionally excluded from
+  attachment enumeration (not merely "collected before it's written", which
+  does not hold across two runs sharing one `LOG_PARSE_RUN_TS`-pinned
+  directory); an empty-`DISPLAY_NAME` receivers.conf row no longer breaks the
+  external-recipient audit line; body truncation now cuts on a UTF-8
+  character boundary; byte counting no longer over-counts a file with no
+  trailing newline by one; `LOG_PARSE_NOTIFY_FROM_ADDR` and receivers.conf
+  CONTENT (not just its existence) are now validated in argument parsing,
+  before any analysis module runs, matching the documented exit-code
+  contract; and every write inside payload assembly is now checked, so a
+  full disk can no longer yield a truncated-but-"successful" payload.
+  Tests: 275 -> 316.
+
+### Security
+- Report delivery attaches every persisted file by default, including
+  `access_detail.*` (client IPs, JWT-derived birthday values) and
+  `access_ip_counts.tsv`; `--notify-attach summary` narrows delivery to
+  aggregate summary views. Recipients come only from the version-controlled
+  `conf/receivers.conf` (no `--to` flag exists); every send logs each recipient
+  and attached file, warns on external domains, and warns when the endpoint is
+  plain HTTP. The payload never appears on argv (0600 temp file passed as
+  `--data-binary @path`) — CWE-214. All JSON strings, including attachment
+  filenames used as object keys, pass through a single byte-wise escaper under
+  LC_ALL=C — CWE-116.
+
+---
+
 ### Changed
 - `conf/test_hosts.conf` — 4 additional internal/QA test-host IPs
   added: `192.168.117.90`, `192.168.105.149`, `192.168.117.73`,
@@ -554,6 +601,18 @@ Tests: 258/258.
   two decimals (`time-taken` is logged in ms).
 - `IIS_AWK` accumulates `ep_time_ms[]` per endpoint and emits the mean as a
   4th field on each `ENDPOINT` record (`ENDPOINT\t<uri>\t<count>\t<avg_sec>`).
+
+### Fixed
+- `README.md` / `README.zh-TW.md` — persisted-file naming description
+  corrected to match the path shape shipped by the breaking
+  `lib/output_utils.sh` change above (`lib/output_utils.sh:35`): the
+  launch timestamp is the **run-directory name**, not part of the
+  filename. Was `<module>_<kind>_<YYYYMMDD_HHMMSS>.<ext>`; now
+  `<base>/<YYYYMMDD_HHMMSS>/<module>_<kind>.<ext>`, matching what
+  `docs/usage.md`, `docs/design.md`, and
+  `examples/sample-outputs/README.md` (+ zh-TW) already documented
+  correctly — the two root READMEs were the only stale copies. Docs-only;
+  no code, test, or fixture changes.
 
 ## [1.0.0] — 2026-05-25
 

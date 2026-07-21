@@ -40,6 +40,9 @@ require_cmds() {
 
 # Hard requirement for every script that sources this library.
 # gawk = field extraction & joins; sort = ordering; date = range generation.
+# curl and base64 are DELIBERATELY excluded from this unconditional set --
+# they are optional, needed only by --notify, and gated lazily inside
+# lib/notify_utils.sh (notify_preflight), never here (see docs/design.md §4.9).
 require_cmds gawk sort date
 
 # ---------------------------------------------------------------------------

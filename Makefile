@@ -33,8 +33,11 @@ test:        ## Run functional test suite
 	@bash $(TESTS)/run_tests.sh
 
 lint:        ## Run shellcheck on all scripts
-	@command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck not installed; skipping"; exit 0; }
-	@shellcheck $(BIN)/*.sh $(LIB)/*.sh
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		shellcheck $(BIN)/*.sh $(LIB)/*.sh; \
+	else \
+		echo "shellcheck not installed; skipping"; \
+	fi
 
 check: lint  ## Static analysis (alias for lint)
 

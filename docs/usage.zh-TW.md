@@ -707,6 +707,11 @@ bash bin/analyze_errors.sh --log-dir "$LOG_DIR" \
 | `--slow-app-ms N` | uint ms | `5000` | 否 | 轉發給 overview 與 iis；適用於 APP 角色伺服器。 |
 | `--merge` | flag | 關閉 | 否 | 轉發給 access 與 iis。**需要 `--region all`**。 |
 | `--test-hosts exclude\|only\|all` | enum | `exclude` | 否 | 轉發給 overview、iis 與 access。**不**轉發給 errors（`analyze_errors` 不接受此旗標——直接傳入為致命錯誤）。詳見[測試主機過濾](#測試主機過濾)。 |
+| `--notify` | flag | 關閉 | 否 | 在 `main()` 最後一步、所有請求的模組皆已完成後，將本次執行持久化的報告包透過 SMTP API 寄出。選配依賴 `curl`/`base64` 僅在此旗標被設定時才會檢查。收件者讀自 `conf/receivers.conf`。**寄送失敗為致命錯誤**——如需容忍失敗，請以 `\|\| true` 組合。詳見[通知功能](#通知功能)。 |
+| `--notify-dry-run` | flag | 關閉 | 否 | 建構完整 payload 並寫入 `<RUN_OUTPUT_DIR>/notify_payload.json`（權限 `0600`），永不呼叫 `curl`。需搭配 `--notify`。 |
+| `--notify-attach all\|summary` | enum | `all` | 否 | 決定哪些持久化檔案成為附件。`all`（預設）附上本次執行產出的每一個檔案，包含 `access_detail.*` 與 `access_ip_counts.tsv`。`summary` 僅收斂為 `*_summary.txt` 檔案。需搭配 `--notify`。 |
+| `--notify-url URL` | url | `""` | 否 | 覆寫 SMTP API 端點。解析順序：旗標 > `$LOG_PARSE_NOTIFY_URL` > 內建預設值（`http://haididev.intra.nhi.gov.tw:8080/api/email/send`）。即使在 `--notify-dry-run` 下也會驗證。需搭配 `--notify`。 |
+| `--receivers-conf FILE` | path | `conf/receivers.conf` | 否 | 覆寫收件者設定檔，檔案必須存在且至少含一列合法的 `DISPLAY_NAME\|ADDRESS`。需搭配 `--notify`。 |
 | `--output-dir DIR` | path | `""` | 否 | 持久化目錄。解析順序：旗標 > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`。透過 `$LOG_PARSE_OUTPUT_DIR` 由子模組共用；`--output-dir` 旗標**不**轉發給子模組。 |
 | `--conf FILE` | path | `conf/regions.conf` | 否 | 覆寫區域對應表，明確指定時才轉發給所有模組。 |
 | `-v`, `--verbose` | flag | 關閉 | 否 | 把 `--verbose` 一併轉發給所有子模組。 |
@@ -724,10 +729,13 @@ bash bin/analyze_errors.sh --log-dir "$LOG_DIR" \
 | `--merge` | — | F | F | — |
 | `--test-hosts` | F | F | F | — |
 | `--output-dir`、`--modules` | 自身 | 自身 | 自身 | 自身 |
+| `--notify`、`--notify-dry-run`、`--notify-attach`、`--notify-url`、`--receivers-conf` | — | — | — | — |
 
 F = 轉發並由子模組執行。`--output-dir` 由 log_report 解析一次後透過
 `$LOG_PARSE_OUTPUT_DIR` 共用；不以旗標形式轉發給子模組（防止指定
-自訂 `--output-dir` 時發生分裂腦問題）。
+自訂 `--output-dir` 時發生分裂腦問題）。`--notify*` 旗標家族永不轉發給任
+何子模組——它完全在 `log_report.sh` 行程內處理，於 `main()` 最後一步、
+所有請求的模組皆已執行完畢後才觸發。詳見[通知功能](#通知功能)。
 
 ### 範例
 
@@ -770,10 +778,183 @@ bash bin/log_report.sh --log-dir "$LOG_DIR" \
 # 9. 未知模組名稱會早期失敗並終止
 bash bin/log_report.sh --log-dir "$LOG_DIR" --modules access,unknown
 #   退出碼 1
+
+# 10. 每日報告，寄送至 conf/receivers.conf（附上本次執行的所有持久化檔案）
+bash bin/log_report.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --notify
 ```
 
 > 完整合併報告範例見 [`../examples/sample-outputs/log_report_full_2026-05-21.txt`](../examples/sample-outputs/log_report_full_2026-05-21.txt)。
 > 台北部分報告：[`../examples/sample-outputs/log_report_taipei_partial_2026-05-21.txt`](../examples/sample-outputs/log_report_taipei_partial_2026-05-21.txt)。
+
+### 通知功能
+
+`log_report.sh --notify` 會在 `main()` 的最後一步、所有請求的模組皆已
+完成並持久化各自檔案之後，將本次執行的持久化報告包透過內部 SMTP-relay
+HTTP API 寄出。此功能為選配（opt-in）、單次寄送（無自動重試），且僅在
+明確提供 `--notify` 時才會被觸發——所有既有工作流程完全不受影響。
+
+**預設會寄出什麼。** 一份 JSON 文件，以 `Content-Type: application/json`
+標頭 POST 送出：
+
+```json
+{
+  "From": { "DisplayName": "系統通知", "Address": "notify@nhi.gov.tw" },
+  "To": [ { "DisplayName": "Jason Chao", "Address": "jason.chao@cohesiondata.com" } ],
+  "Subject": "【肺癌報告】 調閱紀錄彙整資訊 - 2026-05-21",
+  "Body": "Run timestamp : 20260521_090000\nAnalysis range: 2026-05-21 ~ 2026-05-21\n...（本次執行的 KEY SUMMARY，見下方）",
+  "Attachments": { "access_detail.txt": "<base64>", "overview_summary.txt": "<base64>", "...": "<base64>" }
+}
+```
+
+`From` 為單一物件（寄件者身分）；`To` 為**陣列**，`conf/receivers.conf`
+每一列對應一個物件，順序與檔案內順序一致；`Attachments` 為
+**key-value 對照表**——key 為附件檔名，value 為其 base64 內容——
+並非物件陣列。整份 payload 中不存在 `isBodyHtml`、`cc`、`bcc`、
+`fileName` 或 `contentBase64` 任何一個鍵。
+
+`Body` **並非**慣例樣板文字：其內容由 gawk 從本次執行自身的
+`overview_summary.txt` 擷取而來的真實 KEY SUMMARY（信封資訊 + 
+`▶ 總體概況` 區塊，包含 `整體健康判定` 判定），後接附件清單。渲染範例
+（`--date 2026-05-21`，預設 `--notify-attach all`）：
+
+```
+Run timestamp : 20260521_090000
+Analysis range: 2026-05-21 ~ 2026-05-21
+Region        : all
+Modules       : overview, iis, access
+Output dir    : ./reports/20260521_090000
+Attach mode   : all
+
+========================================================================
+  營運總覽報告 (Management Overview)
+========================================================================
+  分析期間                                2026-05-21  →  2026-05-21  (1 天)
+  涵蓋範圍                                2 區域 / 6 伺服器 (2 API · 4 APP)
+
+▶ 總體概況 (Overall)
+------------------------------------------------------------------------
+  存取關聯總數                            9
+  NORMAL 正常流程                         6 (66.7%)
+  ORPHAN 無對應簽發                       3 (33.3%)
+  UNVERIFIED 簽發未使用                   0 (0.0%)
+  平均 API→APP 延遲                       19.5s
+  整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
+
+    ■ 核心功能效能 (Core Function Performance)
+      雲端查詢    呼叫次數 11       回應時間 0.11s
+      報告摘要    呼叫次數 186      回應時間 0.38s
+      影像下載    呼叫次數 427      回應時間 0.93s
+      核心功能存取合計 624
+
+Attachments (6):
+  access_detail.txt            3955 bytes
+  access_ip_counts.tsv           28 bytes
+  access_summary.txt            732 bytes
+  iis_detail.txt               9231 bytes
+  iis_summary.txt              1375 bytes
+  overview_summary.txt         3821 bytes
+
+Generated by log-parse. Full reports are attached and also retained at
+./reports/20260521_090000 on the analysis host.
+```
+
+擷取器會在遇到每小時橫條圖（一整片區塊繪製字元，在等寬字型以外的郵件
+字型中不可讀）或第二個 `▶ ` 區段標題（兩者以先到者為準）時停止，並
+另外設有 60 行的硬上限；整個 Body 另外上限為 65536 bytes（超出時以一行
+明顯的截斷提示截斷——無論如何，權威檔案本身永遠會完整附上）。若
+`overview_summary.txt` 不存在（例如 `--modules iis`），Body 會退回顯示
+字典序最前的 `*_summary.txt` 之前 25 行；若完全沒有任何 `*_summary.txt`，
+則退回一行文字提示——Body 永不為空，其建構過程也永不中止寄送流程。
+
+**收件者 — `conf/receivers.conf`。** 此檔案僅設定收件者（收件者清單）；
+寄件者身分透過環境變數另行設定（見下表），不在此檔案中設定。每行一筆：
+
+```
+DISPLAY_NAME|ADDRESS
+```
+
+`#` 註解與空行會被忽略；每個欄位的前後留白與 CR 會被去除。至少需要一筆
+資料——與 `regions.conf` / `test_hosts.conf` 相同的快速失敗契約：檔案
+缺失、為空、或格式錯誤（欄位數錯誤、位址不合法、顯示名稱含
+`` | , ; < > " `` 或控制字元、或位址重複）皆會在寄出任何內容前以明確
+錯誤訊息中止。以 `--receivers-conf FILE` 覆寫路徑（預設
+`conf/receivers.conf`）。隨附檔案預先種入一筆：
+
+```
+Jason Chao|jason.chao@cohesiondata.com
+```
+
+**環境變數**（全部為選配——每一項皆有可直接使用的預設值，因此單獨使用
+`--notify` 永遠可行）：
+
+| 變數 | 預設值 | 效果 |
+|---|---|---|
+| `LOG_PARSE_NOTIFY_URL` | `http://haididev.intra.nhi.gov.tw:8080/api/email/send` | API 端點；`--notify-url` 可覆寫。 |
+| `LOG_PARSE_NOTIFY_SUBJECT` | 自動推導（依日期，見上）| 取代整個 `Subject` 字串；沒有對應旗標。 |
+| `LOG_PARSE_NOTIFY_FROM_NAME` | `系統通知` | `From.DisplayName`。 |
+| `LOG_PARSE_NOTIFY_FROM_ADDR` | `notify@nhi.gov.tw` | `From.Address`；驗證規則與 `conf/receivers.conf` 每一列相同。 |
+| `LOG_PARSE_NOTIFY_CURL_BIN` | `curl` | 鎖定環境下的絕對 curl 路徑；亦為自動化測試替身掛鉤點。 |
+| `LOG_PARSE_NOTIFY_INTERNAL_DOMAINS` | （空） | 以空白分隔的網域清單，列於此者豁免「外部網域」警告。 |
+| `LOG_PARSE_NOTIFY_MAX_ATTACH_BYTES` | `2097152`（2 MiB） | 單一附件原始位元組上限，於 base64 編碼前檢查。 |
+| `LOG_PARSE_NOTIFY_MAX_TOTAL_BYTES` | `8388608`（8 MiB） | 本次執行所有附件原始位元組總上限。 |
+| `LOG_PARSE_NOTIFY_CONNECT_TIMEOUT` | `5` | `curl --connect-timeout`（秒）。 |
+| `LOG_PARSE_NOTIFY_MAX_TIME` | `60` | `curl --max-time`（秒）。 |
+
+**依賴套件 — 選配、延遲檢查。** `curl` 與 `base64` **不**屬於本工具組
+的無條件依賴集合（`bash gawk sort date mktemp`）。兩者僅在
+`lib/notify_utils.sh` 中被具名引用，且僅在確實提供 `--notify` 時才會被
+檢查：`--notify-dry-run` 只需要 `base64`（絕不觸碰網路）；正式寄送則
+兩者皆需。任何未使用 `--notify` 的執行完全不受影響，即使主機上兩者皆未
+安裝亦然。若 `curl` 缺失，正式寄送會在任何日誌分析開始之前、於一秒內
+即失敗，並輸出：
+
+```
+[ERROR] --notify needs the optional dependency 'curl' (HTTP client for the SMTP API).
+[ERROR] Install curl, or use --notify-dry-run to build the payload without sending.
+[ERROR] missing required commands: curl
+```
+
+在完全沒有對外網路存取的主機上，可使用 `--notify-dry-run` 離線驗證
+payload 結構與收件者設定。
+
+**退出碼。**
+
+| 情境 | 退出碼 |
+|---|---|
+| 一切正常 | **0** |
+| `--notify-dry-run` | **0** |
+| 分析結果為空語料庫 | **0** — 不受影響；報告依然存在並如實反映此狀況，郵件仍會寄出 |
+| 設定 / 驗證錯誤（`--notify-attach` 值不合法、URL 不合法、`conf/receivers.conf` 不合法、`LOG_PARSE_NOTIFY_FROM_ADDR` 不合法、`curl` 缺失） | **1** — 於參數解析階段即失敗，任何分析模組皆尚未執行 |
+| 單一附件或本次執行附件總量超過上限 | **1** — 不會寄出任何內容 |
+| SMTP API 回傳非 2xx 狀態，或請求本身傳輸失敗 | **1** |
+| 任一分析模組本身執行失敗 | **1**，且**不會寄出郵件**（執行流程會在抵達通知階段之前就已中止） |
+
+**寄送失敗為刻意設計的致命錯誤。** 既然操作者明確要求了通知功能，若郵件
+無法送達，代表這次執行並未完成所要求之事，且沒有另外的「補寄」指令。
+若排程執行必須在郵件中繼站無法連線時仍維持成功（綠燈），請以 shell
+自行組合容忍行為——這是本專案既有的選配步驟慣例：
+
+```bash
+bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --date 2026-05-21 --notify || true
+```
+
+刻意不提供 `--notify-best-effort` 旗標。
+
+**PII — 啟用前請詳閱。** 預設的 `--notify-attach all` 會將本次執行產出
+的**每一個**檔案寄出，包含 `access_detail.*`（原始客戶端 IP 與 JWT 解碼
+之 `BIRTHDAY` 明文出生日期欄位——見 [`design.zh-TW.md`](design.zh-TW.md)
+§3.1.5）與 `access_ip_counts.tsv`（原始客戶端 IP 普查），且會寄給
+**`conf/receivers.conf` 中列出的每一個地址**。沒有 `--to` 旗標——變更
+收件對象必須編輯該版本控管、附有警告說明的設定檔，而非透過 crontab
+打錯字。每次寄送皆會記錄（`WARN` 等級、無法關閉）完整收件者清單與完整
+附件清單，並分別針對網域不在 `LOG_PARSE_NOTIFY_INTERNAL_DOMAINS` 中的
+每個收件者提出外部網域警告。當收件者清單並非完全可信時，可使用
+`--notify-attach summary` 將附件收斂為聚合層級的 `*_summary.txt` 視圖——
+不含逐筆 IP，也不含 `BIRTHDAY` 欄位。預設端點為明文 HTTP；每次對
+`http://` 端點寄送都會記錄一則明確警告，說明含附件在內的整份 payload
+未經加密傳輸。
 
 ---
 

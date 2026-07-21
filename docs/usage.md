@@ -742,6 +742,11 @@ directory; all files share one launch timestamp.
 | `--slow-app-ms N` | uint ms | `5000` | no | Forwarded to overview and iis; applies to APP-role servers. |
 | `--merge` | flag | off | no | Forwarded to access and iis. **Requires `--region all`**. |
 | `--test-hosts exclude\|only\|all` | enum | `exclude` | no | Forwarded to overview, iis, and access. **Not** forwarded to errors (`analyze_errors` does not accept it — fatal error if supplied directly). See [Test-host filtering](#test-host-filtering). |
+| `--notify` | flag | off | no | Mail the run's persisted report bundle through the SMTP API as the last step of `main()`, after every requested module has finished. Optional deps `curl`/`base64` are checked only when this flag is set. Recipients come from `conf/receivers.conf`. **A delivery failure is fatal** — compose with `\|\| true` to tolerate it. See [Notification](#notification). |
+| `--notify-dry-run` | flag | off | no | Build the full payload and write it to `<RUN_OUTPUT_DIR>/notify_payload.json` (mode `0600`) without ever invoking `curl`. Requires `--notify`. |
+| `--notify-attach all\|summary` | enum | `all` | no | Which persisted files become attachments. `all` (default) attaches every file the run produced, including `access_detail.*` and `access_ip_counts.tsv`. `summary` narrows to `*_summary.txt` files only. Requires `--notify`. |
+| `--notify-url URL` | url | `""` | no | SMTP API endpoint override. Resolved as: flag > `$LOG_PARSE_NOTIFY_URL` > the built-in default (`http://haididev.intra.nhi.gov.tw:8080/api/email/send`). Validated even under `--notify-dry-run`. Requires `--notify`. |
+| `--receivers-conf FILE` | path | `conf/receivers.conf` | no | Override the recipients file. Must exist and contain at least one valid `DISPLAY_NAME\|ADDRESS` row. Requires `--notify`. |
 | `--output-dir DIR` | path | `""` | no | Persistence directory. Resolved as: flag > `$LOG_PARSE_OUTPUT_DIR` > `./log-parse`. Shared by all child modules via `$LOG_PARSE_OUTPUT_DIR`; `--output-dir` is NOT forwarded as a flag to children. |
 | `--conf FILE` | path | `conf/regions.conf` | no | Override region mapping. Forwarded to all modules when supplied. |
 | `-v`, `--verbose` | flag | off | no | Forwards `--verbose` to all child modules. |
@@ -759,11 +764,15 @@ directory; all files share one launch timestamp.
 | `--merge` | — | F | F | — |
 | `--test-hosts` | F | F | F | — |
 | `--output-dir`, `--modules` | own | own | own | own |
+| `--notify`, `--notify-dry-run`, `--notify-attach`, `--notify-url`, `--receivers-conf` | — | — | — | — |
 
 F = forwarded. `--output-dir` is resolved once by log_report and shared
 via `$LOG_PARSE_OUTPUT_DIR`; it is NOT forwarded as a flag argument to
 child modules (prevents split-brain when a custom `--output-dir` is
-given).
+given). The `--notify*` flag family is never forwarded to any child
+module — it is handled entirely inside `log_report.sh`, in-process, as
+the last step of `main()`, after every requested module has already run.
+See [Notification](#notification).
 
 ### Examples
 
@@ -806,10 +815,197 @@ bash bin/log_report.sh --log-dir "$LOG_DIR" \
 # 9. Unknown module is caught early and aborts
 bash bin/log_report.sh --log-dir "$LOG_DIR" --modules access,unknown
 #   exits with code 1
+
+# 10. Daily report, mailed to conf/receivers.conf (all persisted files attached)
+bash bin/log_report.sh --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --notify
 ```
 
 > Full combined sample: [`../examples/sample-outputs/log_report_full_2026-05-21.txt`](../examples/sample-outputs/log_report_full_2026-05-21.txt).
 > Partial (Taipei, overview+iis+access): [`../examples/sample-outputs/log_report_taipei_partial_2026-05-21.txt`](../examples/sample-outputs/log_report_taipei_partial_2026-05-21.txt).
+
+### Notification
+
+`log_report.sh --notify` mails the run's persisted report bundle through an
+internal SMTP-relay HTTP API as the very last step of `main()`, after every
+requested module has already finished and persisted its files. It is
+opt-in, single-shot (no automatic retry), and is never reached unless
+`--notify` is given — every existing workflow is completely unaffected.
+
+**What gets sent.** One JSON document, POSTed with header
+`Content-Type: application/json`:
+
+```json
+{
+  "From": { "DisplayName": "系統通知", "Address": "notify@nhi.gov.tw" },
+  "To": [ { "DisplayName": "Jason Chao", "Address": "jason.chao@cohesiondata.com" } ],
+  "Subject": "【肺癌報告】 調閱紀錄彙整資訊 - 2026-05-21",
+  "Body": "Run timestamp : 20260521_090000\nAnalysis range: 2026-05-21 ~ 2026-05-21\n... (the run's KEY SUMMARY, see below)",
+  "Attachments": { "access_detail.txt": "<base64>", "overview_summary.txt": "<base64>", "...": "<base64>" }
+}
+```
+
+`From` is a single object (sender identity); `To` is an **array**, one
+object per `conf/receivers.conf` row, in file order; `Attachments` is a
+**key–value map** — key = attached file's basename, value = its base64
+content — never an array of objects. There are no `isBodyHtml`, `cc`,
+`bcc`, `fileName`, or `contentBase64` keys anywhere in the payload.
+
+`Body` is **not** boilerplate: it carries the run's real KEY SUMMARY,
+extracted by `gawk` from the run's own `overview_summary.txt` (envelope +
+the `▶ 總體概況` block, including the `整體健康判定` verdict), followed by
+an attachment manifest. Rendered example (`--date 2026-05-21`, default
+`--notify-attach all`):
+
+```
+Run timestamp : 20260521_090000
+Analysis range: 2026-05-21 ~ 2026-05-21
+Region        : all
+Modules       : overview, iis, access
+Output dir    : ./reports/20260521_090000
+Attach mode   : all
+
+========================================================================
+  營運總覽報告 (Management Overview)
+========================================================================
+  分析期間                                2026-05-21  →  2026-05-21  (1 天)
+  涵蓋範圍                                2 區域 / 6 伺服器 (2 API · 4 APP)
+
+▶ 總體概況 (Overall)
+------------------------------------------------------------------------
+  存取關聯總數                            9
+  NORMAL 正常流程                         6 (66.7%)
+  ORPHAN 無對應簽發                       3 (33.3%)
+  UNVERIFIED 簽發未使用                   0 (0.0%)
+  平均 API→APP 延遲                       19.5s
+  整體健康判定                            警告 — 存取異常比例偏高，建議立即調查
+
+    ■ 核心功能效能 (Core Function Performance)
+      雲端查詢    呼叫次數 11       回應時間 0.11s
+      報告摘要    呼叫次數 186      回應時間 0.38s
+      影像下載    呼叫次數 427      回應時間 0.93s
+      核心功能存取合計 624
+
+Attachments (6):
+  access_detail.txt            3955 bytes
+  access_ip_counts.tsv           28 bytes
+  access_summary.txt            732 bytes
+  iis_detail.txt               9231 bytes
+  iis_summary.txt              1375 bytes
+  overview_summary.txt         3821 bytes
+
+Generated by log-parse. Full reports are attached and also retained at
+./reports/20260521_090000 on the analysis host.
+```
+
+The extractor stops at the hourly bar chart (a wall of block-drawing
+characters that is unreadable in a proportional mail font) or at the
+second `▶ ` section heading, whichever comes first, and hard-caps at 60
+printed lines; the whole Body is additionally capped at 65536 bytes
+(truncated with a visible marker line on overflow — the authoritative file
+is always attached in full regardless). If `overview_summary.txt` is
+absent (e.g. `--modules iis`), the Body falls back to the first 25 lines of
+the lexicographically-first `*_summary.txt` present; if no summary file
+exists at all, it falls back to a literal placeholder line — the Body is
+never blank and building it never aborts the send.
+
+**Recipients — `conf/receivers.conf`.** This file lists recipients only
+(收件者); the sender identity is configured separately via environment
+variables (see the table below), never here. One row per line:
+
+```
+DISPLAY_NAME|ADDRESS
+```
+
+`#` comments and blank lines are ignored; leading/trailing whitespace and
+CR are stripped from every field. At least one row is required — the same
+fail-fast contract as `regions.conf` / `test_hosts.conf`: a missing,
+empty, or malformed file (wrong field count, an invalid address, a
+display name containing `` | , ; < > " `` or a control character, or a
+duplicate address) aborts with an explicit error before anything is sent.
+Override the path with `--receivers-conf FILE` (default
+`conf/receivers.conf`). The shipped file seeds one row:
+
+```
+Jason Chao|jason.chao@cohesiondata.com
+```
+
+**Environment variables** (all optional — every one has a working
+default, so `--notify` alone is always usable):
+
+| Variable | Default | Effect |
+|---|---|---|
+| `LOG_PARSE_NOTIFY_URL` | `http://haididev.intra.nhi.gov.tw:8080/api/email/send` | Endpoint; `--notify-url` overrides it. |
+| `LOG_PARSE_NOTIFY_SUBJECT` | derived (date-based, see above) | Replaces the whole `Subject` string; no flag exists for this. |
+| `LOG_PARSE_NOTIFY_FROM_NAME` | `系統通知` | `From.DisplayName`. |
+| `LOG_PARSE_NOTIFY_FROM_ADDR` | `notify@nhi.gov.tw` | `From.Address`; validated against the same address pattern as every `conf/receivers.conf` row. |
+| `LOG_PARSE_NOTIFY_CURL_BIN` | `curl` | Absolute `curl` path on locked-down hosts; also the automated-test shim hook. |
+| `LOG_PARSE_NOTIFY_INTERNAL_DOMAINS` | *(empty)* | Space-separated domains exempt from the external-recipient warning. |
+| `LOG_PARSE_NOTIFY_MAX_ATTACH_BYTES` | `2097152` (2 MiB) | Per-file raw-byte cap, checked before base64 encoding. |
+| `LOG_PARSE_NOTIFY_MAX_TOTAL_BYTES` | `8388608` (8 MiB) | Per-run raw-byte cap across all attachments. |
+| `LOG_PARSE_NOTIFY_CONNECT_TIMEOUT` | `5` | `curl --connect-timeout` (seconds). |
+| `LOG_PARSE_NOTIFY_MAX_TIME` | `60` | `curl --max-time` (seconds). |
+
+**Dependencies — optional, checked lazily.** `curl` and `base64` are
+**not** part of the toolkit's unconditional dependency set
+(`bash gawk sort date mktemp`). They are named only inside
+`lib/notify_utils.sh` and are checked only once `--notify` is actually
+supplied: `--notify-dry-run` needs `base64` alone (no network is ever
+touched); a real send needs both. Every run that omits `--notify` is
+completely unaffected, even on a host with neither binary installed. If
+`curl` is missing, a real send fails in well under a second — before any
+log analysis starts — with:
+
+```
+[ERROR] --notify needs the optional dependency 'curl' (HTTP client for the SMTP API).
+[ERROR] Install curl, or use --notify-dry-run to build the payload without sending.
+[ERROR] missing required commands: curl
+```
+
+Use `--notify-dry-run` to validate the payload shape and recipients
+offline, on a host with no outbound network access at all.
+
+**Exit codes.**
+
+| Situation | Exit code |
+|---|---|
+| everything OK | **0** |
+| `--notify-dry-run` | **0** |
+| analysis produced no data (empty corpus) | **0** — unchanged; the reports exist and say so, and the mail is still sent |
+| config/validation defect (bad `--notify-attach` value, bad URL, bad `conf/receivers.conf`, bad `LOG_PARSE_NOTIFY_FROM_ADDR`, missing `curl`) | **1** — fails in argument parsing, before any analysis module runs |
+| an attachment, or the run's total attachment size, exceeds its cap | **1** — nothing is sent |
+| the SMTP API returns a non-2xx status, or the request otherwise fails to transport | **1** |
+| any analysis module itself fails | **1**, and **no mail is sent** (the run stops before the notify stage ever runs) |
+
+**Delivery failure is fatal by design.** The operator explicitly asked for
+a notification, so a run that could not deliver it did not do what was
+asked, and there is no separate resend command. If a scheduled run must
+stay green even when the mail relay is unreachable, compose tolerance with
+the shell — the project's existing idiom for optional steps:
+
+```bash
+bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --date 2026-05-21 --notify || true
+```
+
+There is deliberately no `--notify-best-effort` flag.
+
+**PII — read before enabling.** The default `--notify-attach all` mails
+**every** file the run produced, including `access_detail.*` (raw client
+IPs and the JWT-derived `BIRTHDAY` plaintext date-of-birth field — see
+[`design.md`](design.md) §3.1.5) and `access_ip_counts.tsv` (a raw
+client-IP census), to **every address listed in `conf/receivers.conf`**.
+There is no `--to` flag — retargeting delivery requires editing that
+version-controlled, warning-headed configuration file, never a crontab
+typo. Every send logs (at `WARN`, unsuppressable) the complete recipient
+list and the complete attached-file list, and separately flags any
+recipient whose domain is not listed in
+`LOG_PARSE_NOTIFY_INTERNAL_DOMAINS` as external. Use `--notify-attach
+summary` to narrow delivery to aggregate `*_summary.txt` views — no
+per-record IPs, no `BIRTHDAY` column — when the recipient list is not
+fully trusted. The default endpoint is plain HTTP; every send against an
+`http://` URL logs an explicit warning that the payload, attachments
+included, is transmitted unencrypted.
 
 ---
 
