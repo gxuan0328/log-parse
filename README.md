@@ -4,7 +4,7 @@
 > Correlates access tokens, surfaces IIS anomalies, and tracks application
 > lifecycle events across paired API / APP servers.
 
-[![Tests](https://img.shields.io/badge/tests-316%2F316-brightgreen)](tests/run_tests.sh)
+[![Tests](https://img.shields.io/badge/tests-352%2F352-brightgreen)](tests/run_tests.sh)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bash 4+](https://img.shields.io/badge/bash-4%2B-lightgrey)](https://www.gnu.org/software/bash/)
 
@@ -23,7 +23,7 @@ geographic regions (Taipei / Taichung) and produces correlated reports:
 | `analyze_access`     | API + APP access CSVs                         | Token-issuance ↔ verification flows, orphan / unverified usage; `--view summary|detail` |
 | `analyze_iis`        | IIS W3C extended logs                         | Business-only request metrics: slow requests, endpoint breakdown, status distribution; `--view summary|detail` |
 | `analyze_errors`     | `app-all` / `app-error` / `app-lifetime`      | OracleDB outages, top error patterns, restart downtime                                |
-| `log_report`         | All of the above                              | Orchestrator; default modules: `overview,iis,access`; errors opt-in via `--modules`; optionally mails the persisted bundle via `--notify` (see [Notification](docs/usage.md#notification)) |
+| `log_report`         | All of the above                              | Orchestrator; default modules: `overview,iis,access`; errors opt-in via `--modules`; optionally mails the persisted bundle via `--notify` (see [Notification](docs/usage.md#notification)), and can export a `連線紀錄.xlsx` deliverable via `--report-export` (see [Report export](docs/usage.md#report-export)) |
 
 All reports default to **business traffic only**: `/health` is excluded unconditionally from all IIS aggregation, and internal test-host IPs listed in `conf/test_hosts.conf` are pre-filtered by `--test-hosts exclude|only|all` (default: `exclude`). `Total requests` / `IIS 總請求數` therefore reflect real external user traffic only.
 
@@ -99,7 +99,8 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── fmt_utils.sh         Report formatting helpers
 │   ├── output_utils.sh      Always-on report persistence (persist_init/persist_views)
 │   ├── aggregate_utils.sh   Shared metric computation & CSV quoter (AGG_IIS_AWK)
-│   └── notify_utils.sh      SMTP-API report delivery (--notify; curl/base64 optional)
+│   ├── notify_utils.sh      SMTP-API report delivery (--notify; curl/base64 optional)
+│   └── report_export_utils.sh  report-export container integration (--report-export; docker optional)
 ├── conf/
 │   ├── regions.conf         Region ↔ server mapping
 │   ├── test_hosts.conf      QA / health-probe client IPs (filter with --test-hosts)
@@ -112,7 +113,7 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── sample-outputs/      Sample rendered reports
 │   └── *.sh                 Scenario-driving scripts
 ├── tests/
-│   └── run_tests.sh         316-test functional suite
+│   └── run_tests.sh         352-test functional suite
 ├── report-export/           Independent Python subtool: weekly xlsx export
 │   ├── src/report_export/   Package (pure-function core + I/O boundary)
 │   ├── docs/                design.md · usage.md · data-fidelity.md (zh-TW)
@@ -141,6 +142,9 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 - **Optional** (only when `--notify` is used): `curl` (HTTP POST), `base64`
   (attachment encoding) — checked lazily; every other workflow is
   unaffected even without them. See [Notification](docs/usage.md#notification).
+- **Optional** (only when `--report-export` is used): `docker` (runs the
+  companion `report-export` image) — checked lazily; every other workflow
+  is unaffected even without it. See [Report export](docs/usage.md#report-export).
 
 Verify with `make install-deps`.
 

@@ -40,9 +40,9 @@ NOT a daemon. NOT a database. NOT a service. Do not introduce one.
 | Path        | Purpose                                                              |
 |-------------|----------------------------------------------------------------------|
 | `bin/`      | CLI entry points; one file = one command.                            |
-| `lib/`      | Sourced-only helpers (common, date_utils, csv_utils, fmt_utils, notify_utils). |
+| `lib/`      | Sourced-only helpers (common, date_utils, csv_utils, fmt_utils, notify_utils, report_export_utils). |
 | `conf/`     | `regions.conf` — region ↔ server mapping read by `load_regions`; `receivers.conf` — `--notify` recipients. |
-| `tests/`    | `run_tests.sh` — single-file regression suite (currently 316 tests). |
+| `tests/`    | `run_tests.sh` — single-file regression suite (currently 352 tests). |
 | `docs/`     | `design.md` + `usage.md` (+ zh-TW). Update both languages together.  |
 | `examples/` | `sample-logs/` (dataset), `sample-outputs/` (expected reports), `*.sh`.|
 | `.claude/`  | Project rules (this file + `rules/` + `skills/`).                    |
@@ -86,9 +86,15 @@ numerics (e.g. `Tests: 108/108`).
 ## 6. Hard "no"s
 
 - ❌ New runtime dependencies beyond `bash gawk sort date mktemp` — EXCEPT
-  `curl` and `base64`, which are OPTIONAL, used only by
-  `lib/notify_utils.sh`, and gated lazily behind `--notify`
-  (see `docs/design.md` §4.9).
+  `curl`, `base64`, and `docker`, which are OPTIONAL: `curl`/`base64` are
+  used only by `lib/notify_utils.sh`, gated lazily behind `--notify`
+  (see `docs/design.md` §4.9); `docker` is used only by
+  `lib/report_export_utils.sh`, gated lazily behind `--report-export`
+  (see `docs/design.md` §4.10). Each exception is granted **per-feature
+  and gated** — this is a narrow, reviewed carve-out, not a general
+  licence; a fourth such request must restructure this rule into an
+  explicit registry with its own stated admission test, not another
+  ad-hoc bullet.
 - ❌ Silent fallbacks (`2>/dev/null || true` without a justifying comment).
 - ❌ `git add -A` / `git add .` in helper scripts — stage explicit paths.
 - ❌ Interactive prompts in CLI paths.

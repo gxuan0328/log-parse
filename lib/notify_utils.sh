@@ -13,7 +13,12 @@
 #
 # Every persisted file in the run directory becomes one attachment (never a
 # zip); the Body carries the run's own KEY SUMMARY, extracted from
-# overview_summary.txt -- never boilerplate.
+# overview_summary.txt -- never boilerplate. When bin/log_report.sh was also
+# given --report-export, notify_send additionally attaches the xlsx
+# deliverable lib/report_export_utils.sh produced (REPORT_EXPORT_DELIVERABLE_PATH,
+# living outside the run directory under <output-dir>/production/output) via
+# notify_collect_attachments' optional 4th EXTRA parameter -- see that
+# function's own docblock for the exact guarantees this carries.
 #
 # curl and base64 are CONDITIONAL runtime dependencies (a narrow, recorded
 # deviation from CLAUDE.md §6; see docs/design.md §4.9): they are named ONLY
@@ -374,12 +379,17 @@ _notify_file_bytes() {
 # Attachment enumeration
 # ---------------------------------------------------------------------------
 
-# notify_collect_attachments DIR MODE OUT_TSV
-#   Purpose : Enumerate DIR (the run's persisted output directory) into an
+# notify_collect_attachments DIR MODE OUT_TSV [EXTRA]
+#   Purpose : Enumerate DIR (the run's persisted output directory), PLUS the
+#             optional EXTRA file (report-export's xlsx deliverable, living
+#             outside DIR under <output-dir>/production/output), into one
 #             attachment manifest, applying MODE and the per-file/per-run
 #             raw-byte caps BEFORE any base64 encoding is attempted.
 #   Args    : DIR — run directory (flat; a subdirectory is an invariant
-#             violation); MODE — all|summary; OUT_TSV — manifest path to write.
+#             violation); MODE — all|summary; OUT_TSV — manifest path to
+#             write; EXTRA — [OPT] an additional absolute file path to
+#             attach alongside DIR's own contents (e.g.
+#             REPORT_EXPORT_DELIVERABLE_PATH), or "" (default) for none.
 #   Output  : nothing on stdout. Writes OUT_TSV, one row per regular file:
 #               ATTACH<TAB>name<TAB>bytes<TAB>path
 #               SKIP<TAB>name<TAB>bytes<TAB>empty        (0-byte file)
@@ -388,33 +398,59 @@ _notify_file_bytes() {
 #             breach -- the caller must stop, no curl call is appropriate.
 #   Errors / Notes : dies on a subdirectory under DIR ("run dir must be flat"),
 #             a duplicate basename (filesystem-guaranteed not to happen from
-#             one flat glob; asserted anyway as a documented invariant, never
-#             expected to trigger), a filename containing a TAB or newline
-#             byte (FIX I -- would corrupt the TSV manifest read back
-#             elsewhere), or an attachment that exists per the earlier `-f`
-#             check yet cannot actually be opened for its size probe (FIX A
-#             -- distinct from a genuinely empty file, which is SKIPPED, not
-#             fatal). `notify_payload.json` is unconditionally excluded from
+#             one flat glob; asserted anyway as a documented invariant -- and
+#             now LOAD-BEARING rather than purely defensive: it is the only
+#             guard against EXTRA shadowing a same-named run-dir file), a
+#             filename containing a TAB or newline byte (FIX I -- would
+#             corrupt the TSV manifest read back elsewhere), or an
+#             attachment that exists per the earlier `-f` check yet cannot
+#             actually be opened for its size probe (FIX A -- distinct from
+#             a genuinely empty file, which is SKIPPED, not fatal).
+#             `notify_payload.json` is unconditionally excluded from
 #             enumeration in every MODE (FIX B) so a dry run's own artifact,
 #             or an earlier run's leftover under a pinned LOG_PARSE_RUN_TS,
-#             can never become a 7th attachment of itself. Enumeration is a
-#             bash glob (never find, which is outside the sanctioned command
-#             set), so it is already lexicographically sorted -- deterministic,
-#             and this is the ONLY enumeration of DIR; nothing here is a
-#             second source of truth for RUN_OUTPUT_DIR's contents (rule 2 /
-#             §7.1). Size is measured by gawk (never stat/wc) in the same
-#             pass that will later encode.
+#             can never become a 7th attachment of itself. EXTRA is asserted
+#             to exist as a regular file BEFORE the loop even starts --
+#             LOUDLY (rule 1): unlike the loop body's lenient
+#             `[[ ! -f "$f" ]] && continue` (a TOCTOU allowance for a
+#             directory THIS tool owns), silently dropping an
+#             operator/feature-named path here would be exactly the silent
+#             fallback rule 1 forbids. EXTRA bypasses ONLY the
+#             --notify-attach summary basename filter (via the per-iteration
+#             is_extra flag) -- every other rule in the loop body (the
+#             notify_payload.json exclusion, the TAB/newline check, the
+#             seen_names collision table, the size probe, the 0-byte skip,
+#             both size caps, the ATTACH manifest row) applies to it
+#             identically, unmodified. Enumeration of DIR is a bash glob
+#             (never find, which is outside the sanctioned command set), so
+#             it is already lexicographically sorted for DIR's own entries,
+#             with EXTRA appended last -- deterministic, and this remains the
+#             ONLY enumeration of DIR; nothing here is a second source of
+#             truth for RUN_OUTPUT_DIR's contents (rule 2 / §7.1). Size is
+#             measured by gawk (never stat/wc) in the same pass that will
+#             later encode.
 notify_collect_attachments() {
-    local dir="$1" mode="$2" out="$3"
+    local dir="$1" mode="$2" out="$3" extra="${4:-}"
     local f name bytes total=0
     local -A seen_names=()
 
+    if [[ -n "$extra" && ! -f "$extra" ]]; then
+        die "notify: extra attachment not found or not a regular file: $extra"
+    fi
+
     : > "$out"
     shopt -s nullglob
-    for f in "$dir"/*; do
+    local -a candidates=("$dir"/*)
+    shopt -u nullglob
+    if [[ -n "$extra" ]]; then candidates+=("$extra"); fi
+
+    for f in "${candidates[@]}"; do
         if [[ -d "$f" ]]; then die "run dir must be flat: unexpected subdirectory: $f"; fi
         if [[ ! -f "$f" ]]; then continue; fi
         name="$(basename "$f")"
+
+        local is_extra=0
+        if [[ -n "$extra" && "$f" == "$extra" ]]; then is_extra=1; fi
 
         # FIX B: notify_payload.json (this run's own --notify-dry-run
         # artifact, or a PRIOR run's leftover when LOG_PARSE_RUN_TS is
@@ -427,7 +463,7 @@ notify_collect_attachments() {
             notify_payload.json) continue ;;
         esac
 
-        if [[ "$mode" == "summary" ]]; then
+        if [[ "$mode" == "summary" && "$is_extra" -eq 0 ]]; then
             case "$name" in
                 *_summary.txt) ;;
                 *) continue ;;
@@ -467,7 +503,6 @@ notify_collect_attachments() {
         if (( bytes > NOTIFY_MAX_ATTACH_BYTES )); then
             log_error "notify: $name is $bytes bytes, over the per-file cap $NOTIFY_MAX_ATTACH_BYTES; nothing was sent"
             NOTIFY_SKIP_REASON="attachment_too_large:$name"
-            shopt -u nullglob
             return 2
         fi
 
@@ -475,13 +510,11 @@ notify_collect_attachments() {
         if (( total > NOTIFY_MAX_TOTAL_BYTES )); then
             log_error "notify: attachments total $total bytes, over the per-run cap $NOTIFY_MAX_TOTAL_BYTES; nothing was sent"
             NOTIFY_SKIP_REASON="total_too_large"
-            shopt -u nullglob
             return 2
         fi
 
         printf 'ATTACH\t%s\t%s\t%s\n' "$name" "$bytes" "$f" >> "$out"
     done
-    shopt -u nullglob
     return 0
 }
 
@@ -605,8 +638,34 @@ notify_build_body() {
     local dir="$1" out="$2"
     local first last fb total_rows tag name bytes path
 
-    first="$(build_date_list "${INTERVAL_ARGS[@]}" | head -n 1)"
-    last="$(build_date_list "${INTERVAL_ARGS[@]}" | tail -n 1)"
+    # FIX I (SIGPIPE safety -- disambiguation: this is a LATER review round's
+    # "FIX I", unrelated to notify_collect_attachments' own, earlier
+    # "FIX I" a few hundred lines above this one about TAB/newline bytes in
+    # attachment filenames; both happen to reuse the same letter across two
+    # independent review passes). Capture build_date_list's FULL output with
+    # NO pipe (a bare command substitution's internal read runs to the
+    # writer's own EOF; there is no early-closing reader to race), then take
+    # the first/last LINE via pure parameter expansion -- no subprocess, no
+    # pipe, no dependency added. This mirrors lib/report_export_utils.sh's
+    # report_export_window_start EXACTLY (see that function's docblock for
+    # the full empirically-verified writeup): the previous
+    # `build_date_list ... | head -n 1` / `| tail -n 1` shape SIGPIPEs the
+    # still-writing producer for any multi-day window under
+    # `set -euo pipefail`, and pipefail then reports exit 141 for the whole
+    # pipeline even though $first/$last had already captured the correct
+    # value. It was harmless here ONLY by accident of the calling context
+    # (notify_send is invoked as `if notify_send ...`, which suspends
+    # errexit for its entire dynamic extent, including this call) -- not by
+    # design, and any future direct-library caller (docs/design.md §3.4.7
+    # mechanism 3) or any refactor that stops calling notify_send from an
+    # `if` condition would have hit it. Fails loud via die() if the range
+    # itself cannot be derived (should not happen: resolve_interval has
+    # already validated INTERVAL_ARGS before this ever runs).
+    local all
+    all="$(build_date_list "${INTERVAL_ARGS[@]}")" \
+        || die "notify: cannot derive the analysis date range for the mail body"
+    first="${all%%$'\n'*}"
+    last="${all##*$'\n'}"
 
     : > "$out"
     chmod 600 "$out"
@@ -624,6 +683,12 @@ notify_build_body() {
         else
             fb=""
             if [[ -n "${NOTIFY_ATTACH_TSV:-}" && -f "$NOTIFY_ATTACH_TSV" ]]; then
+                # SAFE pipe (unlike the build_date_list sites fixed for SIGPIPE):
+                # the producer emits at most one line per persisted *_summary.txt
+                # (a handful per run), far under the pipe buffer, so `head` never
+                # closes the read end while `sort` -- which buffers all input
+                # before writing a single byte -- is still writing. Do NOT copy
+                # this `... | sort | head` idiom to an unbounded producer.
                 fb="$(gawk -F'\t' '$1 == "ATTACH" && $2 ~ /_summary\.txt$/ { print $2 }' "$NOTIFY_ATTACH_TSV" | sort | head -n 1)"
             fi
             if [[ -n "$fb" ]]; then
@@ -729,9 +794,19 @@ notify_subject() {
         printf '%s' "$LOG_PARSE_NOTIFY_SUBJECT"
         return 0
     fi
-    local first last
-    first="$(build_date_list "${INTERVAL_ARGS[@]}" | head -n 1)"
-    last="$(build_date_list "${INTERVAL_ARGS[@]}" | tail -n 1)"
+    # FIX I (SIGPIPE safety, this later review round -- see the
+    # disambiguation note on notify_build_body's identical fix; unrelated to
+    # notify_collect_attachments' own, earlier "FIX I" about TAB/newline
+    # bytes in filenames). Pure parameter expansion instead of
+    # `build_date_list ... | head -n 1` / `| tail -n 1`, which SIGPIPEs the
+    # still-writing producer for any multi-day window under
+    # `set -euo pipefail` (harmless today only by accident of notify_send's
+    # `if` calling context, not by design).
+    local all first last
+    all="$(build_date_list "${INTERVAL_ARGS[@]}")" \
+        || die "notify: cannot derive the analysis date range for the subject"
+    first="${all%%$'\n'*}"
+    last="${all##*$'\n'}"
     if [[ "$first" == "$last" ]]; then
         printf '【肺癌報告】 調閱紀錄彙整資訊 - %s' "$first"
     else
@@ -1116,7 +1191,9 @@ notify_result_line() {
 #             tmpdir (init_tmpdir ONLY if the caller has not already set
 #             WORK_TMPDIR -- see the header docblock's documented exception)
 #             -> validate From address -> load receivers -> enumerate
-#             attachments (cap breach returns 1 with no curl call at all) ->
+#             attachments, PLUS the report-export deliverable when present
+#             (cap breach returns 1 with no curl call at all; see
+#             notify_collect_attachments' EXTRA parameter) ->
 #             recipient/file audit + external-domain warnings -> build body
 #             -> build payload -> dry-run short-circuit, or POST + result line.
 #             The recipient/file audit line is emitted AFTER attachment
@@ -1169,7 +1246,11 @@ notify_send() {
 
     NOTIFY_ATTACH_TSV="${NOTIFY_WORKDIR}/notify_attach.tsv"
     local collect_rc=0
-    notify_collect_attachments "$run_dir" "$OPT_NOTIFY_ATTACH" "$NOTIFY_ATTACH_TSV" || collect_rc=$?
+    # 4th arg: the report-export xlsx deliverable (lib/report_export_utils.sh),
+    # when --report-export produced one this run; "" (unset-safe via :-)
+    # otherwise, in which case notify_collect_attachments behaves exactly as
+    # it always did for the pre-existing three-argument call shape.
+    notify_collect_attachments "$run_dir" "$OPT_NOTIFY_ATTACH" "$NOTIFY_ATTACH_TSV" "${REPORT_EXPORT_DELIVERABLE_PATH:-}" || collect_rc=$?
     if [[ "$collect_rc" -eq 2 ]]; then
         notify_result_line skipped "$NOTIFY_SKIP_REASON"
         return 1

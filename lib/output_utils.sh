@@ -54,6 +54,29 @@ persist_init() {
     log_debug "output dir: $RUN_OUTPUT_DIR  ts: $RUN_TS"
 }
 
+# persist_production_dir
+#   Purpose : Print the report-export production tree's base path -- a
+#             SIBLING of the timestamped run directories (never a child of
+#             one; see docs/design.md §4.10), reusing persist_init's own
+#             ${RUN_BASE_DIR%/} trailing-slash strip so a --output-dir with
+#             a trailing slash can never produce a double slash here either.
+#   Args    : none.
+#   Output  : "${RUN_BASE_DIR%/}/production" on stdout, one line.
+#   Returns / Side effects : none -- performs no filesystem access (the
+#             caller, report_export_prepare_dirs in lib/report_export_utils.sh,
+#             is responsible for mkdir/chmod/absolutisation).
+#   Errors / Notes : dies with `persist_production_dir: RUN_BASE_DIR is
+#             unset (call persist_init first)` when RUN_BASE_DIR is empty --
+#             persist_init must run first (report_export_prepare_dirs
+#             additionally guards this itself, with a report-export-specific
+#             message, before ever calling this function).
+persist_production_dir() {
+    if [[ -z "${RUN_BASE_DIR:-}" ]]; then
+        die "persist_production_dir: RUN_BASE_DIR is unset (call persist_init first)"
+    fi
+    printf '%s/production\n' "${RUN_BASE_DIR%/}"
+}
+
 # persist_ext FORMAT
 #   Purpose : Map a --format value to the detail file extension.
 #   Args    : FORMAT — text|tsv|csv (unknown values default to txt).

@@ -8,6 +8,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `--report-export` flag on `bin/log_report.sh` — runs the independent
+  `report-export` Docker image against this run's own `access_detail.csv`
+  and attaches the resulting `YYYY-MM-DD_連線紀錄.xlsx` to the `--notify`
+  payload, in addition to the run's own persisted reports. Opt-in,
+  single-shot (no retry, no daemon); requires `--format csv` and the
+  access module (the sole producer of `access_detail.csv`), both checked
+  in argument parsing before any analyzer subprocess runs. New
+  `lib/report_export_utils.sh` (sourced-only) owns the feature end to
+  end: dependency preflight, `production/{input,state,output}` tree
+  creation (a SIBLING of the timestamped run directories — this state is
+  cross-run accumulating, not per-run), CSV staging as
+  `week-<window-start>.csv`, `docker run` argv construction and
+  invocation, and validated deliverable selection. `lib/output_utils.sh`
+  gains `persist_production_dir()`. The deliverable is selected by
+  parsing the single JSON summary line `report-export` prints on its own
+  stdout and validating the `deliverable` field against a hostile-input
+  whitelist plus host-side existence/size/freshness checks — never by
+  scanning the output directory (directory-snapshot-diff, newest-by-mtime,
+  and reimplementing report-export's own filename-disambiguation counter
+  were all considered and rejected; see `docs/design.md` §4.10.5).
+  `report_export_run` executes strictly between the analysis-module loop
+  and `notify_run`, so a failed export can never ship a mail silently
+  missing its attachment. Ordering, the full tree contract, and every
+  fatal path are documented in `docs/usage.md` / `docs/design.md` §4.10
+  (EN/zh-TW). New offline-shim test Section M (`M01`–`M28`,
+  `tests/run_tests.sh`), mirroring Section L's `fake_curl.sh` pattern —
+  no test ever contacts a real Docker daemon or network endpoint.
+  Hardened after a multi-lens adversarial review, before first release:
+  the container-reported deliverable path is now rejected outright if it
+  is a symlink on the host, and its containing directory must resolve
+  (`cd && pwd -P`) to exactly the expected output dir before any further
+  probe — closing a CRITICAL exfiltration path (CWE-22/CWE-61) where a
+  hostile/buggy image could otherwise plant
+  `<D>_連線紀錄.xlsx -> /proc/net/tcp` (or any host file whose mtime fell
+  in the run's freshness window) and have it base64-encoded and mailed to
+  every `conf/receivers.conf` address; the three
+  `production/{input,state,output}` mount-point subdirectories are now
+  likewise lstat-checked and physically resolved (a pre-existing
+  symlinked mount point could otherwise redirect the `docker -v` bind
+  mount); `chmod 0700`/`600` succeeding is no longer trusted blindly — the
+  resulting mode is read back (`stat -c '%a'`) and a mismatch (silent on
+  a DrvFs/9p/WSL mount, which this repository can itself be deployed
+  from) emits one unmissable warning, never fatal and never silent;
+  container stderr is now relayed one `log_error` call per line instead
+  of one call for the whole multi-line blob, closing a log-forgery gap
+  (CWE-117) where every line but the first reached the log stream
+  unprefixed; `_report_export_same_bytes`'s unopenable-comparison-file
+  path now routes through the shared audit-then-die helper
+  (`reason=stage_compare`, a new closed slug) instead of a bare `die`
+  that silently skipped the `REPORT_EXPORT_RESULT` line; and the image-
+  reference whitelist now admits an optional `registry-host[:port]/`
+  prefix (e.g. `myregistry:5000/report-export:1.0.0`) while keeping the
+  no-leading-dash CWE-88 anchor intact. Two test-suite-only defects were
+  also corrected: M16's negative assertion could never match (a stray
+  leading space) and so never actually proved `docker run` was not
+  invoked; M28's oversize sub-case set the attachment cap so low that a
+  run-directory file always breached it before the xlsx was ever reached,
+  so the cap-applies-to-the-xlsx claim was never actually exercised —
+  both are now proven to fail against the prior behaviour. New
+  regression tests M29–M34 and L30/L31 (the latter closing a coverage gap
+  in `lib/notify_utils.sh`'s `notify_subject`/`notify_build_body`: the
+  same `build_date_list | head -n1` SIGPIPE-under-`pipefail` hazard
+  `report_export_window_start` was written to avoid, latent there too for
+  any multi-day window and fixed identically).
+  Tests: 316 -> 352.
+- `lib/notify_utils.sh` — `notify_collect_attachments` gains an optional
+  4th `EXTRA` parameter so `notify_send` can attach the report-export
+  xlsx alongside a run's own files through the existing single
+  attachment pipeline (one collision table, one size-cap accounting, one
+  manifest) — no second attachment code path. `EXTRA` bypasses only the
+  `--notify-attach summary` basename filter; every other rule, including
+  both size caps, applies to it unmodified.
+
+### Changed
+- `bin/log_report.sh`'s `main()` hoists its one `init_tmpdir` call ahead
+  of *either* `--report-export` or `--notify` (previously only ahead of
+  `--notify`) — `init_tmpdir` is not idempotent, so it must fire exactly
+  once regardless of which of the two (or both) flags are set.
+
+### Security
+- `docker` joins `curl`/`base64` as a **third** lazily-gated optional
+  dependency (`.claude/CLAUDE.md` §6, amended to state explicitly that
+  these three exceptions are per-feature and gated, never a general
+  licence). It is named only in `lib/report_export_utils.sh` and reached
+  only behind `--report-export`; a host with no `docker` at all is
+  unaffected on every other workflow.
+- The `report-export` container runs with `--network none` (no
+  exfiltration path for the PII the CSV carries) and, by default,
+  **no `--user`** — it runs as root, matching the image's own
+  no-`USER`-directive design and the exact command an operator would
+  type by hand. Files it writes under `production/state` and
+  `production/output` are therefore root-owned by default (`sudo`
+  required to remove/edit them from the host side) — the same trade-off
+  `report-export`'s own docs already record for manual runs. An operator
+  may opt into a specific host uid via `LOG_PARSE_REPORT_EXPORT_USER`
+  (whitelisted `uid[:gid]`); it is never forced.
+- `production/state` accumulates this feature's PII-derived records
+  (`CLIENT_IP`, `HOSP_ID`, `PRSN_ID`, `PATIENT_ID_AES`, `BIRTHDAY` via
+  the staged CSV) **indefinitely**, independent of any single run's
+  directory lifetime, and the resulting xlsx is mailed to every address
+  in `conf/receivers.conf` on every `--report-export --notify` run.
+  Retention/purge is the operator's responsibility (out of scope for
+  this toolkit); re-review `conf/receivers.conf` before first enabling
+  the flag.
+- The container-reported deliverable path and the three
+  `production/{input,state,output}` mount points are now validated to be
+  non-symlinks with a physically-resolved location before either is ever
+  trusted (CWE-22/CWE-61) — see the "Added" entry above for the full
+  exploit this closes.
+- `chmod 0700`/`600` is best-effort and was never previously verified to
+  take effect; it is now read back and a mismatch is loudly (never
+  silently) warned about, since a filesystem that does not honour Unix
+  permission bits (DrvFs/9p/WSL) can otherwise leave `production/`'s
+  accumulating PII confidentiality-unprotected without any indication.
+
+---
+
+### Added
 - `lib/notify_utils.sh` + `conf/receivers.conf` — opt-in delivery of a persisted
   run to the internal SMTP API. `bin/log_report.sh` gains `--notify`,
   `--notify-dry-run`, `--notify-attach`, `--notify-url` and `--receivers-conf`

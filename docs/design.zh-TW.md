@@ -1500,6 +1500,377 @@ CLAUDE.md §6 的靜默違反：
 
 ---
 
+### 4.10 報表匯出容器整合（D13）
+
+`--report-export` 會將容器操作 shell out 到 host——這對一個 §1 稱為
+唯讀（read-only）的工具組而言是全新的能力類別。此偏離是明確、範圍受
+限且經過審查的：嚴格選配（opt-in）、預設關閉，位於單一旗標之後、單
+次執行（無 daemon、無排程器），且不新增任何**無條件**依賴。
+
+#### 4.10.1 依賴判定：`docker` 為第三項受管控的例外
+
+`report-export` **僅**以 Docker 映像形式出貨
+（`ENTRYPOINT ["python","-m","report_export"]`，
+`report-export/docker/Dockerfile`）。不存在原生 host 執行路徑，而
+`openpyxl` xlsx writer 無法以 bash + gawk 重新實作——規則 5（「繁重運
+算交給 gawk」）有其自然極限，產出真正的 `.xlsx`（一個壓縮的 OOXML 容
+器）並非 gawk 擅長的問題形狀。因此選擇只剩「管控 `docker`」或「直接
+拒絕此功能」，而此功能是擁有者明確要求的能力，其存在的全部意義——把
+xlsx 附加到 `--notify` 已寄出的**同一封**通知信——要求此步驟必須在
+`log_report` 自身的行程生命週期內執行，而非一個脫節的手動步驟。
+
+這通過了 §4.9 已為 `curl`/`base64` 建立的相同檢驗標準：
+
+- 依賴邊界恰好與程式碼邊界重合——整個儲存庫中，只有
+  `lib/report_export_utils.sh` 具名引用 `docker`。
+- 檢查閘門是**延遲且由旗標觸發**。Source `lib/report_export_utils.sh`
+  （`bin/log_report.sh` 永遠會這麼做）本身是免費的——只含常數與函式
+  定義，不含任何頂層可執行陳述式。`report_export_preflight` 是唯一
+  會呼叫 `command -v docker` 或 `docker image inspect` 的程式碼路
+  徑，且僅在 `OPT_REPORT_EXPORT=1` 時執行。
+- **未使用 == 未被呼叫，可被證明。** 完全未安裝 `docker` 的主機執行
+  任何既有工作流程皆不受影響；測試 M01（`tests/run_tests.sh`）正是
+  釘住這一點。
+
+依 `.claude/CLAUDE.md` §6（隨本功能一併修訂）：`docker` 成為與
+`curl`、`base64` 並列的**第三項**延遲管控選配依賴。三項例外皆**逐功
+能設立且受管控**，絕非一般性許可——第四項此類請求須將此規則重構為附
+帶其自身檢驗標準的明確登記表，而非再加一條臨時項目。
+
+**兩道檢查閘門，皆大聲失敗**，與 §4.9 的形狀完全一致：
+
+1. **預檢（pre-flight）**——`bin/log_report.sh` 的 `parse_args`，緊接
+   在 `--report-export` 的兩項合法性檢查（`--format csv` 與 access
+   模組檢查；見 [`usage.zh-TW.md`](usage.zh-TW.md#報表匯出)）之後，即
+   早於 `resolve_interval`、早於 `persist_init`、也早於任何分析器子
+   行程存在。主機遺失 `docker` 的操作者能在遠低於一秒的時間內得知，而非
+   等到數分鐘的分析執行結束之後。
+2. **使用當下（point of use）**——`report_export_run` 的第一個陳述
+   式，供繞過 `parse_args` 的直接函式庫呼叫端使用。
+
+透過 `REPORT_EXPORT_PREFLIGHT_DONE` 保持冪等。`docker image inspect`
+在一次往返中同時確認 daemon 可連線**與**映像存在——本地、唯讀、次秒
+等級。其價值在於**失敗時機**，而非正確性保證：它與稍後的 `docker
+run` 之間存在 TOCTOU 競態，且此競態被有意識地接受（§4.10.7 的
+CWE-367 列）——實際的 `docker run` 無論如何仍是唯一具權威性的嘗試。
+**絕不自動 `docker pull`**：無人值守的排程工作不應主動連往 registry，
+而靜默拉取映像既會掩蓋映像版本飄移，也會破壞可重現性。
+
+#### 4.10.2 順序不變量
+
+`report_export_run` 嚴格在模組迴圈與 `notify_run` **之間**執行——這
+是 `main()` 中唯一一個「所有請求的模組皆已持久化各自檔案」（因此
+`access_detail.csv` 已存在、`RUN_OUTPUT_DIR` 已穩定）**且**「`notify_run`
+尚未列舉執行目錄」同時成立的時間點。以下說明此順序的兩個方向：
+
+- **不能在持久化之前。** `report-export` 唯一的輸入
+  `access_detail.csv` 要到 `analyze_access.sh` 執行完畢、`persist_views`
+  寫入之後才存在——在此之前沒有任何東西可供暫存。
+- **不能在 `--notify` 之後。** 因為每一種匯出失敗都是致命錯誤
+  （§4.10.6），若先執行 `notify_run`，會有兩種可能的壞結果：在匯出步
+  驟甚至尚未嘗試之前，就寄出一封內文/清單暗示附有 xlsx 的郵件；或者
+  更糟——先成功寄出，之後才發現匯出失敗，形成一個已寄出、無法收回的
+  不一致狀態。先執行匯出可保證匯出未成功的執行**絕不會**寄出通知：
+  郵件要嘛確實附上所承諾的 xlsx，要嘛完全不寄出——對收件者而言，絕
+  不會出現無法察覺的部分成功。
+
+`init_tmpdir` 被提升為在兩項功能之前**恰好呼叫一次**（`report-export`
+需要 `WORK_TMPDIR` 來擷取容器的 stdout/stderr；`--notify` 需要它來存
+放 payload/body 檔案），因為 `init_tmpdir` **並非**冪等——第二次呼叫
+會直接替換 `WORK_TMPDIR` 而不會先 unlink 前一個（`lib/common.sh`）——
+因此同一行程內呼叫兩次會洩漏第一個暫存目錄。
+
+#### 4.10.3 `production/` 目錄樹合約
+
+```
+RUN_BASE_DIR            = --output-dir 值 | $LOG_PARSE_OUTPUT_DIR | ./log-parse
+RUN_OUTPUT_DIR          = ${RUN_BASE_DIR%/}/${RUN_TS}           （逐次執行，不變）
+REPORT_EXPORT_PROD_DIR  = ${RUN_BASE_DIR%/}/production           （透過 persist_production_dir()）
+REPORT_EXPORT_IN_DIR    = ${REPORT_EXPORT_PROD_DIR}/input
+REPORT_EXPORT_STATE_DIR = ${REPORT_EXPORT_PROD_DIR}/state
+REPORT_EXPORT_OUT_DIR   = ${REPORT_EXPORT_PROD_DIR}/output
+```
+
+`production/` 是時間戳執行目錄的**同層目錄**，絕非任一執行目錄的子
+目錄——這是既有程式碼強制要求的結果，並非品味選擇：
+
+- `report-export` 的 `state/`（`records.csv`、`records.csv.bak`、
+  `runs.jsonl`）是**跨執行累積**的 state——其 `REQUEST_ID` 去重機制與
+  同日序號編號的整個存在意義，都仰賴於能看見先前每一次執行的歷史。
+  若置於逐次執行的時間戳目錄內，每次執行都會拿到一份空的 state，去
+  重機制將被靜默地破壞。
+- `notify_collect_attachments` 強制執行「執行目錄必須扁平」的不變
+  量：`die "run dir must be flat: unexpected subdirectory: $f"`
+  （`lib/notify_utils.sh`）。若 `production/` 目錄巢狀於
+  `RUN_OUTPUT_DIR` 內，將使**每一次** `--notify` 執行都變成致命錯
+  誤——包括根本未要求 `--report-export` 的執行。
+
+三個子目錄名稱與 `production/` 本身皆**固定、不可設定**——單一、可
+預期的位置，供操作者備份、監控或（手動）輪替。
+
+**建立、權限、路徑絕對化。** 四個目錄皆以 `mkdir -p` 於 `umask 077`
+下建立；緊接著、且在任何 chmod 或路徑絕對化信任它們之前，每一個目錄
+若為符號連結（symlink）皆會被直接拒絕（`-L`，一個絕不跟隨連結的
+lstat）。此檢查並非與 §4.10.5/§4.10.7 交付檔端的檢查重複：`mkdir -p`
+在路徑已存在且指向現存目錄的符號連結時是靜默無動作的，因此預先埋設
+的符號連結掛載點若未經檢查將暢行無阻；而 `docker -v` 會在 `mount(2)`
+時解析其 host 路徑引數中的符號連結——未經檢查的
+`production/{input,state,output}` 符號連結，將能讓 `docker run` 在
+容器實際執行前就把**任意 host 目錄**綁定掛載為 `/data/input`、
+`/data/state` 或 `/data/output`。唯有通過此檢查後，四個目錄才會被盡
+力（best-effort）`chmod 0700`。
+
+`docker -v` 要求絕對的 host 路徑，但 `persist_init` 不執行任何路徑正
+規化，且 `./log-parse` 本身就是合法的相對路徑預設值，因此解析後的
+production 路徑會透過 `cd "$prod" && pwd -P` 做一次性絕對化——**僅使
+用 bash 內建功能**，不使用 `realpath`/`readlink`，不新增依賴（此舉是
+安全的，因為該目錄剛被 `mkdir -p` 建立，且剛確認並非符號連結）。解析
+後路徑若少於兩個路徑成分（或恰為 `/`），會被拒絕視為不安全；解析後
+路徑若含 `:`，會被直接拒絕（否則 `docker -v HOST:CONTAINER:ro` 將無
+法解析）——這在本儲存庫可能部署的 OneDrive/WSL 目錄樹上是實際存在的
+疑慮。三個掛載點子目錄接著會各自以相同方式重新做一次物理路徑解析，
+並要求其結果恰好等於 `${REPORT_EXPORT_PROD_DIR}/<name>`——這是在上述
+`-L` 檢查之外的雙重保障，也是子目錄（而不只是 base）真正配得上「已
+解析為可安全交給 `docker -v` 之絕對路徑」此一宣稱的機制。
+
+`chmod` **失敗**（因為先前的 **root** 容器執行已使該目錄樹歸屬
+root，見 §4.10.7）刻意設計為**非**致命錯誤——僅以 debug 層級記錄，並
+留待目錄樹最終的 `-d`/`-w`/`-x` 可用性斷言處理，只有該斷言擁有具體
+可操作的 `chown` 補救說明。若讓 `chmod` 步驟本身致命，將會攔截掉它
+原本存在的目的所要協助診斷的那個情境，且只給出一則籠統的「chmod
+failed」訊息，而非具體的那一則。另外，無論 `chmod` 自身的結束碼為
+何，其結果模式都會被讀回（`stat -c '%a'`）並與預期的 `700` 比對：
+`chmod` 回傳 0 並不代表模式真的生效，而在不支援 Unix 權限位元的檔案
+系統（DrvFs/9p/WSL）上，它經常確實沒有生效。不一致時會發出一則彙整、
+不可忽視的 `log_warn`，列出所有受影響的路徑——絕不致命（完整理由見
+§4.10.7 的 CWE-732 列）、也絕不靜默。
+
+#### 4.10.4 暫存衍生規則
+
+`access_detail.csv`（透過 `persist_path` 解析，絕非手寫字串——規則
+2）會被複製、絕不移動、絕不建立硬連結，進入
+`production/input/week-<D>.csv`，其中 `<D>` 為**分析窗口的第一
+天**——絕非執行日，也絕非窗口結束日。此設計奠基於 `report-export` 自
+身出貨的範例，而非品味偏好：其權威範例
+（[`report-export/docs/usage.md`](../report-export/docs/usage.md)）
+暫存 `week-2026-07-13.csv`（一個星期一），並在其 `deliverable` 中回
+報 `"run_date": "2026-07-16"`——容器恰好執行的那一天。以窗口起始日為
+暫存檔命名，可讓重跑相同窗口覆寫同一個檔名，恰好符合 `report-export`
+自身 `input_sha256` 冪等邏輯的訴求；若以執行日命名，則任何對過去窗
+口的回補都會得到一個容易誤導的檔名。
+
+`build_date_list` + `validate_date`（`lib/date_utils.sh`）是**唯一**
+使用的日期邏輯——`INTERVAL_ARGS` 在匯出步驟執行前已由
+`resolve_interval` 解析完成，因此 `--date`、`--from`/`--to`、
+`--days`、`--today` 皆自動繼承 D3 互斥語義；本功能不在任何地方新增
+日期運算（規則 2）。
+
+該複製動作以 tmp-then-`mv` 方式寫入（`chmod 0600` 於 `mv` **之前**執
+行，因此可見的檔名絕不會有短暫的全域/群組可讀窗口）：並行讀取者絕不
+可能看到寫到一半的暫存檔。若目的檔已存在——重跑相同窗口的正常情
+況——會先逐位元組比對兩檔：內容相同則記錄於 `INFO` 層級並原地更新；
+內容不同則記錄於 `WARN` 層級（「先前執行以不同內容暫存了同一個窗
+口」）後覆寫。兩種分支皆會繼續執行——這是刻意的非致命修復路徑，而非
+靜默的降級處理（規則 1：`log_warn` 為無條件且無法關閉），且是安全
+的，因為 `report-export` 以 `input_sha256` 作為冪等鍵、以
+`REQUEST_ID` 去重，因此重新餵入相同或更新後的內容永遠語義上無害。
+
+#### 4.10.5 交付檔選取——正確性論證
+
+這是本功能中最重要的機制：唯一一個若選錯就會在無人察覺的情況下寄出
+錯誤週次連線記錄的環節。
+
+**問題所在。** `report-export/src/report_export/xlsx_writer.py` 如下
+解析交付檔檔名：
+
+```python
+_FILENAME_DATE_FMT: Final[str] = "%Y-%m-%d"
+_DELIVERABLE_SUFFIX: Final[str] = "_連線紀錄.xlsx"
+
+def resolve_filename(*, run_date, out_dir, today_runs, input_sha256) -> str:
+    base_name = f"{run_date.strftime(_FILENAME_DATE_FMT)}{_DELIVERABLE_SUFFIX}"
+    if not (out_dir / base_name).exists():
+        return base_name
+    if today_runs and today_runs[-1].get("input_sha256") == input_sha256:
+        return base_name
+    seq = max(len(today_runs), 1) + 1
+    stem = base_name.removesuffix(".xlsx")
+    return f"{stem}_{seq:02d}.xlsx"
+```
+
+三項事實直接由此可得，合而觀之即是：**交付檔的檔名無法從
+`production/output` 中任何可觀察的內容推導出來**——任何 host 端掃描
+都只是猜測：
+
+1. 某日的第一份交付檔永遠是不帶後綴的裸檔名
+   `YYYY-MM-DD_連線紀錄.xlsx`；`_01` 變體絕不會出現，而**冪等重
+   跑**（與 `today_runs[-1]` 的 `input_sha256` 相同）會刻意保留裸檔
+   名並**覆寫**它——不會出現新檔名。
+2. 使用 `_NN` 後綴時，其數值衍生自 `len(today_runs)`——該日
+   **`runs.jsonl` 記錄的筆數**，包含 0 筆新增的冪等重跑——**並非**
+   `out_dir` 中實際存在的檔案數；`resolve_filename` 對於帶後綴的檔
+   名，從不列舉 `out_dir`。
+3. `run_date` 是**容器內**（`report-export/src/report_export/pipeline.py`）
+   的 `date.today()`，採用映像自身的 `TZ=Asia/Taipei`。出貨映像所接
+   受的任何 CLI 旗標、環境變數或 Docker 引數皆無法設定此值（已確
+   認：`report-export/src/report_export/cli.py` 的參數解析器完全沒
+   有 `run_date` 形狀的旗標）——因此它可能合理地與 log-parse 自身的
+   分析窗口不同（§4.10.4）。
+
+**機制本身。** 權威來源是 `report-export` 在其**自身** stdout 上印出
+的單行 JSON 中的 `deliverable` 欄位，經 host 端驗證，絕非用猜測推
+斷。`pipeline.py` 將 `RunSummary.deliverable = str(final_path)` 設定
+為與 `xlsx_writer.write()` 回傳、且 `os.replace()`
+（`_replace_deliverable`）移動就位的**同一個** `final_path` 物
+件——發生在同一函式主體內，中間沒有任何檔案系統觀察介入。`cli.py`
+的 `main()` 恰有一個 `print(json.dumps(...))` 呼叫，且在任何
+`ReportExportError` 路徑上皆**不可能觸及**（每一種此類例外都會被攔
+截，並在該行之前以 `return exc.exit_code` 提早回傳）。因此非零結束
+碼時 stdout 保證**為空**，絕不會是片段內容；結束碼為 0 時則保證恰為
+那一行 JSON。此欄位**並非**「哪個檔案被產生」的證據——它**就是**被
+產生檔案的身分本身。
+
+在 host 端，`_report_export_select_deliverable` 只增添**證偽**，從
+不增添推論：該值必須以字面前綴 `/data/output/` 開頭；其檔名必須符合
+錨定白名單
+`^[0-9]{4}-[0-9]{2}-[0-9]{2}_連線紀錄(_[0-9]{2})?\.xlsx$`（拒絕任何
+`/`、任何 `..`、任何開頭 `-`、任何控制位元組、任何其他形狀）；對映
+後的 host 路徑**不得**為符號連結（`-L`，一個絕不跟隨連結的
+lstat），且其所在目錄以 `cd && pwd -P` 解析後，必須恰好等於已解析完
+成的 `REPORT_EXPORT_OUT_DIR`——此檢查於路徑解析出來後立即執行，且在
+以下任何探測**之前**，因為下列探測本身皆不具符號連結安全性；對映後
+的 host 路徑必須存在且非空（`_notify_file_bytes` 風格）；其 mtime
+不得早於 `docker run` 呼叫前記錄的時間戳（2 秒容差以吸收檔案系統時
+間戳粒度）。這些步驟把一項具權威性的宣稱轉為經驗證的事實，同時關閉
+本功能不受信任輸入的邊界（CWE-22／CWE-61，§4.10.7）。此機制在
+`resolve_filename` **每一個**分支下皆正確——裸檔名、冪等覆寫、
+`_02`/`_03`/… 後綴——而 log-parse 完全不需編碼該演算法的任何一個位
+元組：report-export 擁有其自身的命名權，log-parse 只是詢問它（規則
+2）。
+
+**三種被否決的替代方案，皆經證偽，而非僅是不喜歡：**
+
+1. **前後目錄快照差異比對。** 在冪等重跑時回傳**空集合**，因為
+   `report-export` 會確定性地覆寫既有的裸檔名，不會出現新檔名——一
+   次完全成功的執行被回報為失敗。在並行情境下，同層執行寫入的新檔
+   案也會污染此差異比對。
+2. **以 mtime 最新者為準。** 對任何並行的產生者而言純屬競態；無法區
+   分「本次執行覆寫了裸檔名」與「同層執行剛寫入了新檔名」；會被操作
+   者手動複製檔案進來的行為打敗；而本儲存庫可能部署的
+   DrvFs/WSL/NFS 掛載點上的時間戳粒度並不可靠。
+3. **執行日前綴加上最大 `_NN` 後綴。** 在 bash 中重新實作了
+   `resolve_filename`（違反規則 2），且其實作方式**在結構上必然錯
+   誤**：計數器衍生自 `runs.jsonl` 的**記錄筆數**，這項資訊在目錄中
+   根本不存在；冪等分支保留的是**裸、無後綴**的檔名，因此「最大後
+   綴」會選到**錯誤**的檔案；且此法迫使 log-parse 猜測 `run_date`，
+   而容器只依自身時鐘決定此值，從不將其暴露為輸入。
+
+第四種近似方案——直接讀取 `production/state/runs.jsonl` 最後一筆記
+錄自身的 `deliverable_name` 欄位——也刻意不予採用，即使作為交叉檢查
+也不使用：那會是同一項事實的第二份、具競態風險的副本，而針對同一個
+問題存在兩個事實來源，正是規則 2 所禁止的。JSON 摘要欄位始終是唯一
+的權威來源。
+
+#### 4.10.6 失敗分類
+
+log-parse 的結束碼詞彙維持 **0/1**——不引入任何新結束碼；拆分此詞彙
+將破壞既有的排程器包裝腳本。分類改由訊息內容，以及可用 grep 篩選的
+`REPORT_EXPORT_RESULT status=ok|failed reason=<slug>
+deliverable=<basename|->` stderr 行承載，與 `NOTIFY_RESULT` 完全一
+致。`reason=` slug（`dirs`、`dirs_perm`、`path_colon`、
+`window_start`、`source_missing`、`source_empty`、`stage_compare`、
+`stage`、`container_usage`、`container_input`、`container_state`、
+`container_lock`、`container_write`、`docker`、`summary_shape`、
+`summary_field`、`deliverable_shape`、`deliverable_missing`、
+`deliverable_stale`）及其操作者補救方式，完整記載於
+[`usage.zh-TW.md`](usage.zh-TW.md#報表匯出) 的失敗分診表中——此處不重
+複列出。`stage_compare`（暫存階段與既有檔案之逐位元組比對無法執行）
+現在會在 die 之前正確發出此稽核行，如同本檔案內每一條低於
+`persist_init` 的失敗路徑——先前一處裸 `die` 曾靜默略過此不變量。
+
+**非錯誤情況：** 僅含表頭的 CSV，或 `STATUS=NORMAL` 列數為 0 的 CSV。
+`report-export` 會以 0 結束，不會新增任何 state 記錄，但仍會寫出交
+付檔與一筆 `runs.jsonl` 記錄；log-parse 從摘要讀取 `normal` 欄位，當
+其為 `0` 時僅發出一則非致命的 `log_warn` 後繼續執行。
+
+**並行處理。** log-parse 不新增任何鎖（第二把鎖會形成重複的事實來
+源，且可能與第一把鎖互相鎖死）。`report-export` 會在
+`production/state` 中取得自己的 `.lock`；未取得鎖者以 4
+（`LockBusyError`）結束，log-parse 將其轉為附帶專屬說明文字的致命錯
+誤，且**不**自動重試——在無人值守的排程器下自動重試，可能讓兩個工作
+無限期互相拖累。交付檔選取機制本身在結構上對並行免疫（§4.10.5）：其
+值來自**本**行程自身擷取到的 stdout，描述**本**容器最終完成的檔
+案——另一個並行容器寫了什麼，與此無關，也不可見。
+
+#### 4.10.7 安全性
+
+| CWE | 暴露面 | 緩解措施 |
+|---|---|---|
+| **CWE-78** OS 指令注入 | `docker run` 的 argv 由 `--output-dir`、映像參照、user spec 與衍生檔名組成 | Bash **陣列** argv 直接執行——不使用 `eval`、不使用 `sh -c`、不進行 word-splitting。容器內輸入路徑完全衍生自經 `validate_date` 檢查過的日期。 |
+| **CWE-88** 引數注入 | `LOG_PARSE_REPORT_EXPORT_IMAGE="--privileged"`（或惡意的 `LOG_PARSE_REPORT_EXPORT_USER`） | 錨定白名單禁止映像參照與 user spec 兩者皆不得以 `-` 開頭；違反者直接 die，絕不會進入 `docker` 的 argv。 |
+| **CWE-22** 路徑穿越 | 容器回傳的路徑會被 log-parse 讀取並**寄出郵件** | `deliverable` 值被視為不受信任（§4.10.5）：前綴 + 錨定檔名白名單，不含 `/`、不含 `..`、不含開頭 `-`、不含控制位元組。此白名單本身只約束回報的名稱**字串**——host 端實際對映到的 inode，見下方 CWE-61 列所述的檢查。 |
+| **CWE-61** UNIX 符號連結跟隨 | 上方的錨定檔名白名單（CWE-22）對於對映後的 host **inode** 實際為何完全未加約束。容器以 root 執行，且 `production/output` 以讀寫方式綁定掛載，因此有缺陷或惡意的映像可以在完全符合白名單的檔名處，埋設 `<D>_連線紀錄.xlsx -> /proc/net/tcp`（或任何 mtime 恰落在本次執行新鮮度窗口內的 host 檔案） | `_report_export_select_deliverable` 會在任何後續探測**之前**，直接拒絕對映後的 host 路徑若為符號連結（`-L`，一個絕不跟隨連結的 lstat），並額外斷言物理包含性——該路徑所在目錄以 `cd && pwd -P` 解析後，必須恰好等於已解析完成的 `REPORT_EXPORT_OUT_DIR`。若無這兩項檢查，其後每一個探測（`-f`、`_notify_file_bytes`、`date -r`）在設計上都會跟隨符號連結，將會靜默驗證、接著 base64 編碼並寄出符號連結的**目標**，而非交付檔本身。`report_export_prepare_dirs` 對三個掛載點子目錄本身套用相同的 `-L` + `cd && pwd -P` 模式，在更早一層（`docker -v` 綁定掛載於容器執行前即遭預先埋設的符號連結掛載點重導向）關閉同一類攻擊。 |
+| **CWE-732** 權限指派錯誤 | `production/state` 存放源自 PII 的記錄 | 四個目錄皆 `umask 077` + 盡力 `chmod 0700`（其三個掛載點子目錄現在也會被 lstat 檢查並物理解析——見上方 CWE-61 列）；暫存輸入 `chmod 600`；交付檔本身由 `xlsx_writer` 以 `0600` 寫出。**`chmod` 回傳 0 並不代表模式已生效**：在不支援 Unix 權限位元的檔案系統（DrvFs/9p/WSL——本專案自身的 `--output-dir` 就可能座落於此類掛載點）上，`chmod` 經常被接受但實際上被靜默忽略。因此每次 `chmod` 呼叫後（目錄與暫存 CSV 皆然），模式都會被讀回（`stat -c '%a'`），不一致時會發出一則彙整、不可忽視的 `log_warn`，列出所有受影響路徑——刻意設計為絕不致命（硬性 die 將使 `--report-export` 在本專案自身擁有者所部署的那類掛載點上完全無法使用），也絕不靜默（靜默地假設檔案系統無法提供的保證，正是此修正要關閉的失效模式）。 |
+| **CWE-269** 權限管理不當 | 容器預設以 root 執行（§4.10.3，未帶 `--user`） | 不使用 `--privileged`；不掛載 docker socket；輸入以 `:ro` 掛載；僅暴露 `production/` 下三個固定子目錄，絕非執行目錄，也絕非 `/`。若操作者需要容器以特定 host uid 執行，可透過 `LOG_PARSE_REPORT_EXPORT_USER` 選配啟用（白名單 `^[0-9]+(:[0-9]+)?$`，僅用 bash 內建功能——不依賴 `id`）。 |
+| **CWE-367** TOCTOU | 先 `docker image inspect` 再 `docker run` | 已知悉並接受（§4.10.1）。此探測是時機面向的優化，而非保證；`docker run` 本身仍是唯一具權威性者，其失敗無論如何皆為致命（§4.10.6）。 |
+| **CWE-200 / CWE-359** 私人／個人資訊外洩 | `access_detail.csv` 攜帶 `CLIENT_IP`、`HOSP_ID`、`PRSN_ID`、`PATIENT_ID_AES`、`BIRTHDAY`。本功能將這些資料移入 `production/state/records.csv`，其累積為**無限期**——遠比逐次執行目錄長壽——並將衍生的 xlsx 寄給 `conf/receivers.conf` 中的每一個地址。 | 這是本功能中單一最重大的態勢變化（§4.10.8）。緩解措施：`0700` 目錄、`0600` 檔案、`--network none`（容器內部無滲漏路徑），以及 xlsx 透過 `--notify` 既有、無法關閉的稽核紀錄與外部網域警告。`production/state` 的保留與清除是**操作者**的責任；啟用 `--report-export` 前應重新檢視 `conf/receivers.conf`。 |
+| **CWE-400** 資源使用失控 | `production/` 單調成長：每個不同窗口一份 CSV、每次執行一份 xlsx、每次執行一行 `runs.jsonl` | 無自動清除機制——刪除屬破壞性操作，需人工核准，超出本工具組範圍（§1）。已記載為操作者義務。 |
+
+**為何容器預設以 root 執行。** `report-export` 映像**無 `USER` 指
+令**——依設計即以 root 執行（`report-export/docker/Dockerfile`；已確
+認無 `appuser`/`USER` 那一行），如此一來任何 host bind-mount 目錄皆
+可寫入，不論其擁有 uid 為何，也沒有映像內建的 uid 需要與呼叫者擁有
+的目錄調解。因此 `docker run` **預設不會**產生任何 `--user`
+引數——與操作者手動輸入的指令完全相同——而非強加一個在映像內完全沒
+有 `passwd` 項目的任意 uid。此取捨在此明確記載，而非留作隱含假設：
+容器寫入 `production/state` 與 `production/output` 的檔案會**歸屬
+root**，需要 `sudo` 才能從 host 端刪除或編輯——這與 `report-export`
+自身文件針對手動執行所記載的取捨完全相同
+（[`report-export/docs/usage.md`](../report-export/docs/usage.md)，
+「HOST 權限說明」）。若無條件強制 `--user`，還會讓先前 root 執行已
+建立的 `production/` 目錄樹變成**不可寫**，等於是拿一種失敗模式換另
+一種。若操作者偏好容器以特定 host uid 執行，可透過
+`LOG_PARSE_REPORT_EXPORT_USER=<uid>[:<gid>]` 選配啟用；預設不設定此
+值是刻意的選擇，並非疏漏。
+
+#### 4.10.8 PII 與資料保留——最重大的態勢變化
+
+在本功能之前，本工具組的 PII 暴露範圍受限於 `RUN_OUTPUT_DIR` 的生命
+週期，以及 `--notify` 單次寄出的內容。`--report-export` 改變了這個
+形狀：`access_detail.csv` 的客戶端 IP／`HOSP_ID`／`PRSN_ID`／
+`PATIENT_ID_AES`／`BIRTHDAY` 欄位會流入
+`production/state/records.csv`，其會針對曾經匯出過的每一個不同週次
+**無限期累積**，獨立於任何單一執行的生命週期之外——而產出的 xlsx 會
+在每一次 `--report-export --notify` 執行時寄給
+`conf/receivers.conf` 中的每一個地址。本工具組對 `production/state`
+未提供任何輪替、清除或保留政策（排程器明確不在範圍內，見 §1）；此責
+任完全屬於操作者，且應在首次啟用此旗標前一併重新檢視
+`conf/receivers.conf`。
+
+#### 4.10.9 已知限制
+
+- **無內建逾時機制。** 卡住的 Docker daemon 或容器會無限期阻塞；
+  `timeout(1)` 不在核准的依賴集合內。緩解方式為排程層級的逾時機制
+  （`systemd` 的 `RuntimeMaxSec=`，或 `cron` 搭配操作者自訂的
+  `timeout` 包裝）。
+- **交付檔日期不必與分析窗口相符**（§4.10.4/§4.10.5）：`run_date` 來
+  自容器自身的時鐘，而非 `--date`/`--from`/`--to`/`--days`。回補過
+  去窗口的匯出會產出一份以今天為日期的交付檔。
+- **`production/state` 無限期累積 PII**（§4.10.8），無內建輪替機制。
+- **`production/` 下的檔案預設歸屬 root**（§4.10.7），除非操作者選配
+  啟用 `LOG_PARSE_REPORT_EXPORT_USER`，否則從 host 端刪除／編輯需要
+  `sudo`。
+- **容器寫入檔案的 UID／擁有權斷言在離線環境下無法測試。** 非 root
+  的測試環境若不額外引入 `fakeroot` 或真正的 root 作為新測試依賴，
+  便無法誠實模擬一個 root 擁有的目錄樹；這是已記載的正式環境限定驗
+  證缺口，而非功能缺陷。Section M 的離線 `fake_docker.sh` 替身
+  （`.claude/rules/testing.md`）涵蓋本節其餘每一條路徑——依賴閘門、
+  合法性檢查、目錄樹合約、暫存、argv 建構、交付檔選取（包含 mtime
+  誘餌與冪等覆寫兩項證明），以及每一種致命路徑——且從未觸碰真正的
+  Docker daemon 或網路端點。
+
+---
+
 ## 5. 能力矩陣
 
 | 旗標 / 功能 | analyze_overview | analyze_access | analyze_iis | analyze_errors | log_report | 預設 |

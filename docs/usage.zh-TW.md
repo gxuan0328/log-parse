@@ -702,6 +702,7 @@ bash bin/analyze_errors.sh --log-dir "$LOG_DIR" \
 | `--modules LIST` | csv | `overview,iis,access` | 否 | 逗號分隔之模組清單。有效值：`overview`、`iis`、`access`、`errors`。errors 須手動加入（預設關閉）。模組依正規順序執行，與輸入順序無關。未知模組名稱會終止執行。 |
 | `--view summary\|detail` | enum | `summary` | 否 | 主控台視圖。僅轉發給 iis 與 access；overview 與 errors 不受影響。summary 永遠為文字（與格式無關）。 |
 | `--format text\|tsv\|csv` | enum | `text` | 否 | 控制 detail 檔案副檔名與 detail 主控台鏡像。轉發給 iis 與 access；overview 與 errors 不受影響。 |
+| `--report-export` | flag | 關閉 | 否 | 對本次執行的 CSV 執行 `report-export` 容器，並將產出的 `YYYY-MM-DD_連線紀錄.xlsx` 附加至通知郵件。**需要 `--format csv` 與 access 模組。** 需要選配依賴 `docker`。使用 `<output-dir>/production/{input,state,output}`。詳見[報表匯出](#報表匯出)。 |
 | `--top N` | uint ≥ 0 | `10` | 否 | 轉發給 iis（端點 + Client-IP）與 errors（模式）。`0` = ALL。 |
 | `--slow-api-ms N` | uint ms | `2000` | 否 | 轉發給 overview 與 iis；適用於 API 角色伺服器。 |
 | `--slow-app-ms N` | uint ms | `5000` | 否 | 轉發給 overview 與 iis；適用於 APP 角色伺服器。 |
@@ -730,12 +731,15 @@ bash bin/analyze_errors.sh --log-dir "$LOG_DIR" \
 | `--test-hosts` | F | F | F | — |
 | `--output-dir`、`--modules` | 自身 | 自身 | 自身 | 自身 |
 | `--notify`、`--notify-dry-run`、`--notify-attach`、`--notify-url`、`--receivers-conf` | — | — | — | — |
+| `--report-export` | — | — | — | — |
 
 F = 轉發並由子模組執行。`--output-dir` 由 log_report 解析一次後透過
 `$LOG_PARSE_OUTPUT_DIR` 共用；不以旗標形式轉發給子模組（防止指定
 自訂 `--output-dir` 時發生分裂腦問題）。`--notify*` 旗標家族永不轉發給任
 何子模組——它完全在 `log_report.sh` 行程內處理，於 `main()` 最後一步、
 所有請求的模組皆已執行完畢後才觸發。詳見[通知功能](#通知功能)。
+`--report-export` 同樣永不轉發——它在行程內執行，位於模組迴圈與通知步驟
+之間。詳見[報表匯出](#報表匯出)。
 
 ### 範例
 
@@ -955,6 +959,223 @@ bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
 不含逐筆 IP，也不含 `BIRTHDAY` 欄位。預設端點為明文 HTTP；每次對
 `http://` 端點寄送都會記錄一則明確警告，說明含附件在內的整份 payload
 未經加密傳輸。
+
+---
+
+### 報表匯出
+
+`log_report.sh --report-export` 會針對本次執行自身的 `access_detail.csv`
+執行獨立的 [`report-export`](../report-export/README.md) Docker 映像，
+並將產出的 `YYYY-MM-DD_連線紀錄.xlsx` 交付檔附加至 SMTP 通知郵件。此
+功能為選配（opt-in）、單次執行（無自動重試），且執行順序嚴格位於分析
+模組迴圈與 `--notify` 之間：所有請求的模組皆已持久化各自檔案之後，
+容器才會執行；若匯出失敗，永遠會在任何郵件寄出之前中止（見下方「與
+`--notify` 的順序保證」）。
+
+**兩項硬性要求**，皆於參數解析階段強制檢查——早於 `resolve_interval`，
+也早於任何分析器子行程啟動：
+
+```
+[ERROR] --report-export requires --format csv (got: 'text')
+[ERROR] --report-export requires the access module (got --modules 'overview,iis')
+```
+
+需要 `--format csv` 是因為 CSV detail 檔案是 `report-export` 唯一接受
+的輸入；需要 access 模組是因為 `analyze_access.sh` 是 `access_detail.csv`
+的唯一產生者。
+
+**`production/{input,state,output}` 目錄樹。** 與本工具組產出的其他
+任何檔案不同，`report-export` 的 state 是**跨執行累積**的（其自身的
+`REQUEST_ID` 去重機制仰賴於此），因此下列三個目錄會建立為時間戳執行
+目錄的**同層目錄**，絕不巢狀於任一執行目錄內：
+
+```
+<--output-dir>/
+├── production/
+│   ├── input/    week-<WINDOW_START>.csv                 （已暫存的副本；:ro 掛載）
+│   ├── state/    records.csv, records.csv.bak, runs.jsonl （跨執行累積）
+│   └── output/   <run_date>_連線紀錄.xlsx                 （交付檔）
+└── <YYYYMMDD_HHMMSS>/                                     （本次執行自身的報告檔案，不受影響）
+    └── ...
+```
+
+三個子目錄名稱與 `production/` 本身皆為固定值，不可設定。四個目錄皆以
+`mkdir -p` 於 `umask 077` 下建立，每一個目錄若為符號連結皆會被直接拒
+絕（防止預先存在的符號連結掛載點，將 `docker -v` 綁定掛載重導向至任
+意 host 目錄），接著才盡力（best-effort）`chmod 0700`；若先前的
+**root** 容器執行已使其不可寫（見下方「root 擁有的檔案」），本次執
+行會提早失敗，並附上明確的 `chown` 補救指令，而非一則含糊的執行中權
+限錯誤。
+
+**權限並非在每種檔案系統上都能獲得保證。** `chmod 0700`（目錄）與
+`chmod 600`（暫存 CSV）皆為盡力而為：在不支援 Unix 權限位元的檔案系
+統上——DrvFs/9p/WSL，而本專案自身的 `--output-dir` 就可能座落於此類
+掛載點——`chmod` 經常被接受但實際上遭靜默忽略，使得該目錄樹在其他每
+一項檢查皆通過的情況下，仍可能可被 owner 以外的人讀取。log-parse 會
+將結果模式讀回，不一致時發出一則不可忽視的警告，列出所有受影響的
+路徑：
+
+```
+[WARN] report-export: SECURITY: chmod 0700 did not take effect on: /srv/log-parse/production ... -- this filesystem may not support Unix permission bits (common on DrvFs/WSL/9p mounts); the PII accumulating under production/ is NOT confidentiality-protected by chmod on this host. Restrict access by another means (host ACL, an encrypted volume, or a --output-dir on a filesystem that honours chmod).
+```
+
+此處刻意設計為警告，而非致命錯誤——若在此致命，將使 `--report-export`
+在這類掛載點上完全無法使用——但也絕非靜默：在確認此警告未曾出現之
+前，切勿將 `chmod 0700`/`600` 視為機密性保證；若部署場景認真看待
+`production/state` 中累積的 PII，請優先選用真正支援 Unix 權限的檔案
+系統作為 `--output-dir`。
+
+**暫存檔名——分析窗口的起始日，而非執行日。** `access_detail.csv` 會
+被複製（絕不移動）進 `production/input/week-<D>.csv`，其中 `<D>` 為
+**分析窗口的第一天**：`--date D` → `D`；`--from A --to B` → `A`；
+`--days N` → 滾動 N 天窗口中最早的一天；`--today` → 今天。重跑相同窗口
+會覆寫同一個暫存檔名（記錄於 `INFO` 層級，「已暫存（內容相同）」）；
+在先前暫存檔仍存在的情況下暫存另一個確實不同的窗口，會記錄於 `WARN`
+層級（「覆寫既有暫存輸入」）後才覆寫——兩者皆為非致命的修復路徑，絕
+不靜默處理。
+
+**交付檔日期不必與分析窗口相符。** `report-export` 以其自身
+`TZ=Asia/Taipei` 時鐘下的 `run_date`（容器內的 `date.today()`）為交付
+檔命名——此值**無法**透過任何旗標、環境變數或 Docker 引數設定。今天執
+行 `--report-export` 去匯出上週的分析窗口（回補）完全正常，會產出一份
+以今天為日期的交付檔，暫存來源則是以更早日期命名的 CSV。完整權威範例
+見 [`report-export/docs/usage.md`](../report-export/docs/usage.md)
+（輸入 `week-2026-07-13.csv`，輸出 `2026-07-16_連線紀錄.xlsx`）。
+
+**映像一次性建置**（於 `report-export/` 執行，而非本目錄）：
+
+```bash
+cd report-export
+docker build -t report-export:1.0.0 -f docker/Dockerfile .
+```
+
+`--report-export` 本身絕不會建置或拉取映像。daemon 未啟動或映像尚未
+建置時，會在分析開始前快速失敗：
+
+```
+[ERROR] docker image inspect failed for 'report-export:1.0.0' (daemon unreachable, or the image is not built/pulled on this host); build it with: docker build -t report-export:1.0.0 -f docker/Dockerfile .   (run from report-export/)
+```
+
+**實際送出的 `docker run` 指令。** 恰為三個固定 bind mount、
+`--network none`（容器不需要任何網路存取；此舉杜絕本 CSV 所含 PII 的
+任何滲漏路徑），且**預設不含 `--user`**：
+
+```
+docker run --rm --network none \
+  -v <output-dir>/production/input:/data/input:ro \
+  -v <output-dir>/production/state:/data/state \
+  -v <output-dir>/production/output:/data/output \
+  report-export:1.0.0 /data/input/week-<WINDOW_START>.csv
+```
+
+`report-export` 映像本身無 `USER` 指令——依設計以 root 執行（見
+[`report-export/docs/usage.md`](../report-export/docs/usage.md)「HOST
+權限說明」），因此上述指令與操作者手動輸入的指令完全相同；容器寫入
+`production/state` 與 `production/output` 的檔案會**歸屬 root**。如
+需從 host 端刪除或編輯這些檔案，請用 `sudo`——這與 `report-export` 自
+身文件針對手動執行所記載的取捨完全一致。若操作者需要容器改以特定
+host uid 執行，可設定 `LOG_PARSE_REPORT_EXPORT_USER`（見下表）——這是
+一項**選配（opt-in）**的逃生口，絕非預設行為。
+
+**環境變數**（全部為選配）：
+
+| 變數 | 預設值 | 效果 |
+|---|---|---|
+| `LOG_PARSE_REPORT_EXPORT_DOCKER_BIN` | `docker` | 容器執行環境二進位檔；亦為自動化測試替身掛鉤點。 |
+| `LOG_PARSE_REPORT_EXPORT_IMAGE` | `report-export:1.0.0` | 映像參照（正式環境可視需要 pin `@sha256:` digest）。支援含 port 的私有 registry，例如 `registry.example.com:5000/report-export:1.0.0`。 |
+| `LOG_PARSE_REPORT_EXPORT_USER` | （空） | **選配（opt-in）。** 空值（預設）代表完全不附加 `--user` 引數——容器如上例以 root 執行。非空值必須符合 `uid[:gid]`（僅限數字，例如 `1000:1000`），並會逐字傳給 `docker run --user`。 |
+
+**依賴套件 — 選配、延遲檢查。** `docker` **不**屬於本工具組的無條件
+依賴集合（`bash gawk sort date mktemp`）。它僅在
+`lib/report_export_utils.sh` 中被具名引用，且僅在確實提供
+`--report-export` 時才會被檢查——一次 `docker image inspect` 往返，
+同時確認 daemon 可連線與映像存在，次秒等級、於任何分析模組執行前完
+成。任何未使用 `--report-export` 的執行完全不受影響，即使主機上完全
+未安裝 `docker` 亦然。若 `docker` 本身缺失：
+
+```
+[ERROR] --report-export needs the optional dependency 'docker' (container runtime that runs the report-export image).
+[ERROR] Install docker, or drop --report-export to produce the analysis reports only.
+[ERROR] missing required commands: docker
+```
+
+**與 `--notify` 的順序保證。** `report_export_run` 嚴格先於
+`notify_run` 執行。因為每一種匯出失敗都是致命錯誤，凡匯出未成功的
+執行**絕不會**寄出通知——反過來的順序（先通知）可能寄出一封承諾附
+上 xlsx、實際卻沒有附上的郵件，這對收件者而言是無法察覺的失敗。此時
+分析報告早已持久化完成，因此致命處理不會造成任何分析結果損失：以相
+同的 `--output-dir` 重跑即可，`report-export` 自身的 `input_sha256`
+冪等性會吸收這次重試。`--report-export` 與 `--notify` 在其餘方面完全
+**互相獨立**——兩者皆可單獨使用；僅使用 `--report-export` 時，xlsx 會
+直接落在 `production/output`，`log_report` 會記錄其 host 路徑供操作
+者尋找。
+
+**將 xlsx 附加至郵件。** 當兩個旗標同時提供時，已驗證的交付檔路徑會
+被傳入與收集本次執行自身檔案相同的 `notify_collect_attachments` 呼
+叫，因此會原封不動地繼承既有的每一項規則：`notify_payload.json` 排
+除規則、附件名稱衝突檢查、位元組大小探測、以獨立附件（絕非壓縮檔）
+形式的 base64 編碼，以及郵件內文的附件清單。有兩項互動特別值得說明：
+
+- **`--notify-attach summary` 不會隱藏 xlsx。** 該模式原本會將附件
+  收斂為 `*_summary.txt` 檔案，但 xlsx 正是操作者傳入 `--report-export`
+  的全部目的，因此刻意豁免於該過濾規則之外，永遠會與 summary 檔案一
+  併附上。
+- **xlsx 不豁免於大小上限。** `LOG_PARSE_NOTIFY_MAX_ATTACH_BYTES`
+  （預設 2 MiB）與 `LOG_PARSE_NOTIFY_MAX_TOTAL_BYTES`（預設 8 MiB）
+  對其套用方式與其他任何檔案完全相同。超過上限會明確且致命地失敗
+  （`NOTIFY_RESULT status=skipped reason=attachment_too_large:<name>`）
+  ——絕不會靜默寄出不完整的郵件。若本週的 xlsx 可能超過預設單檔上
+  限，請事先調高上限（見[通知功能](#通知功能)）。
+
+```bash
+# 週報整合執行：分析、匯出 xlsx、寄出全部內容
+bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --days 7 --format csv --output-dir /srv/log-parse \
+    --report-export --notify
+```
+
+**PII 與資料保留 — 啟用前請詳閱。** `production/state` 會**無限期**
+累積每一個不同週次的記錄——它是跨執行的 canonical state，而非單次執
+行的暫存資料，本工具組不對其執行任何輪替或清除。資料保留是**操作者**
+的責任（排程器明確不在本專案範圍內，見 CLAUDE.md §1）。首次啟用
+`--report-export --notify` 前，請重新檢視 `conf/receivers.conf`：該
+xlsx 攜帶與 `access_detail.csv` 相同、源自客戶端 IP 的 PII，會寄送給
+該檔案列出的每一個地址。
+
+**無內建逾時機制。** 卡住的 Docker daemon 或容器會無限期阻塞——
+`timeout(1)` 不在本專案核准的依賴集合內。請以排程層級的逾時機制包裝
+排程執行（`systemd` 的 `RuntimeMaxSec=`，或 `cron` 搭配自訂的 `timeout`
+包裝）。
+
+**失敗分診。** 每一種失敗皆為致命錯誤（exit 1）；分類方式由訊息內容
+與可用 grep 篩選的
+`REPORT_EXPORT_RESULT status=ok|failed reason=<slug> deliverable=<name|->`
+stderr 行承載（比照 `NOTIFY_RESULT`）：
+
+| `reason=` slug | 情況 | 操作者行動 |
+|---|---|---|
+| （分析前；尚無 result 行） | `--report-export` 未搭配 `--format csv` / 未搭配 access 模組 / `docker` 缺失 / 映像或 user-spec 覆寫值不合法 / `docker image inspect` 失敗 | 修正對應旗標、環境變數或映像建置後重跑；尚未建立任何執行目錄。 |
+| `dirs` | `production/` 無法建立，或其解析後路徑不安全（層級過淺，或 `--output-dir` 解析為 `/`） | 檢查 `--output-dir` 與 host 檔案系統權限。 |
+| `dirs_perm` | `production/{input,state,output}` 已存在但此 uid 無法寫入——通常代表**先前有 root 容器執行過** | 執行錯誤訊息中列印的確切 `sudo chown -R <uid>:<gid> .../production` 指令。 |
+| `path_colon` | 解析後的 `--output-dir` 路徑含 `:` | `docker -v` 無法解析 host 路徑中的冒號；請改用不含冒號的路徑。 |
+| `window_start` | 無法推導分析窗口的起始日 | 僅為防禦性檢查——理論上不應發生，因為 `resolve_interval` 在此步驟執行前早已驗證過區間；請視為統籌邊界缺陷回報。 |
+| `source_missing` / `source_empty` | 本次執行的 `access_detail.csv` 缺失或為 0 位元組 | 確認已使用 `--format csv` 且 access 模組確實執行過；僅含表頭的 CSV 是合法的，**不屬於**此錯誤。 |
+| `stage_compare` | 與既有的 `week-<D>.csv` 進行逐位元組比對時無法執行（兩檔其中之一無法開啟） | 檢查 `production/input/week-<D>.csv` 與本次執行自身 `access_detail.csv` 的權限/是否存在；通常為權限或暫時性 I/O 問題。 |
+| `stage` | 複製/改名進 `production/input/` 失敗 | 檢查 `production/input` 的可用空間與權限。 |
+| `container_usage` | 容器以 1 結束（用法錯誤） | 統籌邏輯缺陷——回報錯誤訊息上方列印的 argv。 |
+| `container_input` | 容器以 2 結束（輸入驗證） | 暫存的 CSV 被拒絕；容器自身的 stderr（顯示於 die 訊息上方）會指出有問題的行號/欄位。 |
+| `container_state` | 容器以 3 結束（state 完整性） | `production/state/records.csv` 完整性驗證失敗，且其 `.bak` 亦無法復原——見 [`report-export/docs/usage.md`](../report-export/docs/usage.md)「state 完整性問題」；需人工介入。 |
+| `container_lock` | 容器以 4 結束（鎖被佔用） | 另一個匯出程序已鎖定 `production/state`；本次執行**未**匯出。確認無並行執行後，直接稍後重跑即可——絕不自動重試。 |
+| `container_write` | 容器以 5 結束（寫入/參照錯誤） | 檢查 `production/output` 的可用空間與擁有權，或映像內建的參照表是否完整。 |
+| `docker` | 其他任何非零 `docker run` 結束碼（例如 125–127） | 檢視顯示出的 stderr；通常屬於 Docker Engine 層級的失敗，而非 report-export 本身的問題。 |
+| `summary_shape` | 容器以 0 結束，但 stdout 為空或超過一行 | 對未經修改的映像不應發生；視為統籌邊界缺陷處理，而非用猜測帶過。 |
+| `summary_field` | 容器以 0 結束，但其 JSON 摘要的 `deliverable` 欄位數量為 0 或大於 1 | 同上。 |
+| `deliverable_shape` | 回報的 `deliverable` 值未通過惡意輸入白名單，或對映後的 host 路徑為符號連結，或其解析結果落在預期輸出目錄之外 | 對未經修改的映像不應發生；予以拒絕，而非用猜測帶過。符號連結或非預期的路徑解析結果，視為潛在的滲漏嘗試（CWE-61），絕不跟隨。 |
+| `deliverable_missing` | 回報的交付檔在 host 上不存在（或為空） | 幾乎必為 bind mount 或 uid 不符——請直接檢查 `production/output`。 |
+| `deliverable_stale` | 回報的交付檔 mtime 早於本次呼叫 | 容器時鐘可能與 host 不同步，或有殘留舊檔案；請先調查後再信任該附件。 |
+
+以上任一情況，本次執行自身的分析報告皆完好保留於
+`<output-dir>/<RUN_TS>/` 之下——匯出失敗絕不會遺失任何已持久化的內容。
 
 ---
 

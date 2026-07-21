@@ -20,6 +20,7 @@
 #   iis only              : --format, --view, --top, --slow-api-ms, --slow-app-ms, --merge
 #   access only           : --format, --view, --merge
 #   errors only           : --top
+#   log_report only       : --notify*, --report-export (never forwarded to children)
 #
 # REMOVED (feat!): --output FILE — superseded by always-on dir persistence.
 #
@@ -34,6 +35,7 @@ source "${SCRIPT_DIR}/../lib/date_utils.sh"
 source "${SCRIPT_DIR}/../lib/fmt_utils.sh"
 source "${SCRIPT_DIR}/../lib/output_utils.sh"
 source "${SCRIPT_DIR}/../lib/notify_utils.sh"
+source "${SCRIPT_DIR}/../lib/report_export_utils.sh"
 
 # ---------------------------------------------------------------------------
 # Defaults  (OPT_OUTPUT_DIR="" is mandatory — never ./log-parse here, C1)
@@ -48,6 +50,7 @@ OPT_OUTPUT_DIR=""
 OPT_MODULES="overview,iis,access"   # errors opt-in; canonical order in main()
 OPT_VIEW="summary"                   # forwarded to iis + access only
 OPT_FORMAT="text"
+OPT_REPORT_EXPORT=0                  # requires --format csv + access module
 OPT_TOP=10
 OPT_SLOW_API_MS=2000
 OPT_SLOW_APP_MS=5000
@@ -93,6 +96,11 @@ Options:
   --conf FILE           regions config file (validated when explicitly supplied)
   --format FMT          text | tsv | csv          (default: text)
                         Forwarded to iis + access; governs detail file only (C10).
+  --report-export        Run the report-export container on this run's CSV and
+                         attach the resulting YYYY-MM-DD_連線紀錄.xlsx to the
+                         notification. REQUIRES --format csv and the access
+                         module. Needs the optional dependency 'docker'.
+                         Uses <output-dir>/production/{input,state,output}.
   --top N               integer >= 0, 0 = ALL     (default: $OPT_TOP)
                         Forwarded to iis (Endpoint + Client IP) and errors (pattern count).
   --slow-api-ms N       integer ms                (default: $OPT_SLOW_API_MS)
@@ -122,6 +130,7 @@ Capability matrix (forwarding targets):
   --slow-api-ms       yes      no   yes    no
   --slow-app-ms       yes      no   yes    no
   --notify*            no      no    no     no   (log_report only, never forwarded)
+  --report-export      no      no    no     no   (log_report only, never forwarded)
 
 Common scenarios (runnable against the bundled dataset):
 
@@ -165,6 +174,7 @@ parse_args() {
             --output-dir)   OPT_OUTPUT_DIR="$2";     shift 2 ;;
             --conf)         REGIONS_CONF="$2";       shift 2 ;;
             --format)       OPT_FORMAT="$2";         shift 2 ;;
+            --report-export) OPT_REPORT_EXPORT=1;    shift ;;
             --top)          OPT_TOP="$2";            shift 2 ;;
             --slow-api-ms)  OPT_SLOW_API_MS="$2";   shift 2 ;;
             --slow-app-ms)  OPT_SLOW_APP_MS="$2";   shift 2 ;;
@@ -193,6 +203,17 @@ parse_args() {
     assert_uint "--slow-app-ms"  "$OPT_SLOW_APP_MS"
     if [[ "$OPT_MERGE" -eq 1 && "$OPT_REGION" != "all" ]]; then
         die "--merge requires --region all (got: '$OPT_REGION')"
+    fi
+    # --report-export is legal only with the CSV detail file, and only when the
+    # access module actually runs (it is the sole producer of access_detail.csv).
+    if [[ "$OPT_REPORT_EXPORT" -eq 1 && "$OPT_FORMAT" != "csv" ]]; then
+        die "--report-export requires --format csv (got: '$OPT_FORMAT')"
+    fi
+    if [[ "$OPT_REPORT_EXPORT" -eq 1 && ",$OPT_MODULES," != *",access,"* ]]; then
+        die "--report-export requires the access module (got --modules '$OPT_MODULES')"
+    fi
+    if [[ "$OPT_REPORT_EXPORT" -eq 1 ]]; then
+        report_export_preflight
     fi
     if [[ "$OPT_NOTIFY" -eq 0 ]]; then
         if [[ "$OPT_NOTIFY_ATTACH" != "all" || "$OPT_NOTIFY_DRY_RUN" -eq 1 \
@@ -347,8 +368,21 @@ main() {
         run_module "analyze_${m}"
     done
 
-    if [[ "$OPT_NOTIFY" -eq 1 ]]; then
+    # Scratch space is needed by BOTH features; init_tmpdir is NOT idempotent
+    # (lib/common.sh:120-125), so it is called exactly once here.
+    if [[ "$OPT_REPORT_EXPORT" -eq 1 || "$OPT_NOTIFY" -eq 1 ]]; then
         init_tmpdir        # first and only trap registration in this process
+    fi
+
+    # report-export MUST run after every module has persisted and BEFORE
+    # notify_run enumerates the run directory: notify attaches the xlsx this
+    # step produces, and a failed export must never ship a mail that silently
+    # lacks it.
+    if [[ "$OPT_REPORT_EXPORT" -eq 1 ]]; then
+        report_export_run
+    fi
+
+    if [[ "$OPT_NOTIFY" -eq 1 ]]; then
         notify_run
     fi
 }

@@ -5,10 +5,11 @@
 # and error handling. Baselines are derived from the examples/sample-logs/LUNG-CANCER-REPORT-LOG
 # sample data included in the project (dates 2026-05-18 ~ 2026-05-25).
 #
-# Total: 316 tests across twelve sections (A access · B iis · C errors · D log_report ·
+# Total: 352 tests across thirteen sections (A access · B iis · C errors · D log_report ·
 #        E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
-#        J test-host/health · K timezone+core-function · L notify SMTP-API delivery).
-# Note: Sections J, K and L exist beyond I; K13/K14 are intentionally vacant (gap preserved).
+#        J test-host/health · K timezone+core-function · L notify SMTP-API delivery ·
+#        M report-export container integration).
+# Note: Sections J, K, L and M exist beyond I; K13/K14 are intentionally vacant (gap preserved).
 #
 # Usage:  bash tests/run_tests.sh
 # Exit:   0 = all passed,  1 = one or more failures
@@ -3124,9 +3125,1152 @@ else
 fi
 rm -rf "$TMPD_L29"
 
+# L30/L31 below cite "FIX I"/"FIX J" per THIS (LATER) review round's own
+# closed list -- the SIGPIPE-safety fix to notify_subject/notify_build_body
+# and the multi-day notify coverage gap that hid it. Unrelated to L29's
+# EARLIER, differently-scoped "FIX I" (TAB-in-filename) two tests above;
+# letters are reused independently across review rounds (see the identical
+# disambiguation note in Section M, and in lib/notify_utils.sh itself).
+
+# L30: FIX I regression -- notify_subject/notify_build_body must not abort
+# under `set -euo pipefail` for a MULTI-DAY window. The old
+# `build_date_list ... | head -n 1` pipeline SIGPIPEs the still-writing
+# producer (build_date_list's `while` loop shells out to `date` once per
+# day, slow enough to lose the race reliably) and pipefail then reports the
+# PIPELINE's own status as 141 even though $first/$last had already
+# captured the correct value -- see lib/report_export_utils.sh's
+# report_export_window_start docblock for the full empirically-verified
+# writeup. Called DIRECTLY, with `set -euo pipefail` EXPLICITLY active in
+# the wrapper (bypassing notify_send's `if notify_send ...` condition,
+# which incidentally suspends errexit for its entire dynamic extent and is
+# the ONLY reason this was harmless in the real CLI path -- accident of
+# calling context, not by design, per the fix's own commit message) so a
+# regression here is actually caught rather than silently re-swallowed by
+# that same accident. Three interval shapes: --from/--to (an 8-day window),
+# --days 10 (a --days-derived window -- computed LIVE via the same formula
+# build_date_list itself uses, never hardcoded, per testing.md), and --date
+# (single-day control case, unaffected either way).
+l30_ok=1
+
+l30_ft=$(bash -c "
+    set -euo pipefail
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    INTERVAL_ARGS=(--from 2026-05-18 --to 2026-05-25)
+    notify_subject
+"); l30_ft_rc=$?
+if [[ "$l30_ft_rc" -ne 0 || "$l30_ft" != "【肺癌報告】 調閱紀錄彙整資訊 - 2026-05-18 ~ 2026-05-25" ]]; then l30_ok=0; fi
+
+l30_days_first=$(date -d "$(date '+%F') -9 days" '+%F')
+l30_days_last=$(date '+%F')
+l30_days=$(bash -c "
+    set -euo pipefail
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    INTERVAL_ARGS=(--days 10)
+    notify_subject
+"); l30_days_rc=$?
+if [[ "$l30_days_rc" -ne 0 || "$l30_days" != "【肺癌報告】 調閱紀錄彙整資訊 - ${l30_days_first} ~ ${l30_days_last}" ]]; then l30_ok=0; fi
+
+l30_date=$(bash -c "
+    set -euo pipefail
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    INTERVAL_ARGS=(--date 2026-05-21)
+    notify_subject
+"); l30_date_rc=$?
+if [[ "$l30_date_rc" -ne 0 || "$l30_date" != "【肺癌報告】 調閱紀錄彙整資訊 - 2026-05-21" ]]; then l30_ok=0; fi
+
+_d30=$(_l_fixture)
+out30_body=$(bash -c "
+    set -euo pipefail
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    RUN_TS='20260521_090000'; RUN_OUTPUT_DIR='$_d30'
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'; OPT_NOTIFY_ATTACH='all'
+    INTERVAL_ARGS=(--from 2026-05-18 --to 2026-05-25)
+    notify_build_body '$_d30' '${_d30}/body.txt'
+    cat '${_d30}/body.txt'
+"); l30_body_rc=$?
+if [[ "$l30_body_rc" -ne 0 ]] || ! printf '%s\n' "$out30_body" | grep -qF 'Analysis range: 2026-05-18 ~ 2026-05-25'; then l30_ok=0; fi
+rm -rf "$_d30"
+
+if [[ "$l30_ok" -eq 1 ]]; then
+    _pass "L30  FIX I：set -euo pipefail 下，notify_subject/notify_build_body 於多日窗口 (--from/--to, --days) 不再 SIGPIPE (rc=141)，Subject 與 Analysis range 均正確；單日窗口不受影響"
+else
+    _fail "L30  FIX I pipefail 迴歸檢查失敗 [ft_rc=$l30_ft_rc ft=$l30_ft days_rc=$l30_days_rc days=$l30_days date_rc=$l30_date_rc date=$l30_date body_rc=$l30_body_rc]"
+fi
+
+# L31: FIX J regression -- closes the coverage gap that hid FIX I: every
+# prior Section L fixture used a single-day --date, so the SIGPIPE hazard
+# went unnoticed. Drive a MULTI-DAY window through the FULL --notify
+# --notify-dry-run CLI path (both --from/--to and --days) and assert the
+# payload's Subject and the body's Analysis range render the COMPLETE
+# range.
+l31_ok=1
+
+TMPD_L31FT=$(mktemp -d /tmp/lp_l31ft.XXXXXX)
+bash "$REPORT" --log-dir "$LOG_DIR" --from 2026-05-18 --to 2026-05-25 \
+    --output-dir "$TMPD_L31FT" --notify --notify-dry-run >/dev/null 2>/dev/null; l31ft_rc=$?
+l31ft_run=$(find "$TMPD_L31FT" -mindepth 1 -maxdepth 1 -type d | head -1)
+l31ft_payload="${l31ft_run}/notify_payload.json"
+if [[ "$l31ft_rc" -ne 0 ]]; then l31_ok=0; fi
+if ! grep -qF '"Subject":"【肺癌報告】 調閱紀錄彙整資訊 - 2026-05-18 ~ 2026-05-25"' "$l31ft_payload" 2>/dev/null; then l31_ok=0; fi
+if ! grep -qF 'Analysis range: 2026-05-18 ~ 2026-05-25' "$l31ft_payload" 2>/dev/null; then l31_ok=0; fi
+rm -rf "$TMPD_L31FT"
+
+l31_days_first=$(date -d "$(date '+%F') -6 days" '+%F')
+l31_days_last=$(date '+%F')
+TMPD_L31D=$(mktemp -d /tmp/lp_l31d.XXXXXX)
+bash "$REPORT" --log-dir "$LOG_DIR" --days 7 \
+    --output-dir "$TMPD_L31D" --notify --notify-dry-run >/dev/null 2>/dev/null; l31d_rc=$?
+l31d_run=$(find "$TMPD_L31D" -mindepth 1 -maxdepth 1 -type d | head -1)
+l31d_payload="${l31d_run}/notify_payload.json"
+if [[ "$l31d_rc" -ne 0 ]]; then l31_ok=0; fi
+if ! grep -qF "\"Subject\":\"【肺癌報告】 調閱紀錄彙整資訊 - ${l31_days_first} ~ ${l31_days_last}\"" "$l31d_payload" 2>/dev/null; then l31_ok=0; fi
+if ! grep -qF "Analysis range: ${l31_days_first} ~ ${l31_days_last}" "$l31d_payload" 2>/dev/null; then l31_ok=0; fi
+rm -rf "$TMPD_L31D"
+
+if [[ "$l31_ok" -eq 1 ]]; then
+    _pass "L31  FIX J：多日窗口 (--from/--to, --days) 經完整 --notify --notify-dry-run CLI 路徑，Subject 與 Body 之 Analysis range 均正確涵蓋完整區間"
+else
+    _fail "L31  FIX J 多日窗口 notify CLI 整合檢查失敗 [ft_rc=$l31ft_rc days_rc=$l31d_rc]"
+fi
+
 # ---- Section L cleanup ------------------------------------------------------
 rm -rf "$_L_SRC" "$_L_SHIMDIR"
 unset SHIM_LOG_DIR
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section M — bin/log_report.sh --report-export: report-export container
+#             integration (docker-shimmed; no daemon/network ever touched)
+# Baselines (fixed date 2026-05-21, --format csv, default modules
+#   overview,iis,access): --format csv persists exactly 6 files --
+#   access_detail.csv, access_ip_counts.tsv, access_summary.txt,
+#   iis_detail.csv, iis_summary.txt, overview_summary.txt (same shape as
+#   Section L's baseline, but with .csv detail extensions since
+#   --report-export REQUIRES --format csv, §1.3). production/{input,state,
+#   output} is a SIBLING of the per-run timestamped directory under the same
+#   --output-dir, never a child of it (§5.1). ORCHESTRATOR OVERRIDE #1 is in
+#   force throughout: NO --user is ever rendered by default; LOG_PARSE_REPORT_
+#   EXPORT_USER is strictly opt-in (M17).
+# No test in this section ever contacts a real Docker daemon or a network
+#   endpoint: every test that reaches report_export_preflight/_invoke pins
+#   LOG_PARSE_REPORT_EXPORT_DOCKER_BIN at a local fake-docker shim (below)
+#   that only touches the local filesystem, mirroring Section L's fake_curl.sh
+#   mechanism (spec §12.2) via the SAME single indirection point production
+#   code already reads.
+# ─────────────────────────────────────────────────────────────────────────────
+
+section "M  bin/log_report.sh --report-export — report-export container integration"
+
+# ---- Shared fixtures for this section ---------------------------------------
+
+# _M_SRC / _M_SRC_RUN: one real run directory (--format csv, 6 files), built
+# once, WITHOUT the shim in play (no --report-export).
+_M_SRC=$(mktemp -d /tmp/lp_M_src.XXXXXX)
+bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv --output-dir "$_M_SRC" >/dev/null 2>&1
+_M_SRC_RUN=$(find "$_M_SRC" -mindepth 1 -maxdepth 1 -type d | head -1)
+
+# _m_fixture: echo the path of a fresh, isolated copy of _M_SRC_RUN, nested
+# one level under its OWN fresh, private mktemp -d base. This differs from
+# Section L's _l_fixture (a bare mktemp -d) on purpose: a caller sets
+# RUN_BASE_DIR="$(dirname "$d")" and gets production/ created as a genuine
+# SIBLING of the returned run dir (§5.1) -- reusing _l_fixture's shape would
+# put production/ directly under the shared, process-wide /tmp, colliding
+# across every test using this pattern. Called FRESH per test.
+_m_fixture() {
+    local base run
+    base=$(mktemp -d /tmp/lp_Mfix.XXXXXX)
+    run="${base}/20260521_090000"
+    mkdir -p "$run"
+    cp -r "${_M_SRC_RUN}/." "$run/"
+    printf '%s' "$run"
+}
+
+# _M_SHIMDIR/fake_docker.sh: an offline stand-in for docker (spec §12.2,
+# G05-style inline fixture). Records every invocation's full argv
+# (space-joined) to docker.calls, plus one byte to docker.count (so `wc -c`
+# on that file is the call count). `image inspect` exits with inspect_rc
+# (default 0), printing nothing. `run`: (a) learns the host OUTPUT dir by
+# scanning its own argv for the element ENDING IN ":/data/output" and
+# stripping that suffix -- safe and exact precisely because production code
+# rejects ':' in host paths (§5.3 step 7), so no side-channel env var is
+# needed and the shim exercises the REAL mount construction; (b) learns the
+# deliverable's basename from deliverable_name when present (verbatim --
+# this is how the _02/hostile-name/idempotent-overwrite cases are driven),
+# else derives "<date>_連線紀錄.xlsx" from the container-side input path's
+# week-<date> component; (c) fakes deliverable creation -- a SYMLINK to
+# symlink_target's content when that sentinel exists (FIX A regression:
+# simulates a hostile/buggy image planting a symlink at the deliverable
+# path), else a right-sized sentinel write: xlsx_bytes-many 'X' bytes when
+# that sentinel exists (FIX G regression: needs an EXTRA attachment
+# provably larger than every run-directory file), else the small literal
+# "FAKE_XLSX\n" (a real xlsx is not needed -- report-export's own Python
+# suite owns resolve_filename's sha256/seq algorithm; this suite's job is
+# log-parse's ORCHESTRATION) -- unless skip_write exists, in which case
+# nothing at all is written/linked; (d) prints a deliberately noisy
+# non-JSON line then the canned single-line JSON summary, UNLESS
+# docker_stdout exists, in which case that file's contents are printed
+# verbatim instead (drives the malformed-summary cases); (e) relays
+# docker_stderr's content (verbatim, if present) to the shim's OWN stderr
+# BEFORE exiting (FIX D regression: simulates a container stderr line
+# forging a fake log-parse-style bracketed prefix); (f) exits with
+# docker_rc (default 0). Never opens a socket, never requires root, never
+# writes outside SHIM_LOG_DIR and the discovered host output dir.
+_M_SHIMDIR=$(mktemp -d /tmp/lp_Mshim.XXXXXX)
+cat > "${_M_SHIMDIR}/fake_docker.sh" <<'SHIMEOF'
+#!/usr/bin/env bash
+{ printf '%s ' "$@"; printf '\n---\n'; } >> "${SHIM_LOG_DIR}/docker.calls"
+printf 'x' >> "${SHIM_LOG_DIR}/docker.count"
+
+if [[ "$1" == "image" && "$2" == "inspect" ]]; then
+    rc=0
+    if [[ -f "${SHIM_LOG_DIR}/inspect_rc" ]]; then rc="$(cat "${SHIM_LOG_DIR}/inspect_rc")"; fi
+    exit "$rc"
+fi
+
+if [[ "$1" == "run" ]]; then
+    hostout=""
+    for a in "$@"; do
+        case "$a" in
+            *:/data/output) hostout="${a%:/data/output}" ;;
+        esac
+    done
+    last="${*: -1}"
+    name=""
+    if [[ -f "${SHIM_LOG_DIR}/deliverable_name" ]]; then
+        name="$(cat "${SHIM_LOG_DIR}/deliverable_name")"
+    else
+        d="${last#/data/input/week-}"
+        d="${d%.csv}"
+        name="${d}_連線紀錄.xlsx"
+    fi
+    if [[ -f "${SHIM_LOG_DIR}/symlink_target" ]]; then
+        ln -sfn "$(cat "${SHIM_LOG_DIR}/symlink_target")" "${hostout}/${name}" 2>/dev/null
+    elif [[ ! -f "${SHIM_LOG_DIR}/skip_write" ]]; then
+        if [[ -f "${SHIM_LOG_DIR}/xlsx_bytes" ]]; then
+            n="$(cat "${SHIM_LOG_DIR}/xlsx_bytes")"
+            head -c "$n" /dev/zero 2>/dev/null | tr '\0' 'X' > "${hostout}/${name}" 2>/dev/null
+        else
+            printf 'FAKE_XLSX\n' > "${hostout}/${name}" 2>/dev/null
+        fi
+    fi
+    if [[ -f "${SHIM_LOG_DIR}/docker_stdout" ]]; then
+        cat "${SHIM_LOG_DIR}/docker_stdout"
+    else
+        printf 'a deliberately noisy non-JSON line\n'
+        printf '{"deliverable":"/data/output/%s","rows_in":10,"normal":8}\n' "$name"
+    fi
+    if [[ -f "${SHIM_LOG_DIR}/docker_stderr" ]]; then
+        cat "${SHIM_LOG_DIR}/docker_stderr" >&2
+    fi
+    rc=0
+    if [[ -f "${SHIM_LOG_DIR}/docker_rc" ]]; then rc="$(cat "${SHIM_LOG_DIR}/docker_rc")"; fi
+    exit "$rc"
+fi
+
+exit 0
+SHIMEOF
+chmod +x "${_M_SHIMDIR}/fake_docker.sh"
+export SHIM_LOG_DIR="$_M_SHIMDIR"
+export LOG_PARSE_REPORT_EXPORT_DOCKER_BIN="${_M_SHIMDIR}/fake_docker.sh"
+
+# _m_shim_reset: clear the shim's call log + every sentinel between tests.
+# Extends the spec's own literal list (docker.calls/docker.count/docker_rc/
+# inspect_rc/docker_stdout) with deliverable_name/skip_write/symlink_target/
+# xlsx_bytes/docker_stderr -- all equally per-test sentinel state, and
+# leaving any behind would let one test's scenario silently leak into the
+# next.
+_m_shim_reset() {
+    : > "${_M_SHIMDIR}/docker.calls"
+    : > "${_M_SHIMDIR}/docker.count"
+    rm -f "${_M_SHIMDIR}/docker_rc" "${_M_SHIMDIR}/inspect_rc" "${_M_SHIMDIR}/docker_stdout" \
+          "${_M_SHIMDIR}/deliverable_name" "${_M_SHIMDIR}/skip_write" \
+          "${_M_SHIMDIR}/symlink_target" "${_M_SHIMDIR}/xlsx_bytes" "${_M_SHIMDIR}/docker_stderr"
+}
+
+# M01: dependency is genuinely conditional -- a nonexistent docker binary
+# never matters unless --report-export is actually requested (mirrors L01).
+TMPD_M01=$(mktemp -d /tmp/lp_m01.XXXXXX)
+LOG_PARSE_REPORT_EXPORT_DOCKER_BIN=/tmp/lp_m01_no_such_docker_binary bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --format csv --output-dir "$TMPD_M01" \
+    >/dev/null 2>/dev/null; rc=$?
+m01_cnt=$(find "$TMPD_M01" -type f 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$rc" -eq 0 && "$m01_cnt" -eq 6 ]]; then
+    _pass "M01  無 --report-export 時 docker 不存在也不影響：exit 0 且 6 檔"
+else
+    _fail "M01  依賴應為條件式 [rc=$rc files=$m01_cnt]"
+fi
+rm -rf "$TMPD_M01"
+
+# M02: --report-export --format text -> dies pre-analysis; no run dir produced.
+TMPD_M02=$(mktemp -d /tmp/lp_m02.XXXXXX)
+out02=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format text \
+    --output-dir "$TMPD_M02" --report-export 2>&1 >/dev/null); rc=$?
+m02_cnt=$(find "$TMPD_M02" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$rc" -ne 0 ]] \
+   && printf '%s\n' "$out02" | grep -qF -- "--report-export requires --format csv (got: 'text')" \
+   && [[ "$m02_cnt" -eq 0 ]]; then
+    _pass "M02  --report-export --format text：精確 die 訊息，未產生任何 run 目錄"
+else
+    _fail "M02  --format text 耦合檢查失敗 [rc=$rc entries=$m02_cnt]"
+fi
+rm -rf "$TMPD_M02"
+
+# M03: --report-export --format tsv -> same die, got: 'tsv'.
+TMPD_M03=$(mktemp -d /tmp/lp_m03.XXXXXX)
+out03=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format tsv \
+    --output-dir "$TMPD_M03" --report-export 2>&1 >/dev/null); rc=$?
+m03_cnt=$(find "$TMPD_M03" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$rc" -ne 0 ]] \
+   && printf '%s\n' "$out03" | grep -qF -- "--report-export requires --format csv (got: 'tsv')" \
+   && [[ "$m03_cnt" -eq 0 ]]; then
+    _pass "M03  --report-export --format tsv：精確 die 訊息，未產生任何 run 目錄"
+else
+    _fail "M03  --format tsv 耦合檢查失敗 [rc=$rc entries=$m03_cnt]"
+fi
+rm -rf "$TMPD_M03"
+
+# M04: --report-export --format csv --modules overview,iis (no access) ->
+# dies with the access-module message; no module ran.
+TMPD_M04=$(mktemp -d /tmp/lp_m04.XXXXXX)
+out04=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --modules overview,iis --output-dir "$TMPD_M04" --report-export 2>&1 >/dev/null); rc=$?
+m04_cnt=$(find "$TMPD_M04" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$rc" -ne 0 ]] \
+   && printf '%s\n' "$out04" | grep -qF -- "--report-export requires the access module (got --modules 'overview,iis')" \
+   && [[ "$m04_cnt" -eq 0 ]]; then
+    _pass "M04  --modules overview,iis (無 access)：精確 die 訊息，未產生任何 run 目錄，無模組執行"
+else
+    _fail "M04  access 模組耦合檢查失敗 [rc=$rc entries=$m04_cnt]"
+fi
+rm -rf "$TMPD_M04"
+
+# M05: docker binary absent (nonexistent path) -> the two narrative
+# log_error lines are present and the run dies with the canonical
+# "missing required commands: docker" string, before any module ran.
+TMPD_M05=$(mktemp -d /tmp/lp_m05.XXXXXX)
+out05=$(LOG_PARSE_REPORT_EXPORT_DOCKER_BIN=/tmp/lp_m05_no_such_docker_binary bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --format csv --output-dir "$TMPD_M05" \
+    --report-export 2>&1 >/dev/null); rc=$?
+m05_cnt=$(find "$TMPD_M05" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$rc" -ne 0 ]] \
+   && printf '%s\n' "$out05" | grep -qF "needs the optional dependency 'docker'" \
+   && printf '%s\n' "$out05" | grep -qF "Install docker, or drop --report-export" \
+   && printf '%s\n' "$out05" | grep -qF "missing required commands: docker" \
+   && [[ "$m05_cnt" -eq 0 ]]; then
+    _pass "M05  docker 不存在：兩行敘述 + missing required commands: docker，且無模組執行"
+else
+    _fail "M05  docker 缺失檢查失敗 [rc=$rc entries=$m05_cnt]"
+fi
+rm -rf "$TMPD_M05"
+
+# M06: docker present (shimmed) but `docker image inspect` fails -> dies
+# pre-analysis with the build remedy.
+_m_shim_reset
+echo 1 > "${_M_SHIMDIR}/inspect_rc"
+TMPD_M06=$(mktemp -d /tmp/lp_m06.XXXXXX)
+out06=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M06" --report-export 2>&1 >/dev/null); rc=$?
+m06_cnt=$(find "$TMPD_M06" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$rc" -ne 0 ]] \
+   && printf '%s\n' "$out06" | grep -qF "docker image inspect failed for" \
+   && printf '%s\n' "$out06" | grep -qF "docker build -t" \
+   && [[ "$m06_cnt" -eq 0 ]]; then
+    _pass "M06  docker image inspect 失敗：精確 die 訊息含建置指引，無模組執行"
+else
+    _fail "M06  image inspect 失敗檢查失敗 [rc=$rc entries=$m06_cnt]"
+fi
+rm -rf "$TMPD_M06"
+rm -f "${_M_SHIMDIR}/inspect_rc"
+
+# M07: LOG_PARSE_REPORT_EXPORT_IMAGE='--privileged' -> dies with invalid
+# image reference (CWE-88 flag-injection guard).
+_m_shim_reset
+TMPD_M07=$(mktemp -d /tmp/lp_m07.XXXXXX)
+out07=$(LOG_PARSE_REPORT_EXPORT_IMAGE='--privileged' bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --format csv --output-dir "$TMPD_M07" \
+    --report-export 2>&1 >/dev/null); rc=$?
+if [[ "$rc" -ne 0 ]] && printf '%s\n' "$out07" | grep -qF "invalid image reference"; then
+    _pass "M07  LOG_PARSE_REPORT_EXPORT_IMAGE='--privileged'：die invalid image reference (CWE-88)"
+else
+    _fail "M07  image ref 白名單檢查失敗 [rc=$rc]"
+fi
+rm -rf "$TMPD_M07"
+
+# M08: LOG_PARSE_REPORT_EXPORT_USER='root' -> dies with invalid user spec
+# (whitelist ^[0-9]+(:[0-9]+)?$ rejects a non-numeric override).
+_m_shim_reset
+TMPD_M08=$(mktemp -d /tmp/lp_m08.XXXXXX)
+out08=$(LOG_PARSE_REPORT_EXPORT_USER='root' bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --format csv --output-dir "$TMPD_M08" \
+    --report-export 2>&1 >/dev/null); rc=$?
+if [[ "$rc" -ne 0 ]] && printf '%s\n' "$out08" | grep -qF "invalid LOG_PARSE_REPORT_EXPORT_USER"; then
+    _pass "M08  LOG_PARSE_REPORT_EXPORT_USER='root'：die invalid LOG_PARSE_REPORT_EXPORT_USER"
+else
+    _fail "M08  user spec 白名單檢查失敗 [rc=$rc]"
+fi
+rm -rf "$TMPD_M08"
+
+# M09: production/{input,state,output} exist as SIBLINGS of the RUN_TS
+# directory; stat -c '%a' is 700 on all four (production itself + 3 subdirs).
+_m_shim_reset
+TMPD_M09=$(mktemp -d /tmp/lp_m09.XXXXXX)
+bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M09" --report-export >/dev/null 2>/dev/null; rc=$?
+m09_run=$(find "$TMPD_M09" -mindepth 1 -maxdepth 1 -type d ! -name production | head -1)
+m09_modes="$(stat -c '%a' "$TMPD_M09/production" "$TMPD_M09/production/input" \
+    "$TMPD_M09/production/state" "$TMPD_M09/production/output" 2>/dev/null | sort -u | tr '\n' ' ')"
+if [[ "$rc" -eq 0 ]] && [[ -n "$m09_run" ]] \
+   && [[ -d "$TMPD_M09/production/input" && -d "$TMPD_M09/production/state" \
+         && -d "$TMPD_M09/production/output" ]] \
+   && [[ "$m09_modes" == "700 " ]]; then
+    _pass "M09  production/{input,state,output} 為 RUN_TS 目錄之手足，四層 mode 均為 700"
+else
+    _fail "M09  production 目錄建立/權限檢查失敗 [rc=$rc modes=$m09_modes]"
+fi
+rm -rf "$TMPD_M09"
+
+# M10: --days 7 -> window START (earliest day of the rolling window), never
+# the end and never "today" itself -- computed independently here via the
+# SAME date arithmetic build_date_list itself uses (today - (N-1) days), not
+# a hardcoded baseline (testing.md: never hardcode a --days-derived date as
+# a COUNT baseline; here we only assert the DERIVED LABEL, recomputed live).
+m10_exp=$(date -d "$(date '+%F') -6 days" '+%F')
+m10_got=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/report_export_utils.sh'
+    INTERVAL_ARGS=(--days 7)
+    report_export_window_start
+")
+_eq M10 "--days 7：window_start 為窗口第一天 (today-6)，非 today 亦非窗口末日" "$m10_got" "$m10_exp"
+
+# M11: --date 2026-05-21 -> the single day itself.
+m11_got=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/report_export_utils.sh'
+    INTERVAL_ARGS=(--date 2026-05-21)
+    report_export_window_start
+")
+_eq M11 "--date 2026-05-21：window_start 為該日" "$m11_got" "2026-05-21"
+
+# M12: --from A --to B -> A (the start), never B.
+m12_got=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/report_export_utils.sh'
+    INTERVAL_ARGS=(--from 2026-05-18 --to 2026-05-25)
+    report_export_window_start
+")
+_eq M12 "--from 2026-05-18 --to 2026-05-25：window_start 為 --from 值" "$m12_got" "2026-05-18"
+
+# M13: staged file is byte-identical to access_detail.csv AND
+# access_detail.csv still exists in the run dir (proves copy, not move);
+# staged mode is 600. Direct-library call (no docker involved at all).
+_d13=$(_m_fixture)
+_d13_base="$(dirname "$_d13")"
+_d13_ts="$(basename "$_d13")"
+out13=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    source '${PROJECT_DIR}/lib/report_export_utils.sh'
+    RUN_BASE_DIR='$_d13_base'
+    RUN_OUTPUT_DIR='$_d13'
+    RUN_TS='$_d13_ts'
+    INTERVAL_ARGS=(--date 2026-05-21)
+    report_export_prepare_dirs
+    REPORT_EXPORT_WEEK_DATE=\"\$(report_export_window_start)\"
+    report_export_stage_input
+    staged=\"\${REPORT_EXPORT_IN_DIR}/week-\${REPORT_EXPORT_WEEK_DATE}.csv\"
+    printf 'STAGED=%s\n' \"\$staged\"
+    printf 'MODE=%s\n' \"\$(stat -c '%a' \"\$staged\")\"
+    if cmp -s \"\$staged\" '${_d13}/access_detail.csv'; then printf 'SAME=yes\n'; else printf 'SAME=no\n'; fi
+    if [[ -f '${_d13}/access_detail.csv' ]]; then printf 'SRC=yes\n'; else printf 'SRC=no\n'; fi
+" 2>/dev/null)
+m13_staged=$(printf '%s\n' "$out13" | grep '^STAGED=' | cut -d= -f2-)
+m13_mode=$(printf '%s\n' "$out13" | grep '^MODE=' | cut -d= -f2-)
+m13_same=$(printf '%s\n' "$out13" | grep '^SAME=' | cut -d= -f2-)
+m13_src=$(printf '%s\n' "$out13" | grep '^SRC=' | cut -d= -f2-)
+if [[ "$m13_staged" == *"/week-2026-05-21.csv" && "$m13_mode" == "600" \
+      && "$m13_same" == "yes" && "$m13_src" == "yes" ]]; then
+    _pass "M13  暫存檔與 access_detail.csv 逐位元組相同，原檔仍在 (copy 非 move)，mode 600"
+else
+    _fail "M13  CSV 暫存檢查失敗 [staged=$m13_staged mode=$m13_mode same=$m13_same src=$m13_src]"
+fi
+rm -rf "$_d13_base"
+
+# M14: re-run of the identical window with identical data succeeds, and
+# stderr names the exact "already staged (identical)" branch.
+_d14=$(_m_fixture)
+_d14_base="$(dirname "$_d14")"
+_d14_ts="$(basename "$_d14")"
+out14=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    source '${PROJECT_DIR}/lib/report_export_utils.sh'
+    RUN_BASE_DIR='$_d14_base'
+    RUN_OUTPUT_DIR='$_d14'
+    RUN_TS='$_d14_ts'
+    INTERVAL_ARGS=(--date 2026-05-21)
+    report_export_prepare_dirs
+    REPORT_EXPORT_WEEK_DATE=\"\$(report_export_window_start)\"
+    report_export_stage_input >/dev/null 2>/dev/null
+    report_export_stage_input
+" 2>&1)
+_has M14 "相同窗口、相同資料重跑：stderr 含 input already staged (identical)" \
+    "$out14" "input already staged (identical)"
+rm -rf "$_d14_base"
+
+# M15: pre-planted DIFFERING week-<D>.csv -> succeeds, stderr names the
+# "overwriting existing staged input" branch (loud, not silent -- rule 1).
+_d15=$(_m_fixture)
+_d15_base="$(dirname "$_d15")"
+_d15_ts="$(basename "$_d15")"
+out15=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    source '${PROJECT_DIR}/lib/report_export_utils.sh'
+    RUN_BASE_DIR='$_d15_base'
+    RUN_OUTPUT_DIR='$_d15'
+    RUN_TS='$_d15_ts'
+    INTERVAL_ARGS=(--date 2026-05-21)
+    report_export_prepare_dirs
+    REPORT_EXPORT_WEEK_DATE=\"\$(report_export_window_start)\"
+    printf 'DIFFERENT CONTENT' > \"\${REPORT_EXPORT_IN_DIR}/week-\${REPORT_EXPORT_WEEK_DATE}.csv\"
+    report_export_stage_input
+" 2>&1)
+_has M15 "預先放置內容不同的暫存檔：stderr 含 overwriting existing staged input" \
+    "$out15" "overwriting existing staged input"
+rm -rf "$_d15_base"
+
+# M16: a host --output-dir containing ':' dies inside report_export_run
+# BEFORE the "run" subcommand is ever invoked -- docker.calls only ever
+# gains the earlier, offline "image inspect" probe from parse_args-time
+# preflight (§3.2 site 1); the container that would touch data never runs.
+# FIX F: the negative assertion used to be `grep -qF ' run --rm'` (a LEADING
+# space) which can never match anything docker.calls actually contains --
+# each call is recorded as "<argv...> \n---\n" with NO leading space before
+# the first token, so that pattern was vacuously true regardless of whether
+# `docker run` was ever invoked, and the test's headline claim was not
+# actually being tested. Fixed to the anchored `^run --rm` M17 already uses,
+# and made self-checking with a POSITIVE assertion (docker.calls DOES
+# contain the parse_args-time `^image inspect` entry) so the assertion
+# cannot pass against an empty/reset file either.
+_m_shim_reset
+TMPD_M16_BASE=$(mktemp -d /tmp/lp_m16.XXXXXX)
+TMPD_M16="${TMPD_M16_BASE}/weird:dir"
+mkdir -p "$TMPD_M16"
+out16=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M16" --report-export 2>&1 >/dev/null); rc=$?
+if [[ "$rc" -ne 0 ]] \
+   && printf '%s\n' "$out16" | grep -qF "must not contain ':'" \
+   && grep -q '^image inspect' "${_M_SHIMDIR}/docker.calls" \
+   && ! grep -q '^run --rm' "${_M_SHIMDIR}/docker.calls"; then
+    _pass "M16  --output-dir 含 ':'：die 且 docker run 從未被呼叫（僅 image inspect，斷言本身亦自我檢核非空檔）"
+else
+    _fail "M16  --output-dir 冒號檢查失敗 [rc=$rc]"
+fi
+rm -rf "$TMPD_M16_BASE"
+
+# M17: rendered docker argv shape -- exactly one `run` invocation; --rm and
+# --network none present; exactly three -v elements with :ro on the INPUT
+# mount only; the input mount's host side is the real, absolute
+# production/input path; image second-to-last and the container CSV path
+# (/data/input/week-<D>.csv) last; and, per ORCHESTRATOR OVERRIDE #1, NO
+# --user token anywhere by default -- the rendered command is then EXACTLY
+# the owner's own literal docker command line. A second, independent run
+# with LOG_PARSE_REPORT_EXPORT_USER set proves the opt-in escape hatch still
+# works in the other direction.
+_m_shim_reset
+TMPD_M17=$(mktemp -d /tmp/lp_m17.XXXXXX)
+bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M17" --report-export >/dev/null 2>/dev/null
+m17_run="$(grep '^run --rm' "${_M_SHIMDIR}/docker.calls")"
+m17_ok=1
+if [[ "$(printf '%s\n' "$m17_run" | grep -c '^run --rm')" -ne 1 ]]; then m17_ok=0; fi
+if [[ "$m17_run" != *' --network none '* ]]; then m17_ok=0; fi
+if [[ "$(printf '%s' "$m17_run" | grep -oE ' -v ' | wc -l | tr -d ' ')" -ne 3 ]]; then m17_ok=0; fi
+if [[ "$m17_run" != *"${TMPD_M17}/production/input:/data/input:ro"* ]]; then m17_ok=0; fi
+if [[ "$m17_run" == *":/data/state:ro"* || "$m17_run" == *":/data/output:ro"* ]]; then m17_ok=0; fi
+if [[ "$m17_run" != *' report-export:1.0.0 /data/input/week-2026-05-21.csv '* ]]; then m17_ok=0; fi
+if [[ "$m17_run" == *'--user'* ]]; then m17_ok=0; fi
+rm -rf "$TMPD_M17"
+
+_m_shim_reset
+TMPD_M17B=$(mktemp -d /tmp/lp_m17b.XXXXXX)
+LOG_PARSE_REPORT_EXPORT_USER='1234:1234' bash "$REPORT" --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --format csv --output-dir "$TMPD_M17B" --report-export \
+    >/dev/null 2>/dev/null
+m17b_run="$(grep '^run --rm' "${_M_SHIMDIR}/docker.calls")"
+if [[ "$m17b_run" != *'--user 1234:1234'* ]]; then m17_ok=0; fi
+rm -rf "$TMPD_M17B"
+
+if [[ "$m17_ok" -eq 1 ]]; then
+    _pass "M17  argv 形狀正確 (--rm/--network none/3x -v/:ro 僅於 input/image+operand 順序)；預設無 --user (override #1)；設定後 --user 1234:1234 出現"
+else
+    _fail "M17  docker argv 形狀或 --user 覆寫檢查失敗 [run=$m17_run]"
+fi
+
+# M18: LOG_PARSE_REPORT_EXPORT_IMAGE overrides the pinned image reference,
+# and the override appears VERBATIM in the recorded argv.
+_m_shim_reset
+TMPD_M18=$(mktemp -d /tmp/lp_m18.XXXXXX)
+LOG_PARSE_REPORT_EXPORT_IMAGE='report-export:9.9.9' bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --format csv --output-dir "$TMPD_M18" \
+    --report-export >/dev/null 2>/dev/null
+_has M18 "LOG_PARSE_REPORT_EXPORT_IMAGE=report-export:9.9.9 verbatim 出現於 argv" \
+    "$(cat "${_M_SHIMDIR}/docker.calls")" "report-export:9.9.9"
+rm -rf "$TMPD_M18"
+
+# M19/M20/M21 share two runs: one WITH --report-export (stdout/stderr
+# captured once, feeding M19 + M21) and one WITHOUT (feeding M20's
+# byte-identity baseline) -- mirrors L10's single-run-reuse idiom.
+_m_shim_reset
+TMPD_M1921=$(mktemp -d /tmp/lp_m1921.XXXXXX)
+TMPD_M1921_ERR=$(mktemp -d /tmp/lp_m1921err.XXXXXX)
+out1921=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M1921" --report-export 2>"${TMPD_M1921_ERR}/stderr")
+err1921="$(cat "${TMPD_M1921_ERR}/stderr")"
+
+TMPD_M20B=$(mktemp -d /tmp/lp_m20b.XXXXXX)
+out20b=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M20B" 2>/dev/null)
+
+# M19: stdout isolation -- neither the shim's noisy line nor any substring
+# of its JSON summary ever reaches log_report.sh's own report stdout.
+if printf '%s\n' "$out1921" | grep -qF 'deliberately noisy non-JSON line'; then
+    _fail "M19  stdout isolation 檢查失敗：noisy line 洩漏至 stdout"
+elif printf '%s\n' "$out1921" | grep -qF 'deliverable'; then
+    _fail "M19  stdout isolation 檢查失敗：JSON 子字串洩漏至 stdout"
+else
+    _pass "M19  stdout isolation：容器雜訊行與 JSON 摘要子字串均未出現於 log_report stdout"
+fi
+
+# M20: stdout byte-identity -- --report-export changes NOTHING about
+# log_report's own report stdout (rule 3).
+_eq M20 "--report-export 之 stdout 與未加旗標逐位元組相同" \
+    "$([[ "$out1921" == "$out20b" ]] && echo SAME || echo DIFF)" "SAME"
+
+# M21: the shim's JSON summary IS present on stderr (diagnostic trail
+# preserved), prefixed "report-export summary:".
+_has M21 "report-export summary: 前綴出現於 stderr (診斷軌跡保留)" "$err1921" "report-export summary:"
+
+rm -rf "$TMPD_M1921" "$TMPD_M20B" "$TMPD_M1921_ERR"
+
+# M22: happy path -- REPORT_EXPORT_RESULT status=ok is emitted and the named
+# xlsx exists under production/output; combined with --notify
+# --notify-dry-run, the payload carries the CJK filename as an Attachments
+# key with a non-empty base64 value and exactly 7 attachments; and with
+# --notify-attach summary, the xlsx key is STILL present (is_extra bypass)
+# while the *_detail.* keys are excluded (the mode-bypass proof, §10.2).
+m22_ok=1
+
+_m_shim_reset
+TMPD_M22A=$(mktemp -d /tmp/lp_m22a.XXXXXX)
+out22a=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M22A" --report-export 2>&1 >/dev/null)
+if ! printf '%s\n' "$out22a" | grep -qF 'REPORT_EXPORT_RESULT status=ok'; then m22_ok=0; fi
+if [[ ! -f "$TMPD_M22A/production/output/2026-05-21_連線紀錄.xlsx" ]]; then m22_ok=0; fi
+rm -rf "$TMPD_M22A"
+
+_m_shim_reset
+TMPD_M22B=$(mktemp -d /tmp/lp_m22b.XXXXXX)
+bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M22B" --report-export --notify --notify-dry-run >/dev/null 2>/dev/null
+m22b_run=$(find "$TMPD_M22B" -mindepth 1 -maxdepth 1 -type d ! -name production | head -1)
+m22b_payload="${m22b_run}/notify_payload.json"
+m22b_keys=$(grep -oE '"[^"]+":"[A-Za-z0-9+/=]*"' "$m22b_payload" 2>/dev/null | wc -l | tr -d ' ')
+if [[ "${m22b_keys:-0}" -ne 7 ]]; then m22_ok=0; fi
+if ! grep -qE '"2026-05-21_連線紀錄\.xlsx":"[A-Za-z0-9+/=]+"' "$m22b_payload" 2>/dev/null; then m22_ok=0; fi
+rm -rf "$TMPD_M22B"
+
+_m_shim_reset
+TMPD_M22C=$(mktemp -d /tmp/lp_m22c.XXXXXX)
+bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M22C" --report-export --notify --notify-dry-run \
+    --notify-attach summary >/dev/null 2>/dev/null
+m22c_run=$(find "$TMPD_M22C" -mindepth 1 -maxdepth 1 -type d ! -name production | head -1)
+m22c_payload="${m22c_run}/notify_payload.json"
+if ! grep -qF '"2026-05-21_連線紀錄.xlsx":"' "$m22c_payload" 2>/dev/null; then m22_ok=0; fi
+if grep -qE '"[a-z_]+_detail\.[a-z]+":"' "$m22c_payload" 2>/dev/null; then m22_ok=0; fi
+rm -rf "$TMPD_M22C"
+
+if [[ "$m22_ok" -eq 1 ]]; then
+    _pass "M22  快樂路徑：status=ok 且 xlsx 存在；--notify-dry-run 下 7 個附件含 CJK key；--notify-attach summary 下 xlsx key 仍在但 *_detail.* 均不在"
+else
+    _fail "M22  快樂路徑/notify 整合複合檢查失敗"
+fi
+
+# M23: SELECTION CORRECTNESS (the core proof). A deliverable_name sentinel
+# makes the shim report and write <D>_連線紀錄_02.xlsx, while a decoy bare
+# <D>_連線紀錄.xlsx and an older-dated decoy <D-1>_連線紀錄.xlsx are
+# pre-planted and touched to a FUTURE mtime (unambiguously "newer" than the
+# file the shim is about to create) -- disproving both a newest-mtime
+# heuristic AND a directory-scan/highest-suffix heuristic in one stroke: the
+# mechanism must select purely on the container's OWN reported JSON field.
+# Combined with --notify --notify-dry-run to also prove selection propagates
+# correctly into the payload's Attachments keys.
+_m_shim_reset
+TMPD_M23=$(mktemp -d /tmp/lp_m23.XXXXXX)
+mkdir -p "${TMPD_M23}/production/output"
+printf 'DECOY_BARE' > "${TMPD_M23}/production/output/2026-05-21_連線紀錄.xlsx"
+printf 'DECOY_OLDDATE' > "${TMPD_M23}/production/output/2026-05-20_連線紀錄.xlsx"
+touch -d '2099-01-01 00:00:00' "${TMPD_M23}/production/output/2026-05-21_連線紀錄.xlsx" \
+    "${TMPD_M23}/production/output/2026-05-20_連線紀錄.xlsx"
+printf '2026-05-21_連線紀錄_02.xlsx\n' > "${_M_SHIMDIR}/deliverable_name"
+out23=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M23" --report-export --notify --notify-dry-run 2>&1 >/dev/null); rc23=$?
+m23_run=$(find "$TMPD_M23" -mindepth 1 -maxdepth 1 -type d ! -name production | head -1)
+m23_ok=1
+if [[ "$rc23" -ne 0 ]]; then m23_ok=0; fi
+if ! printf '%s\n' "$out23" | grep -qF 'deliverable=2026-05-21_連線紀錄_02.xlsx'; then m23_ok=0; fi
+if [[ "$(cat "${TMPD_M23}/production/output/2026-05-21_連線紀錄.xlsx" 2>/dev/null)" != "DECOY_BARE" ]]; then m23_ok=0; fi
+if [[ "$(cat "${TMPD_M23}/production/output/2026-05-20_連線紀錄.xlsx" 2>/dev/null)" != "DECOY_OLDDATE" ]]; then m23_ok=0; fi
+if [[ ! -f "${TMPD_M23}/production/output/2026-05-21_連線紀錄_02.xlsx" ]]; then m23_ok=0; fi
+if ! grep -qF '"2026-05-21_連線紀錄_02.xlsx":"' "${m23_run}/notify_payload.json" 2>/dev/null; then m23_ok=0; fi
+if grep -qF '"2026-05-21_連線紀錄.xlsx":"' "${m23_run}/notify_payload.json" 2>/dev/null; then m23_ok=0; fi
+if [[ "$m23_ok" -eq 1 ]]; then
+    _pass "M23  選擇機制核心證明：即使兩個誘餌檔具更新 mtime，仍精確選中容器回報的 _02 檔並正確附加，誘餌內容未被觸碰"
+else
+    _fail "M23  選擇機制核心證明失敗 [rc=$rc23]"
+fi
+rm -rf "$TMPD_M23"
+rm -f "${_M_SHIMDIR}/deliverable_name"
+
+# M24: IDEMPOTENT-OVERWRITE branch. A bare <D>_連線紀錄.xlsx already exists
+# (with a deliberately STALE mtime); the shim reports and OVERWRITES that
+# same bare name (report-export's own idempotent-rerun behaviour, §2.6).
+# This is precisely the case where a before/after directory-snapshot diff
+# would see zero new candidates (§2.7.1) -- yet selection must still
+# succeed, because the overwrite itself refreshes the file's mtime.
+_m_shim_reset
+TMPD_M24=$(mktemp -d /tmp/lp_m24.XXXXXX)
+mkdir -p "${TMPD_M24}/production/output"
+printf 'STALE_PRIOR_CONTENT' > "${TMPD_M24}/production/output/2026-05-21_連線紀錄.xlsx"
+touch -d '2000-01-01 00:00:00' "${TMPD_M24}/production/output/2026-05-21_連線紀錄.xlsx"
+out24=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M24" --report-export 2>&1 >/dev/null); rc24=$?
+if [[ "$rc24" -eq 0 ]] \
+   && printf '%s\n' "$out24" | grep -qF 'deliverable=2026-05-21_連線紀錄.xlsx' \
+   && [[ "$(cat "${TMPD_M24}/production/output/2026-05-21_連線紀錄.xlsx" 2>/dev/null)" == "FAKE_XLSX" ]]; then
+    _pass "M24  冪等覆寫分支：既存 bare 檔（原為 stale mtime）被同名覆寫並正確選中"
+else
+    _fail "M24  冪等覆寫分支檢查失敗 [rc=$rc24]"
+fi
+rm -rf "$TMPD_M24"
+
+# M25: skip_write sentinel -- the container reports rc 0 (a "successful"
+# exit) but the host file it names does not (yet, or ever) exist as a
+# usable regular file. Three sub-cases share the identical skip_write +
+# deliverable_name mechanism, varying only what is pre-planted at the
+# target path: (a) nothing at all -> "no such file on host" (the -f
+# branch); (b) a pre-existing ZERO-BYTE file at that exact path -> the SAME
+# message, but exercising the distinct byte-count-zero branch; (c) a
+# pre-existing, NON-EMPTY but STALE (old mtime) file -> "deliverable
+# predates this invocation" (the freshness branch, §2.2 step 6).
+m25_ok=1
+
+_m_shim_reset
+touch "${_M_SHIMDIR}/skip_write"
+TMPD_M25A=$(mktemp -d /tmp/lp_m25a.XXXXXX)
+out25a=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M25A" --report-export 2>&1 >/dev/null); rc25a=$?
+if [[ "$rc25a" -eq 0 ]] || ! printf '%s\n' "$out25a" | grep -qF 'no such file on host'; then m25_ok=0; fi
+rm -rf "$TMPD_M25A"
+
+_m_shim_reset
+touch "${_M_SHIMDIR}/skip_write"
+TMPD_M25B=$(mktemp -d /tmp/lp_m25b.XXXXXX)
+mkdir -p "${TMPD_M25B}/production/output"
+: > "${TMPD_M25B}/production/output/2026-05-21_連線紀錄.xlsx"
+out25b=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M25B" --report-export 2>&1 >/dev/null); rc25b=$?
+if [[ "$rc25b" -eq 0 ]] || ! printf '%s\n' "$out25b" | grep -qF 'no such file on host'; then m25_ok=0; fi
+rm -rf "$TMPD_M25B"
+
+_m_shim_reset
+touch "${_M_SHIMDIR}/skip_write"
+TMPD_M25C=$(mktemp -d /tmp/lp_m25c.XXXXXX)
+mkdir -p "${TMPD_M25C}/production/output"
+printf 'STALE' > "${TMPD_M25C}/production/output/2026-05-21_連線紀錄.xlsx"
+touch -d '2000-01-01 00:00:00' "${TMPD_M25C}/production/output/2026-05-21_連線紀錄.xlsx"
+out25c=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M25C" --report-export 2>&1 >/dev/null); rc25c=$?
+if [[ "$rc25c" -eq 0 ]] || ! printf '%s\n' "$out25c" | grep -qF 'predates this invocation'; then m25_ok=0; fi
+rm -rf "$TMPD_M25C"
+
+rm -f "${_M_SHIMDIR}/skip_write"
+if [[ "$m25_ok" -eq 1 ]]; then
+    _pass "M25  skip_write：無檔/零位元組檔均為 no such file on host；stale mtime 既存檔為 deliverable predates this invocation"
+else
+    _fail "M25  skip_write 情境複合檢查失敗"
+fi
+
+# M26: malformed-summary shapes (docker_stdout sentinel overrides the
+# shim's canned stdout verbatim) -- three sub-cases, one test ID (mirrors
+# L26/L27's multi-assertion compound idiom).
+m26_ok=1
+
+_m_shim_reset
+: > "${_M_SHIMDIR}/docker_stdout"
+TMPD_M26A=$(mktemp -d /tmp/lp_m26a.XXXXXX)
+out26a=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M26A" --report-export 2>&1 >/dev/null)
+if ! printf '%s\n' "$out26a" | grep -qF 'produced no summary on stdout'; then m26_ok=0; fi
+rm -rf "$TMPD_M26A"
+
+_m_shim_reset
+printf '{"deliverable":"/data/output/2026-05-21_連線紀錄.xlsx"}\n{"deliverable":"/data/output/2026-05-21_連線紀錄.xlsx"}\n' \
+    > "${_M_SHIMDIR}/docker_stdout"
+TMPD_M26B=$(mktemp -d /tmp/lp_m26b.XXXXXX)
+out26b=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M26B" --report-export 2>&1 >/dev/null)
+if ! printf '%s\n' "$out26b" | grep -qF 'was not a single JSON line'; then m26_ok=0; fi
+rm -rf "$TMPD_M26B"
+
+_m_shim_reset
+printf '{"rows_in":10,"normal":8}\n' > "${_M_SHIMDIR}/docker_stdout"
+TMPD_M26C=$(mktemp -d /tmp/lp_m26c.XXXXXX)
+out26c=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M26C" --report-export 2>&1 >/dev/null)
+if ! printf '%s\n' "$out26c" | grep -qF 'reported no deliverable'; then m26_ok=0; fi
+rm -rf "$TMPD_M26C"
+
+rm -f "${_M_SHIMDIR}/docker_stdout"
+if [[ "$m26_ok" -eq 1 ]]; then
+    _pass "M26  異常摘要：空檔案 -> produced no summary；兩行 JSON -> not a single JSON line；缺 key -> reported no deliverable"
+else
+    _fail "M26  異常摘要複合檢查失敗"
+fi
+
+# M27: hostile deliverable values -- a path-traversal payload and a
+# non-matching (but prefix-legal) basename both fail the SAME anchored
+# whitelist (§2.2 step 3), and nothing outside production/output is ever
+# read or attached. skip_write suppresses the shim's own (would-be
+# traversing) file write so the test never touches anything outside its
+# own tmp tree.
+m27_ok=1
+
+_m_shim_reset
+touch "${_M_SHIMDIR}/skip_write"
+printf '../../etc/passwd\n' > "${_M_SHIMDIR}/deliverable_name"
+TMPD_M27A=$(mktemp -d /tmp/lp_m27a.XXXXXX)
+out27a=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M27A" --report-export 2>&1 >/dev/null)
+if ! printf '%s\n' "$out27a" | grep -qF 'unacceptable deliverable path'; then m27_ok=0; fi
+if [[ -e "${TMPD_M27A}/etc" ]]; then m27_ok=0; fi
+rm -rf "$TMPD_M27A"
+
+_m_shim_reset
+touch "${_M_SHIMDIR}/skip_write"
+printf 'notes.txt\n' > "${_M_SHIMDIR}/deliverable_name"
+TMPD_M27B=$(mktemp -d /tmp/lp_m27b.XXXXXX)
+out27b=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M27B" --report-export 2>&1 >/dev/null)
+if ! printf '%s\n' "$out27b" | grep -qF 'unacceptable deliverable path'; then m27_ok=0; fi
+rm -rf "$TMPD_M27B"
+
+rm -f "${_M_SHIMDIR}/deliverable_name" "${_M_SHIMDIR}/skip_write"
+if [[ "$m27_ok" -eq 1 ]]; then
+    _pass "M27  惡意路徑 (../../etc/passwd) 與不符白名單之基名皆 die unacceptable deliverable path，且 production/output 外無檔案被讀取/寫入"
+else
+    _fail "M27  惡意 deliverable 路徑複合檢查失敗"
+fi
+
+# M28: container non-zero exit-code translation (§11.1 rows 11-16) -- four
+# sentinels drive four distinct exit codes, each checked for its own
+# message AND that the run directory's 6 persisted files are untouched AND
+# that the die is suffixed "reports are intact in" (nothing analytical is
+# ever lost to an export failure); plus a fifth, --notify-combined oversize
+# sub-case proving the pre-existing attachment size cap still applies (the
+# xlsx is not exempt, §10.3) when --report-export and --notify are combined.
+m28_ok=1
+declare -A m28_msgs=(
+    [4]="lock busy"
+    [5]="write error"
+    [2]="input validation"
+    [125]="docker run failed (rc=125)"
+)
+for rc in 4 5 2 125; do
+    _m_shim_reset
+    printf '%s\n' "$rc" > "${_M_SHIMDIR}/docker_rc"
+    TMPD_M28=$(mktemp -d "/tmp/lp_m28_${rc}.XXXXXX")
+    out28=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+        --output-dir "$TMPD_M28" --report-export 2>&1 >/dev/null); rc28=$?
+    m28_run=$(find "$TMPD_M28" -mindepth 1 -maxdepth 1 -type d ! -name production | head -1)
+    m28_files=$(find "$m28_run" -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "$rc28" -eq 0 ]]; then m28_ok=0; fi
+    if ! printf '%s\n' "$out28" | grep -qF "${m28_msgs[$rc]}"; then m28_ok=0; fi
+    if ! printf '%s\n' "$out28" | grep -qF 'reports are intact in'; then m28_ok=0; fi
+    if [[ "${m28_files:-0}" -ne 6 ]]; then m28_ok=0; fi
+    rm -rf "$TMPD_M28"
+done
+rm -f "${_M_SHIMDIR}/docker_rc"
+
+# FIX G: the oversize sub-case used to set LOG_PARSE_NOTIFY_MAX_ATTACH_BYTES=1,
+# a cap so low that the FIRST run-directory file (processed well before the
+# EXTRA xlsx, which notify_collect_attachments always appends last) already
+# breaches it -- the assertions below passed identically whether or not the
+# xlsx was exempt from the cap, so the test's headline claim ("the cap
+# applies to the xlsx too") was never actually exercised. Fixed: the shim's
+# xlsx_bytes sentinel makes it write a deliberately larger sentinel xlsx
+# (8000 bytes) and the cap is set to 6000 -- comfortably ABOVE every real
+# run-directory file (the largest, iis_detail.csv, is ~4986 bytes for this
+# fixed-date/module baseline) but BELOW the xlsx -- so a breach can ONLY
+# come from the EXTRA attachment, and the reason= token now names the xlsx
+# file itself, not an arbitrary run-directory file. If the EXTRA were
+# exempted from the cap, this run would SUCCEED (rc=0, no
+# NOTIFY_RESULT status=skipped line at all) -- proving the new assertion
+# actually fails against that regression.
+_m_shim_reset
+TMPD_M28OS=$(mktemp -d /tmp/lp_m28os.XXXXXX)
+printf '8000\n' > "${_M_SHIMDIR}/xlsx_bytes"
+out28os=$(LOG_PARSE_NOTIFY_MAX_ATTACH_BYTES=6000 bash "$REPORT" --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --format csv --output-dir "$TMPD_M28OS" --report-export \
+    --notify --notify-dry-run 2>&1 >/dev/null); rc28os=$?
+if [[ "$rc28os" -eq 0 ]]; then m28_ok=0; fi
+if ! printf '%s\n' "$out28os" | grep -qF 'NOTIFY_RESULT status=skipped'; then m28_ok=0; fi
+if ! printf '%s\n' "$out28os" | grep -qF 'reason=attachment_too_large:2026-05-21_連線紀錄.xlsx'; then m28_ok=0; fi
+rm -rf "$TMPD_M28OS"
+rm -f "${_M_SHIMDIR}/xlsx_bytes"
+
+if [[ "$m28_ok" -eq 1 ]]; then
+    _pass "M28  容器非零 exit 分類 (rc 4/5/2/125) 各自精確訊息、6 檔仍在、reports are intact in；加上 --notify 組合下容量上限仍套用於 xlsx (status=skipped)"
+else
+    _fail "M28  容器 exit code 分類/容量上限整合複合檢查失敗"
+fi
+
+# NOTE on lettering: M29-M34 below cite "FIX A".."FIX H" per THIS review
+# round's own closed list (A=symlinked deliverable, B=symlinked production
+# subdirectory, C=chmod-verification warning, D=forged container-stderr log
+# prefix, E=stage_compare audit line, H=ported-registry image reference).
+# This is UNRELATED to Section L's EARLIER "FIX A".."FIX I" labels (L23-L29,
+# adversarial-review fixes to lib/notify_utils.sh from a prior round) --
+# letters are reused independently across review rounds; disambiguated once,
+# here, rather than at every site.
+
+# M29: FIX A regression (CRITICAL) -- the container reports a deliverable
+# whose HOST path is a SYMLINK (e.g. planted by a hostile/buggy image that
+# runs as root with production/output bind-mounted read-write). A "secret"
+# host file OUTSIDE production/output (never legitimately reachable through
+# this mechanism) is planted and pointed to by the symlink the shim creates
+# at the exact deliverable path; the run must die BEFORE ever probing/
+# reading through the symlink, no REPORT_EXPORT_RESULT status=ok line may
+# appear, no notify payload may ever be produced (combined with --notify
+# --notify-dry-run), and the secret content must never appear on stdout or
+# stderr.
+_m_shim_reset
+TMPD_M29=$(mktemp -d /tmp/lp_m29.XXXXXX)
+printf 'TOP_SECRET_HOST_CONTENT_%s\n' "$$" > "${TMPD_M29}/secret.txt"
+printf '%s\n' "${TMPD_M29}/secret.txt" > "${_M_SHIMDIR}/symlink_target"
+out29=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M29" --report-export --notify --notify-dry-run 2>&1 >/dev/null); rc29=$?
+m29_run=$(find "$TMPD_M29" -mindepth 1 -maxdepth 1 -type d ! -name production | head -1)
+m29_ok=1
+if [[ "$rc29" -eq 0 ]]; then m29_ok=0; fi
+if ! printf '%s\n' "$out29" | grep -qF 'refusing to follow it'; then m29_ok=0; fi
+if printf '%s\n' "$out29" | grep -qF 'REPORT_EXPORT_RESULT status=ok'; then m29_ok=0; fi
+if printf '%s\n' "$out29" | grep -qF "TOP_SECRET_HOST_CONTENT_$$"; then m29_ok=0; fi
+if [[ -n "$m29_run" && -f "${m29_run}/notify_payload.json" ]]; then m29_ok=0; fi
+if [[ ! -L "${TMPD_M29}/production/output/2026-05-21_連線紀錄.xlsx" ]]; then m29_ok=0; fi
+rm -rf "$TMPD_M29"
+rm -f "${_M_SHIMDIR}/symlink_target"
+if [[ "$m29_ok" -eq 1 ]]; then
+    _pass "M29  FIX A：deliverable 為 host 端符號連結時拒絕跟隨並 die，密文內容未洩漏至任何輸出，且無 notify payload 產生"
+else
+    _fail "M29  FIX A 符號連結 deliverable 檢查失敗 [rc=$rc29]"
+fi
+
+# M30: FIX B regression -- a pre-existing SYMLINKED production subdirectory
+# (production/output -> an unrelated directory) must be rejected before it
+# is ever mkdir -p'd-past, chmod'd, or trusted as a docker bind-mount
+# source. Direct-library call (no docker involved at all -- mirrors
+# M13-M15).
+TMPD_M30=$(mktemp -d /tmp/lp_m30.XXXXXX)
+TMPD_M30_ELSEWHERE=$(mktemp -d /tmp/lp_m30_elsewhere.XXXXXX)
+mkdir -p "${TMPD_M30}/production"
+ln -s "$TMPD_M30_ELSEWHERE" "${TMPD_M30}/production/output"
+out30=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    source '${PROJECT_DIR}/lib/report_export_utils.sh'
+    RUN_BASE_DIR='$TMPD_M30'
+    RUN_OUTPUT_DIR='${TMPD_M30}/20260521_090000'
+    RUN_TS='20260521_090000'
+    report_export_prepare_dirs
+" 2>&1); rc30=$?
+if [[ "$rc30" -ne 0 ]] \
+   && printf '%s\n' "$out30" | grep -qF 'refusing a symlinked export dir' \
+   && [[ -L "${TMPD_M30}/production/output" ]]; then
+    _pass "M30  FIX B：預先存在的符號連結 production 子目錄（output）於 mkdir/chmod/信任前即被拒絕"
+else
+    _fail "M30  FIX B 符號連結 production 子目錄檢查失敗 [rc=$rc30]"
+fi
+rm -rf "$TMPD_M30" "$TMPD_M30_ELSEWHERE"
+
+# M31: FIX C regression -- when chmod appears to succeed (exit 0) but does
+# NOT actually change the mode -- simulated here by shadowing `chmod` on
+# PATH with a no-op stand-in and PRE-CREATING the four directories at mode
+# 0755 (report_export_prepare_dirs' own `mkdir -p` is a no-op on an
+# already-existing directory and does not reset its mode, and the shadowed
+# chmod does nothing either -- together reproducing the exact OBSERVABLE
+# symptom a DrvFs/WSL/9p mount produces for real: chmod accepted, silently
+# ignored) -- the run still PROCEEDS (never fatal; see the CONFIDENTIALITY
+# note in report_export_prepare_dirs' own docblock) but emits exactly ONE
+# unmissable SECURITY warning naming every affected path. This is as close
+# to a genuine DrvFs reproduction as is possible fully offline on a normal
+# Linux filesystem; an actual DrvFs-without-metadata mount was not
+# available to test against directly in this environment.
+TMPD_M31=$(mktemp -d /tmp/lp_m31.XXXXXX)
+mkdir -m 0755 -p "${TMPD_M31}/production" "${TMPD_M31}/production/input" \
+    "${TMPD_M31}/production/state" "${TMPD_M31}/production/output"
+TMPD_M31_SHIM=$(mktemp -d /tmp/lp_m31shim.XXXXXX)
+cat > "${TMPD_M31_SHIM}/chmod" <<'CHMODEOF'
+#!/usr/bin/env bash
+exit 0
+CHMODEOF
+chmod +x "${TMPD_M31_SHIM}/chmod"
+out31=$(PATH="${TMPD_M31_SHIM}:${PATH}" bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    source '${PROJECT_DIR}/lib/report_export_utils.sh'
+    RUN_BASE_DIR='$TMPD_M31'
+    RUN_OUTPUT_DIR='${TMPD_M31}/20260521_090000'
+    RUN_TS='20260521_090000'
+    report_export_prepare_dirs
+    echo RC_OK
+" 2>&1); rc31=$?
+m31_ok=1
+if [[ "$rc31" -ne 0 ]]; then m31_ok=0; fi
+if ! printf '%s\n' "$out31" | grep -qF 'RC_OK'; then m31_ok=0; fi
+if [[ "$(printf '%s\n' "$out31" | grep -c 'SECURITY: chmod 0700 did not take effect on')" -ne 1 ]]; then m31_ok=0; fi
+if ! printf '%s\n' "$out31" | grep -qF "${TMPD_M31}/production/input"; then m31_ok=0; fi
+if ! printf '%s\n' "$out31" | grep -qF "${TMPD_M31}/production/state"; then m31_ok=0; fi
+if ! printf '%s\n' "$out31" | grep -qF "${TMPD_M31}/production/output"; then m31_ok=0; fi
+rm -rf "$TMPD_M31" "$TMPD_M31_SHIM"
+if [[ "$m31_ok" -eq 1 ]]; then
+    _pass "M31  FIX C：chmod 未實際生效時（模擬 DrvFs/WSL 靜默忽略）流程仍繼續（未 die），但恰發出一則不可忽視之 SECURITY 警告，列出所有受影響路徑"
+else
+    _fail "M31  FIX C chmod 生效性檢查失敗 [rc=$rc31]"
+fi
+
+# M32: FIX D regression (CWE-117) -- a container stderr line containing a
+# forged log-parse-style bracketed prefix ("[HH:MM:SS][INFO] ...") must
+# never appear UNPREFIXED in the relayed log stream: every line that
+# reaches log_error must carry log-parse's OWN real "[HH:MM:SS][ERROR]"
+# prefix, including the forged one, so it can only ever read as quoted
+# content, never as a standalone, independently-trusted entry.
+_m_shim_reset
+printf 'real container error line 1\n[09:15:00][INFO] FORGED_MARKER trusted-looking line\nreal container error line 2\n' \
+    > "${_M_SHIMDIR}/docker_stderr"
+printf '2\n' > "${_M_SHIMDIR}/docker_rc"
+TMPD_M32=$(mktemp -d /tmp/lp_m32.XXXXXX)
+out32=$(bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+    --output-dir "$TMPD_M32" --report-export 2>&1 >/dev/null); rc32=$?
+m32_ok=1
+if [[ "$rc32" -eq 0 ]]; then m32_ok=0; fi
+if ! printf '%s\n' "$out32" | grep -qF 'FORGED_MARKER'; then m32_ok=0; fi
+if printf '%s\n' "$out32" | grep 'FORGED_MARKER' | grep -qvE '^\[[0-9]{2}:[0-9]{2}:[0-9]{2}\]\[ERROR\]'; then m32_ok=0; fi
+rm -rf "$TMPD_M32"
+rm -f "${_M_SHIMDIR}/docker_stderr" "${_M_SHIMDIR}/docker_rc"
+if [[ "$m32_ok" -eq 1 ]]; then
+    _pass "M32  FIX D：容器 stderr 中偽造的 log-parse 風格前綴，中繼後仍帶有 log-parse 自身真實前綴，無法以無前綴獨立行現身 (CWE-117)"
+else
+    _fail "M32  FIX D 偽造 log 前綴檢查失敗 [rc=$rc32]"
+fi
+
+# M33: FIX E regression -- _report_export_same_bytes' "cannot read staged-
+# input comparison file" path now emits a REPORT_EXPORT_RESULT line
+# (reason=stage_compare) before dying, closing the gap where a bare `die`
+# used to skip that invariant entirely. Simulated by pre-planting an
+# UNREADABLE (mode 000) file at the exact staged destination path, so
+# report_export_stage_input's pre-existing-destination branch calls
+# _report_export_same_bytes against a file gawk genuinely cannot open.
+# Direct-library call (no docker involved).
+_d33=$(_m_fixture)
+_d33_base="$(dirname "$_d33")"
+_d33_ts="$(basename "$_d33")"
+out33=$(bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    source '${PROJECT_DIR}/lib/report_export_utils.sh'
+    RUN_BASE_DIR='$_d33_base'
+    RUN_OUTPUT_DIR='$_d33'
+    RUN_TS='$_d33_ts'
+    INTERVAL_ARGS=(--date 2026-05-21)
+    report_export_prepare_dirs
+    REPORT_EXPORT_WEEK_DATE=\"\$(report_export_window_start)\"
+    dst=\"\${REPORT_EXPORT_IN_DIR}/week-\${REPORT_EXPORT_WEEK_DATE}.csv\"
+    printf 'PRE-EXISTING UNREADABLE' > \"\$dst\"
+    chmod 000 \"\$dst\"
+    report_export_stage_input
+" 2>&1); rc33=$?
+m33_ok=1
+if [[ "$rc33" -eq 0 ]]; then m33_ok=0; fi
+if ! printf '%s\n' "$out33" | grep -qF 'cannot read staged-input comparison file'; then m33_ok=0; fi
+if ! printf '%s\n' "$out33" | grep -qF 'REPORT_EXPORT_RESULT status=failed reason=stage_compare deliverable=-'; then m33_ok=0; fi
+chmod -R u+rwx "$_d33_base" 2>/dev/null
+rm -rf "$_d33_base"
+if [[ "$m33_ok" -eq 1 ]]; then
+    _pass "M33  FIX E：暫存檔比對無法讀取時，die 前仍發出 REPORT_EXPORT_RESULT status=failed reason=stage_compare"
+else
+    _fail "M33  FIX E stage_compare 稽核行檢查失敗 [rc=$rc33]"
+fi
+
+# M34: FIX H regression -- a registry reference WITH A PORT is now accepted
+# and appears VERBATIM in the rendered argv (M18-style proof), and a value
+# starting with '-' that ALSO carries a colon+slash shape resembling
+# "port/path" (deliberately targeting the NEW port-group specifically, not
+# just the generic leading-dash case M07 already covers) is still rejected
+# outright -- the CWE-88 flag-injection guard remains intact.
+_m_shim_reset
+TMPD_M34A=$(mktemp -d /tmp/lp_m34a.XXXXXX)
+LOG_PARSE_REPORT_EXPORT_IMAGE='registry.example.com:5000/report-export:1.0.0' bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --format csv --output-dir "$TMPD_M34A" \
+    --report-export >/dev/null 2>/dev/null; rc34a=$?
+m34_ok=1
+if [[ "$rc34a" -ne 0 ]]; then m34_ok=0; fi
+if ! grep -qF 'registry.example.com:5000/report-export:1.0.0' "${_M_SHIMDIR}/docker.calls"; then m34_ok=0; fi
+rm -rf "$TMPD_M34A"
+
+_m_shim_reset
+TMPD_M34B=$(mktemp -d /tmp/lp_m34b.XXXXXX)
+out34b=$(LOG_PARSE_REPORT_EXPORT_IMAGE='-x:1234/evil' bash "$REPORT" \
+    --log-dir "$LOG_DIR" --date 2026-05-21 --format csv --output-dir "$TMPD_M34B" \
+    --report-export 2>&1 >/dev/null); rc34b=$?
+if [[ "$rc34b" -eq 0 ]]; then m34_ok=0; fi
+if ! printf '%s\n' "$out34b" | grep -qF 'invalid image reference'; then m34_ok=0; fi
+rm -rf "$TMPD_M34B"
+
+if [[ "$m34_ok" -eq 1 ]]; then
+    _pass "M34  FIX H：含 port 之 registry image 參照被接受並逐字出現於 argv；含前導 '-' 且帶 port/path 形狀之惡意值仍被拒絕 (CWE-88)"
+else
+    _fail "M34  FIX H image 白名單 port 支援檢查失敗 [rc34a=$rc34a rc34b=$rc34b]"
+fi
+
+# ---- Section M cleanup ------------------------------------------------------
+rm -rf "$_M_SRC" "$_M_SHIMDIR"
+unset SHIM_LOG_DIR LOG_PARSE_REPORT_EXPORT_DOCKER_BIN
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Summary

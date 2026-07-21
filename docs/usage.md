@@ -737,6 +737,7 @@ directory; all files share one launch timestamp.
 | `--modules LIST` | csv | `overview,iis,access` | no | Comma-separated modules. Valid values: `overview`, `iis`, `access`, `errors`. Errors is opt-in (OFF by default). Modules run in canonical order regardless of input order. Unknown module names abort. |
 | `--view summary\|detail` | enum | `summary` | no | Console view. Forwarded to iis and access only; overview and errors are unaffected. Summary is always text (format-independent). |
 | `--format text\|tsv\|csv` | enum | `text` | no | Governs the detail file extension and detail mirror. Forwarded to iis and access; ignored by overview and errors. |
+| `--report-export` | flag | off | no | Run the `report-export` container on this run's CSV and attach the resulting `YYYY-MM-DD_連線紀錄.xlsx` to the notification. **Requires `--format csv` and the access module.** Needs the optional dependency `docker`. Uses `<output-dir>/production/{input,state,output}`. See [Report export](#report-export). |
 | `--top N` | uint ≥ 0 | `10` | no | Forwarded to iis (endpoints + client IPs) and errors (patterns). `0` = ALL. |
 | `--slow-api-ms N` | uint ms | `2000` | no | Forwarded to overview and iis; applies to API-role servers. |
 | `--slow-app-ms N` | uint ms | `5000` | no | Forwarded to overview and iis; applies to APP-role servers. |
@@ -765,6 +766,7 @@ directory; all files share one launch timestamp.
 | `--test-hosts` | F | F | F | — |
 | `--output-dir`, `--modules` | own | own | own | own |
 | `--notify`, `--notify-dry-run`, `--notify-attach`, `--notify-url`, `--receivers-conf` | — | — | — | — |
+| `--report-export` | — | — | — | — |
 
 F = forwarded. `--output-dir` is resolved once by log_report and shared
 via `$LOG_PARSE_OUTPUT_DIR`; it is NOT forwarded as a flag argument to
@@ -772,7 +774,9 @@ child modules (prevents split-brain when a custom `--output-dir` is
 given). The `--notify*` flag family is never forwarded to any child
 module — it is handled entirely inside `log_report.sh`, in-process, as
 the last step of `main()`, after every requested module has already run.
-See [Notification](#notification).
+See [Notification](#notification). `--report-export` is likewise never
+forwarded — it runs in-process, between the module loop and the notify
+step. See [Report export](#report-export).
 
 ### Examples
 
@@ -1006,6 +1010,255 @@ per-record IPs, no `BIRTHDAY` column — when the recipient list is not
 fully trusted. The default endpoint is plain HTTP; every send against an
 `http://` URL logs an explicit warning that the payload, attachments
 included, is transmitted unencrypted.
+
+---
+
+### Report export
+
+`log_report.sh --report-export` runs the independent
+[`report-export`](../report-export/README.md) Docker image against this
+run's own `access_detail.csv` and attaches the resulting
+`YYYY-MM-DD_連線紀錄.xlsx` deliverable to the SMTP notification. It is
+opt-in, single-shot (no automatic retry), and runs strictly **between**
+the analysis-module loop and `--notify`: every requested module has
+already persisted its files before the container runs, and a failed
+export always aborts before any mail can be sent (see "Ordering
+guarantee", below).
+
+**Hard requirements**, both enforced in argument parsing — before
+`resolve_interval` and before any analyzer subprocess runs:
+
+```
+[ERROR] --report-export requires --format csv (got: 'text')
+[ERROR] --report-export requires the access module (got --modules 'overview,iis')
+```
+
+`--format csv` is required because the CSV detail file is the only
+input `report-export` accepts; the access module is required because
+`analyze_access.sh` is the sole producer of `access_detail.csv`.
+
+**The `production/{input,state,output}` tree.** Unlike every other
+artefact this toolkit produces, `report-export`'s state is **cross-run
+accumulating** (its own `REQUEST_ID` deduplication depends on seeing
+every prior run), so the three directories below are created as
+**siblings** of the timestamped run directories, never nested inside
+one:
+
+```
+<--output-dir>/
+├── production/
+│   ├── input/    week-<WINDOW_START>.csv                 (staged copy; :ro mount)
+│   ├── state/    records.csv, records.csv.bak, runs.jsonl (accumulates across runs)
+│   └── output/   <run_date>_連線紀錄.xlsx                 (the deliverable)
+└── <YYYYMMDD_HHMMSS>/                                     (this run's own report files, unaffected)
+    └── ...
+```
+
+The three subdirectory names and `production/` itself are fixed, not
+configurable. All four directories are created with `mkdir -p` under
+`umask 077`, each is rejected outright if it is a symlink (protects
+against a pre-existing symlinked mount point redirecting the `docker -v`
+bind mount to an arbitrary host directory), and each is then
+best-effort `chmod 0700`'d; if a previous **root** container run left
+them unwritable (see "Root-owned files", below), the run dies early
+with an explicit `chown` remedy rather than an opaque mid-run
+permission error.
+
+**Permissions are not guaranteed on every filesystem.** `chmod 0700`
+(directories) and `chmod 600` (the staged CSV) are best-effort: on a
+filesystem that does not support Unix permission bits — DrvFs/9p/WSL,
+which this project's own `--output-dir` can itself live on — chmod is
+commonly accepted and silently ignored, leaving the tree readable by
+more than the owner despite every other check succeeding. log-parse
+reads the resulting mode back and, when it does not match, emits one
+unmissable warning naming every affected path:
+
+```
+[WARN] report-export: SECURITY: chmod 0700 did not take effect on: /srv/log-parse/production ... -- this filesystem may not support Unix permission bits (common on DrvFs/WSL/9p mounts); the PII accumulating under production/ is NOT confidentiality-protected by chmod on this host. Restrict access by another means (host ACL, an encrypted volume, or a --output-dir on a filesystem that honours chmod).
+```
+
+This is deliberately a warning, not a fatal error — dying here would
+make `--report-export` entirely unusable on exactly this kind of mount
+— but it is never silent either: do not treat `chmod 0700`/`600` as a
+confidentiality guarantee without confirming this warning did not fire,
+and prefer a `--output-dir` on a filesystem that actually honours Unix
+permissions for any deployment that takes `production/state`'s
+accumulating PII seriously.
+
+**Staged filename — the window START, not the run date.**
+`access_detail.csv` is copied (never moved) into
+`production/input/week-<D>.csv`, where `<D>` is the **first day of the
+analysis window**: `--date D` → `D`; `--from A --to B` → `A`; `--days N`
+→ the earliest day of the rolling N-day window; `--today` → today.
+Re-running the same window overwrites the same staged filename (logged
+at `INFO`, "already staged (identical)"); staging a genuinely different
+window while an earlier stage's file is still present is logged at
+`WARN` ("overwriting existing staged input") before overwriting — both
+are non-fatal repair paths, never silent.
+
+**The deliverable's date need not match the window.** `report-export`
+names its own output after `run_date`, which is `date.today()` inside
+the container under its own `TZ=Asia/Taipei` clock — it is **not**
+settable by any flag, environment variable, or Docker argument. Running
+`--report-export` today against last week's window (a back-fill) is
+completely normal and produces a deliverable dated today, staged from a
+CSV named after an earlier date. See
+[`report-export/docs/usage.md`](../report-export/docs/usage.md) for the
+canonical worked example (`week-2026-07-13.csv` in,
+`2026-07-16_連線紀錄.xlsx` out).
+
+**One-time image build** (run from `report-export/`, not from this
+directory):
+
+```bash
+cd report-export
+docker build -t report-export:1.0.0 -f docker/Dockerfile .
+```
+
+`--report-export` never builds or pulls the image itself. A missing
+daemon or an unbuilt image is a fast, pre-analysis failure:
+
+```
+[ERROR] docker image inspect failed for 'report-export:1.0.0' (daemon unreachable, or the image is not built/pulled on this host); build it with: docker build -t report-export:1.0.0 -f docker/Dockerfile .   (run from report-export/)
+```
+
+**The rendered `docker run` command.** Exactly the three fixed bind
+mounts, `--network none` (the container needs no network; this closes
+off any exfiltration path for the PII the CSV carries), and — by
+default — **no `--user`**:
+
+```
+docker run --rm --network none \
+  -v <output-dir>/production/input:/data/input:ro \
+  -v <output-dir>/production/state:/data/state \
+  -v <output-dir>/production/output:/data/output \
+  report-export:1.0.0 /data/input/week-<WINDOW_START>.csv
+```
+
+The `report-export` image ships with no `USER` directive — it runs as
+root by design (see
+[`report-export/docs/usage.md`](../report-export/docs/usage.md), "HOST
+權限說明") — so this is the same command an operator would type by
+hand, and files the container writes under `production/state` and
+`production/output` are **root-owned**. Use `sudo` to remove or edit
+them from the host side; this is the same documented trade-off
+`report-export`'s own docs record for manual runs. An operator who
+needs the container to run as a specific host uid instead may set
+`LOG_PARSE_REPORT_EXPORT_USER` (below) — this is an **opt-in** escape
+hatch, never the default.
+
+**Environment variables** (all optional):
+
+| Variable | Default | Effect |
+|---|---|---|
+| `LOG_PARSE_REPORT_EXPORT_DOCKER_BIN` | `docker` | Container-runtime binary; also the automated-test shim hook. |
+| `LOG_PARSE_REPORT_EXPORT_IMAGE` | `report-export:1.0.0` | Image reference (pin an `@sha256:` digest in production if desired). A private registry with a port is supported, e.g. `registry.example.com:5000/report-export:1.0.0`. |
+| `LOG_PARSE_REPORT_EXPORT_USER` | *(empty)* | **Opt-in.** Empty (the default) means no `--user` argument is emitted at all — the container runs as root, exactly as shown above. A non-empty value must match `uid[:gid]` (digits only, e.g. `1000:1000`) and is passed verbatim to `docker run --user`. |
+
+**Dependencies — optional, checked lazily.** `docker` is **not** part of
+the toolkit's unconditional dependency set (`bash gawk sort date
+mktemp`). It is named only inside `lib/report_export_utils.sh` and
+checked only once `--report-export` is actually supplied — a `docker
+image inspect` round trip that confirms both daemon reachability and
+image presence, sub-second, before any analysis module runs. Every run
+that omits `--report-export` is completely unaffected, even on a host
+with no `docker` installed at all. If `docker` itself is missing:
+
+```
+[ERROR] --report-export needs the optional dependency 'docker' (container runtime that runs the report-export image).
+[ERROR] Install docker, or drop --report-export to produce the analysis reports only.
+[ERROR] missing required commands: docker
+```
+
+**Ordering guarantee relative to `--notify`.** `report_export_run`
+executes strictly before `notify_run`. Because every export failure is
+fatal, a notification is **never** sent for a run whose export did not
+succeed — the alternative (notify first) could ship a mail whose body
+promises an attachment it does not carry, an undetectable failure for
+the recipient. Analysis reports are already persisted at that point, so
+the fatality costs nothing analytical: rerun with the same
+`--output-dir`, and `report-export`'s own `input_sha256` idempotency
+absorbs the retry. `--report-export` and `--notify` are otherwise
+**orthogonal** — either may be used without the other; with
+`--report-export` alone, the xlsx simply lands in `production/output`
+and `log_report` logs its host path for the operator to find.
+
+**Attaching the xlsx to the mail.** When both flags are given, the
+validated deliverable path is passed into the same
+`notify_collect_attachments` call that gathers the run's own files, so
+it inherits every existing rule unmodified: the `notify_payload.json`
+exclusion, the attachment-name collision check, the byte-size probe,
+base64 encoding as a separate attachment (never a zip), and the mail
+body's attachment manifest. Two interactions are worth calling out
+explicitly:
+
+- **`--notify-attach summary` does not hide the xlsx.** That mode
+  normally narrows attachments to `*_summary.txt` files, but the xlsx is
+  the entire reason the operator passed `--report-export`, so it is
+  deliberately exempted from that filter and is always attached
+  alongside the summaries.
+- **The xlsx is not exempt from the size caps.**
+  `LOG_PARSE_NOTIFY_MAX_ATTACH_BYTES` (default 2 MiB) and
+  `LOG_PARSE_NOTIFY_MAX_TOTAL_BYTES` (default 8 MiB) apply to it exactly
+  as to any other file. A breach is loud and fatal (`NOTIFY_RESULT
+  status=skipped reason=attachment_too_large:<name>`) — never a silently
+  incomplete mail. Raise the caps (see [Notification](#notification))
+  before the first week whose xlsx is larger than the default per-file
+  limit.
+
+```bash
+# Weekly consolidated run: analyse, export the xlsx, and mail everything
+bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --days 7 --format csv --output-dir /srv/log-parse \
+    --report-export --notify
+```
+
+**PII and retention — read before enabling.** `production/state`
+accumulates every distinct week's records **indefinitely** — it is
+canonical, cross-run state, not per-run scratch, and this toolkit
+performs no rotation or purge of it. Retention is the **operator's**
+responsibility (a scheduler is explicitly out of scope for this
+project, CLAUDE.md §1). Re-review `conf/receivers.conf` before enabling
+`--report-export --notify` for the first time: the xlsx carries the
+same client-IP-derived PII as `access_detail.csv`, mailed to every
+address the file lists.
+
+**No built-in timeout.** A wedged Docker daemon or a hung container
+blocks indefinitely — `timeout(1)` is outside this project's sanctioned
+dependency set. Wrap scheduled invocations with a scheduler-level
+timeout (`systemd`'s `RuntimeMaxSec=`, or `cron` plus your own `timeout`
+wrapper).
+
+**Failure triage.** Every failure is fatal (exit 1); classification is
+carried by the message and by the grep-able
+`REPORT_EXPORT_RESULT status=ok|failed reason=<slug> deliverable=<name|->`
+stderr line (mirroring `NOTIFY_RESULT`):
+
+| `reason=` slug | Condition | Operator action |
+|---|---|---|
+| *(pre-analysis; no result line yet)* | `--report-export` without `--format csv` / without the access module / `docker` missing / a bad image or user-spec override / `docker image inspect` failed | Fix the flag, env var, or image build and rerun; no run directory was created. |
+| `dirs` | `production/` could not be created, or its resolved path is unsafe (too shallow, or `--output-dir` resolves to `/`) | Check `--output-dir` and host filesystem permissions. |
+| `dirs_perm` | `production/{input,state,output}` exist but are not writable by this uid — typically a **previous root container run** | Run the exact `sudo chown -R <uid>:<gid> .../production` command printed in the error message. |
+| `path_colon` | The resolved `--output-dir` path contains `:` | `docker -v` cannot parse a colon in a host path; choose a path without one. |
+| `window_start` | The analysis window's start date could not be derived | Defensive check only — should not occur, since `resolve_interval` has already validated the interval before this step runs; report as an orchestration-boundary defect. |
+| `source_missing` / `source_empty` | This run's `access_detail.csv` is missing or zero bytes | Confirm `--format csv` and that the access module actually ran; a header-only CSV is fine and is **not** this error. |
+| `stage_compare` | The byte-for-byte comparison against an already-staged `week-<D>.csv` could not be performed (one of the two files could not be opened) | Check permissions/existence of both `production/input/week-<D>.csv` and this run's own `access_detail.csv`; typically a permissions or transient I/O issue. |
+| `stage` | The copy/rename into `production/input/` failed | Check free space and permissions on `production/input`. |
+| `container_usage` | Container exited 1 (usage error) | Orchestration bug — report the argv logged just above the error. |
+| `container_input` | Container exited 2 (input validation) | The staged CSV was rejected; the container's own stderr (surfaced above the die message) names the offending row/column. |
+| `container_state` | Container exited 3 (state integrity) | `production/state/records.csv` failed integrity verification and its `.bak` could not recover it — see [`report-export/docs/usage.md`](../report-export/docs/usage.md) "state 完整性問題"; needs manual operator intervention. |
+| `container_lock` | Container exited 4 (lock busy) | Another export already holds the lock on `production/state`; this run did **not** export. Confirm no concurrent run, then simply rerun later — never retried automatically. |
+| `container_write` | Container exited 5 (write/reference error) | Check free space and ownership of `production/output`, or that the image's bundled reference table is intact. |
+| `docker` | Any other non-zero `docker run` exit (e.g. 125–127) | Inspect the surfaced stderr; usually a Docker Engine-level failure, not a report-export one. |
+| `summary_shape` | Container exited 0 but stdout was empty or more than one line | Should not happen against an unmodified image; treated as an orchestration-boundary defect rather than guessed at. |
+| `summary_field` | Container exited 0 but its JSON summary had zero, or more than one, `deliverable` field | Same as above. |
+| `deliverable_shape` | The reported `deliverable` value failed the hostile-input whitelist, OR the mapped host path is a symlink, OR it resolves outside the expected output directory | Should not happen against an unmodified image; refused rather than guessed at. A symlink or unexpected resolution is treated as a potential exfiltration attempt (CWE-61) and is never followed. |
+| `deliverable_missing` | The reported deliverable does not exist (or is empty) on the host | Almost always a bind-mount or uid mismatch — inspect `production/output` directly. |
+| `deliverable_stale` | The reported deliverable's mtime predates this invocation | The container's clock may be skewed from the host, or a stale file was left in place; investigate before trusting the attachment. |
+
+In every case above, this run's own analysis reports remain intact
+under `<output-dir>/<RUN_TS>/` — a failed export never discards
+anything already persisted.
 
 ---
 

@@ -1633,6 +1633,437 @@ itself (`lib/common.sh`) is not modified by this feature.
 
 ---
 
+### 4.10 Report export container integration (D13)
+
+`--report-export` shells a Docker container out to the host — a new
+capability class for a toolkit that §1 calls read-only. The deviation is
+explicit, bounded, and reviewed: strictly opt-in behind one flag that
+defaults off, single-shot (no daemon, no scheduler), and it adds no
+*unconditional* dependency.
+
+#### 4.10.1 Dependency verdict: `docker` as a third gated exception
+
+`report-export` ships **only** as a Docker image
+(`ENTRYPOINT ["python","-m","report_export"]`, `report-export/docker/Dockerfile`).
+There is no host-native invocation path, and an `openpyxl` xlsx writer
+cannot be reimplemented in bash + gawk — rule 5 ("heavy lifting in
+gawk") has a natural limit, and producing a real `.xlsx` (a zipped
+OOXML container) is not a gawk-shaped problem. The choice is therefore
+"gate `docker`" or "reject the feature outright", and the feature is an
+explicit, owner-requested capability whose entire point — attaching the
+xlsx to the *same* notification `--notify` already sends — requires the
+step to run inside `log_report`'s own process lifecycle, not as a
+disconnected manual step.
+
+This passes the identical admission test §4.9 already established for
+`curl`/`base64`:
+
+- The dependency boundary coincides exactly with a code boundary — only
+  `lib/report_export_utils.sh` names `docker` anywhere in the repo.
+- The gate is **lazy and flag-triggered**. Sourcing
+  `lib/report_export_utils.sh` (which `bin/log_report.sh` always does)
+  is free — constants and function definitions only, no top-level
+  executable statement. `report_export_preflight` is the only code path
+  that ever calls `command -v docker` or `docker image inspect`, and it
+  runs only when `OPT_REPORT_EXPORT=1`.
+- **Unused == uninvoked, provably.** A host with no `docker` at all
+  runs every existing workflow unchanged; test M01
+  (`tests/run_tests.sh`) pins exactly this.
+
+Per `.claude/CLAUDE.md` §6 (amended alongside this feature): `docker`
+joins `curl` and `base64` as a **third** lazily-gated optional
+dependency. Each of the three exceptions is **per-feature and gated**,
+never a general licence — a fourth such request would require
+restructuring the rule into an explicit registry with its own stated
+admission test, not a fourth ad-hoc bullet.
+
+**Two gates, both fail loud**, mirroring §4.9's shape exactly:
+
+1. **Pre-flight** — `bin/log_report.sh`'s `parse_args`, immediately
+   after `--report-export`'s two legality guards (the `--format csv`
+   and access-module checks; see [`usage.md`](usage.md#report-export)),
+   i.e. before `resolve_interval`, before `persist_init`, and before any
+   analyzer subprocess exists. An operator whose host lost `docker`
+   learns this in well under a second, not after a multi-minute
+   analysis burn.
+2. **Point of use** — `report_export_run`'s first statement, for direct
+   library callers that bypass `parse_args`.
+
+Idempotent via `REPORT_EXPORT_PREFLIGHT_DONE`. `docker image inspect`
+confirms daemon reachability **and** image presence in one round trip —
+local, read-only, sub-second. Its value is **failure timing**, not a
+correctness guarantee: it is TOCTOU-racy against the later `docker
+run`, and that race is knowingly accepted (§4.10.7's CWE-367 row) — the
+actual `docker run` remains the authoritative attempt regardless.
+**No automatic `docker pull`, ever**: an unattended scheduled job must
+not reach a registry, and a silent pull would both hide image-version
+drift and defeat reproducibility.
+
+#### 4.10.2 Ordering invariant
+
+`report_export_run` executes strictly **between** the module loop and
+`notify_run` — the one point in `main()` where every requested module
+has already persisted its files (so `access_detail.csv` exists and
+`RUN_OUTPUT_DIR` is stable) **and** `notify_run` has not yet enumerated
+the run directory. Both directions of the argument:
+
+- **Not before persistence.** `report-export`'s sole input,
+  `access_detail.csv`, does not exist until `analyze_access.sh` has run
+  and `persist_views` has written it — there is nothing to stage any
+  earlier.
+- **Not after `--notify`.** Because every export failure is fatal
+  (§4.10.6), running `notify_run` first would risk one of two bad
+  outcomes: sending a mail whose body/manifest implies an xlsx
+  attachment before the step that produces it has even been attempted,
+  or — worse — sending successfully and only *then* discovering the
+  export fails, an inconsistent already-sent state with no recall.
+  Running export first guarantees a notification is **never** sent for
+  a run whose export did not succeed: the mail either carries the xlsx
+  it promises, or is never sent — never a silent partial success from
+  the recipient's point of view.
+
+`init_tmpdir` is hoisted to fire **exactly once** ahead of both
+features (`report-export` needs `WORK_TMPDIR` to capture the
+container's stdout/stderr; `--notify` needs it for the payload/body
+files), because `init_tmpdir` is **not** idempotent — a second call
+replaces `WORK_TMPDIR` without unlinking the first (`lib/common.sh`) —
+so calling it twice in one process would leak the first temp directory.
+
+#### 4.10.3 The `production/` tree contract
+
+```
+RUN_BASE_DIR            = --output-dir value | $LOG_PARSE_OUTPUT_DIR | ./log-parse
+RUN_OUTPUT_DIR          = ${RUN_BASE_DIR%/}/${RUN_TS}           (per-run, unchanged)
+REPORT_EXPORT_PROD_DIR  = ${RUN_BASE_DIR%/}/production           (via persist_production_dir())
+REPORT_EXPORT_IN_DIR    = ${REPORT_EXPORT_PROD_DIR}/input
+REPORT_EXPORT_STATE_DIR = ${REPORT_EXPORT_PROD_DIR}/state
+REPORT_EXPORT_OUT_DIR   = ${REPORT_EXPORT_PROD_DIR}/output
+```
+
+`production/` is a **sibling** of the timestamped run directories,
+never a child of one — forced by existing code, not chosen for taste:
+
+- `report-export`'s `state/` (`records.csv`, `records.csv.bak`,
+  `runs.jsonl`) is **cross-run accumulating** state — the entire
+  purpose of its `REQUEST_ID` deduplication and same-day sequence
+  numbering depends on seeing every prior run's history. Placing it
+  inside a per-run timestamped directory would hand every run an empty
+  state and silently defeat deduplication.
+- `notify_collect_attachments` enforces a flat-run-directory invariant:
+  `die "run dir must be flat: unexpected subdirectory: $f"`
+  (`lib/notify_utils.sh`). A `production/` directory nested inside
+  `RUN_OUTPUT_DIR` would make **every** `--notify` run fatal — including
+  runs that never requested `--report-export` at all.
+
+The three subdirectory names and `production/` itself are **fixed and
+not configurable** — one predictable location an operator can back up,
+monitor, or (manually) rotate.
+
+**Creation, permissions, absolutisation.** All four directories are
+created with `mkdir -p` under `umask 077`, then, immediately and BEFORE
+any chmod or absolutisation ever trusts them, each is rejected outright
+if it is a symlink (`-L`, an lstat that never follows). This is not
+redundant with §4.10.5/§4.10.7's deliverable-side check: `mkdir -p` is a
+silent no-op when a path already exists as a symlink to an existing
+directory, so a pre-planted symlinked mount point would otherwise sail
+through unnoticed, and `docker -v` resolves symlinks in its host-path
+argument at `mount(2)` time — an unchecked symlinked
+`production/{input,state,output}` would let `docker run` bind-mount an
+**arbitrary host directory** as `/data/input`, `/data/state`, or
+`/data/output` before the container ever runs. Only after this check do
+the four directories get best-effort `chmod 0700`'d.
+
+`docker -v` requires absolute host paths, but `persist_init` performs no
+canonicalisation and `./log-parse` is a legal relative default, so the
+resolved production path is absolutised once via `cd "$prod" && pwd -P`
+— **bash builtins only**, no `realpath`/`readlink`, no new dependency
+(safe because the directory was just `mkdir -p`'d, and just confirmed
+not to be a symlink). A resolved path with fewer than two path
+components (or literally `/`) is refused as unsafe; a resolved path
+containing `:` is refused outright (`docker -v HOST:CONTAINER:ro` would
+otherwise be unparseable) — a live concern on the OneDrive/WSL tree
+this repo can be deployed from. Each of the three mount-point
+subdirectories is then, additionally, physically re-resolved the same
+way and required to equal EXACTLY `${REPORT_EXPORT_PROD_DIR}/<name>` —
+belt-and-suspenders alongside the `-L` check above, and the mechanism
+that actually earns the "resolved to an absolute path safe to hand to
+`docker -v`" claim for the subdirectories, not just the base.
+
+A `chmod` that **fails** (because a previous **root** container run
+left the tree owned by root, §4.10.7) is deliberately **not** itself
+fatal — it is logged at debug level and deferred to the tree's final
+`-d`/`-w`/`-x` usability assertion, which alone owns the actionable
+`chown` remedy. Making the `chmod` step fatal would intercept exactly
+the scenario it exists to help diagnose, with a generic "chmod failed"
+message instead of the specific one. Separately, and regardless of
+chmod's own exit status, the resulting mode is read BACK (`stat -c
+'%a'`) and compared against the intended `700`: chmod returning 0 is
+not proof the mode actually took effect, and on a filesystem that does
+not honour Unix permission bits (DrvFs/9p/WSL) it commonly does not. A
+mismatch emits one consolidated, unmissable `log_warn` naming every
+affected path — never fatal (see §4.10.7's CWE-732 row for the full
+rationale) and never silent.
+
+#### 4.10.4 Staging derivation
+
+`access_detail.csv` (resolved via `persist_path`, never a hand-written
+string — rule 2) is copied, never moved, never hardlinked, into
+`production/input/week-<D>.csv`, where `<D>` is **the first day of the
+analysis window** — never the run date, never the window end. This is
+grounded in `report-export`'s own shipped example, not in taste: its
+canonical worked example
+([`report-export/docs/usage.md`](../report-export/docs/usage.md))
+stages `week-2026-07-13.csv` (a Monday) and reports
+`"run_date": "2026-07-16"` — the day the container happened to run —
+in its `deliverable`. Naming the staged file by the window start makes
+a re-run of the same window overwrite the same filename, exactly the
+idempotency key `report-export`'s own `input_sha256` logic wants;
+naming it by the run date would give a misleading name to any back-fill
+of a past window.
+
+`build_date_list` + `validate_date` (`lib/date_utils.sh`) are the
+**only** date logic used — `INTERVAL_ARGS` is already resolved by
+`resolve_interval` before the export step runs, so `--date`, `--from`/
+`--to`, `--days`, and `--today` all inherit the D3 mutex semantics for
+free; no new date arithmetic is written anywhere (rule 2).
+
+The copy is written tmp-then-`mv` (mode `0600` set before the `mv`, so
+the visible name is never briefly world-/group-readable): a concurrent
+reader can never observe a half-written staged file. If the destination
+already exists — the normal case for a re-run of the same window — the
+two files are byte-compared first: identical content logs at `INFO`
+and refreshes in place; different content logs at `WARN` ("a previous
+run of the same window staged different content") and overwrites. Both
+branches proceed — a deliberate, non-fatal repair path, not a silent
+fallback (rule 1: the `log_warn` is unconditional and unsuppressable),
+and safe because `report-export` keys idempotency on `input_sha256` and
+deduplicates on `REQUEST_ID`, so re-feeding identical or updated content
+is always semantically harmless.
+
+#### 4.10.5 Deliverable selection — the correctness proof
+
+This is the single most important mechanism in the feature: the one
+place where a wrong choice would mail the wrong week's connection
+records without anyone noticing.
+
+**The problem.** `report-export/src/report_export/xlsx_writer.py`
+resolves the deliverable's filename as:
+
+```python
+_FILENAME_DATE_FMT: Final[str] = "%Y-%m-%d"
+_DELIVERABLE_SUFFIX: Final[str] = "_連線紀錄.xlsx"
+
+def resolve_filename(*, run_date, out_dir, today_runs, input_sha256) -> str:
+    base_name = f"{run_date.strftime(_FILENAME_DATE_FMT)}{_DELIVERABLE_SUFFIX}"
+    if not (out_dir / base_name).exists():
+        return base_name
+    if today_runs and today_runs[-1].get("input_sha256") == input_sha256:
+        return base_name
+    seq = max(len(today_runs), 1) + 1
+    stem = base_name.removesuffix(".xlsx")
+    return f"{stem}_{seq:02d}.xlsx"
+```
+
+Three facts follow directly, and together they mean **the deliverable's
+filename is not derivable from anything observable in
+`production/output`** — any host-side scan is a guess:
+
+1. The first deliverable of a date is always the bare, unsuffixed
+   `YYYY-MM-DD_連線紀錄.xlsx`; a `_01` variant is never produced, and an
+   **idempotent rerun** (same `input_sha256` as `today_runs[-1]`)
+   deliberately keeps the bare name and *overwrites* it — no new
+   filename appears.
+2. The `_NN` suffix, when one is used, is derived from
+   `len(today_runs)` — the **count of `runs.jsonl` records** logged for
+   that date, including 0-new idempotent reruns — **not** a count of
+   files actually present in `out_dir`; `resolve_filename` never
+   enumerates `out_dir` for suffixed names.
+3. `run_date` is `date.today()` **inside the container**
+   (`report-export/src/report_export/pipeline.py`), under the image's
+   own `TZ=Asia/Taipei`. It is not injectable through any CLI flag,
+   environment variable, or Docker argument the shipped image accepts
+   (confirmed: `report-export/src/report_export/cli.py`'s argument
+   parser has no `run_date`-shaped flag at all) — it may therefore
+   legitimately differ from log-parse's own analysis window (§4.10.4).
+
+**The mechanism.** Authority is the `deliverable` field of the single
+JSON line `report-export` prints on its **own** stdout, validated
+host-side and never inferred. `pipeline.py` sets
+`RunSummary.deliverable = str(final_path)` from the *same* `final_path`
+object that `xlsx_writer.write()` returned and that `os.replace()`
+(`_replace_deliverable`) moved into place — in the same function body,
+with no intervening filesystem observation. `cli.py`'s `main()` has
+exactly one `print(json.dumps(...))` call, and it is **unreachable** on
+any `ReportExportError` path (every such exception is caught and turned
+into an early `return exc.exit_code` before that line). Stdout on a
+non-zero exit is therefore guaranteed **empty**, never partial; on exit
+0 it is guaranteed to be exactly that one JSON line. The field is
+**not** evidence about which file was produced — it *is* the identity
+of the file that was produced.
+
+Host-side, `_report_export_select_deliverable` adds **falsification**,
+never inference: the value must start with the literal prefix
+`/data/output/`; its basename must match the anchored whitelist
+`^[0-9]{4}-[0-9]{2}-[0-9]{2}_連線紀錄(_[0-9]{2})?\.xlsx$` (rejecting any
+`/`, any `..`, any leading `-`, any control byte, any other shape); the
+mapped host path must **not** be a symlink (`-L`, an lstat that never
+follows) and its containing directory, resolved via `cd && pwd -P`,
+must equal EXACTLY the already-resolved `REPORT_EXPORT_OUT_DIR` —
+checked immediately after the path is derived and BEFORE any of the
+probes below, none of which are symlink-safe on their own; the mapped
+host path must exist and be non-empty (`_notify_file_bytes`-style); and
+its mtime must not predate the recorded epoch immediately before the
+`docker run` invocation (2-second slack for filesystem timestamp
+granularity). These steps convert an authoritative claim into a
+verified fact and simultaneously close the untrusted-input boundary in
+the whole feature (CWE-22/CWE-61, §4.10.7). The mechanism is correct
+under **every** branch of `resolve_filename` —
+bare name, idempotent overwrite, and `_02`/`_03`/… suffixing — without
+log-parse encoding a single byte of that algorithm: report-export owns
+its own naming, and log-parse simply asks it (rule 2).
+
+**Three rejected alternatives, each disproved rather than merely
+disliked:**
+
+1. **Before/after directory snapshot diff.** Returns the **empty set**
+   on an idempotent rerun, because `report-export` deterministically
+   overwrites the pre-existing bare filename and no new name appears —
+   a fully successful run reported as a failure. Under concurrency, a
+   sibling run's new file also contaminates the diff.
+2. **Newest-by-mtime.** A pure race against any concurrent producer;
+   cannot distinguish "this run overwrote the bare name" from "a
+   sibling run just wrote a new name"; defeated by an operator manually
+   copying a file in; and timestamp granularity on the DrvFs/WSL/NFS
+   mounts this repo can be deployed on is not dependable.
+3. **Run-date prefix plus highest `_NN` suffix.** Re-implements
+   `resolve_filename` in bash (a rule-2 violation) and re-implements it
+   **wrongly by construction**: the counter derives from a
+   `runs.jsonl` *record count*, information not present in the
+   directory at all; the idempotent branch keeps the *bare unsuffixed*
+   name, so "highest suffix" would select the **wrong** file; and it
+   forces log-parse to guess `run_date`, which the container derives
+   from its own clock and never exposes as an input.
+
+A fourth near-miss — reading `production/state/runs.jsonl`'s own last
+`deliverable_name` field directly — is deliberately not used either,
+not even as a cross-check: it would be a second, racy copy of the same
+fact, and two sources of truth for one question is exactly what rule 2
+forbids. The JSON-summary field remains the sole authority.
+
+#### 4.10.6 Failure taxonomy
+
+log-parse's exit vocabulary stays **0/1** — no new exit code is
+introduced; splitting the vocabulary would break existing scheduler
+wrappers. Classification is instead carried by the message and by the
+grep-able `REPORT_EXPORT_RESULT status=ok|failed reason=<slug>
+deliverable=<basename|->` stderr line, mirroring `NOTIFY_RESULT`
+exactly. The `reason=` slugs (`dirs`, `dirs_perm`, `path_colon`,
+`window_start`, `source_missing`, `source_empty`, `stage_compare`,
+`stage`, `container_usage`, `container_input`, `container_state`,
+`container_lock`, `container_write`, `docker`, `summary_shape`,
+`summary_field`, `deliverable_shape`, `deliverable_missing`,
+`deliverable_stale`) and their operator remedies are documented in full
+in [`usage.md`](usage.md#report-export)'s failure-triage table — not
+duplicated here. `stage_compare` (the byte-for-byte comparison against an
+already-staged file could not be performed) now correctly emits this line
+before dying, like every other failure path in this file below
+`persist_init` — a prior bare `die` used to skip it silently.
+
+**Not an error:** a header-only CSV, or a CSV with zero
+`STATUS=NORMAL` rows. `report-export` exits 0, appends nothing new to
+state, and still writes a deliverable and a `runs.jsonl` record;
+log-parse reads `normal` from the summary and, when it is `0`, emits a
+single non-fatal `log_warn` and proceeds.
+
+**Concurrency.** No lock is added by log-parse (a second lock would be
+a duplicate source of truth and could interlock with the first).
+`report-export` acquires its own `.lock` in `production/state`; the
+loser exits 4 (`LockBusyError`), which log-parse turns into a fatal
+with dedicated wording and does **not** retry automatically — automatic
+retry under an unattended scheduler would let two jobs drag each other
+out indefinitely. Deliverable selection itself is concurrency-immune by
+construction (§4.10.5): the value comes from *this* process's own
+captured stdout, describing the file *this* container finalized: what a
+concurrent container wrote is irrelevant and invisible to it.
+
+#### 4.10.7 Security
+
+| CWE | Exposure | Mitigation |
+|---|---|---|
+| **CWE-78** OS command injection | `docker run` argv is assembled from `--output-dir`, an image reference, a user spec, and a derived filename | Bash **array** argv executed directly — no `eval`, no `sh -c`, no word-splitting. The container-side input path is fully derived from a `validate_date`-checked date. |
+| **CWE-88** Argument injection | `LOG_PARSE_REPORT_EXPORT_IMAGE="--privileged"` (or a hostile `LOG_PARSE_REPORT_EXPORT_USER`) | Anchored whitelists forbid a leading `-` on both the image reference and the user spec; either dies rather than reaching `docker`'s argv. |
+| **CWE-22** Path traversal | The container returns a path that log-parse then reads and **emails** | The `deliverable` value is treated as untrusted (§4.10.5): prefix + anchored basename whitelist, no `/`, no `..`, no leading `-`, no control bytes. This whitelist alone constrains only the reported NAME **string** — see the CWE-61 row directly below for the host-side inode check this boundary also requires. |
+| **CWE-61** UNIX symbolic link following | The anchored basename whitelist (CWE-22, above) says nothing about what the mapped HOST inode actually is. The container runs as root with `production/output` bind-mounted read-write, so a hostile or buggy image could plant `<D>_連線紀錄.xlsx -> /proc/net/tcp` (or any host file whose mtime happens to fall in the run's freshness window) at the exact whitelisted name | `_report_export_select_deliverable` rejects the mapped host path outright if it is a symlink (`-L`, an lstat that never follows) and additionally asserts physical containment — the path's containing directory, resolved via `cd && pwd -P`, must equal EXACTLY the already-resolved `REPORT_EXPORT_OUT_DIR` — BEFORE any subsequent probe. Without both checks, every remaining probe (`-f`, `_notify_file_bytes`, `date -r`) follows symlinks by construction and would silently validate, then base64-encode-and-mail, the symlink's TARGET rather than the deliverable. `report_export_prepare_dirs` applies the identical `-L` + `cd && pwd -P` pattern to the three mount-point subdirectories themselves, closing the same class of attack one level up (a pre-existing symlinked mount point redirecting the `docker -v` bind mount before the container ever runs). |
+| **CWE-732** Incorrect permission assignment | `production/state` holds PII-derived records | `umask 077` + best-effort `chmod 0700` on all four directories (their three mount-point subdirectories are additionally lstat-checked and physically resolved — see the CWE-61 row above); staged input `chmod 600`; the deliverable itself is written `0600` by `xlsx_writer`. **chmod exiting 0 is not proof the mode took effect**: on a filesystem that does not honour Unix permission bits (DrvFs/9p/WSL — this repository can itself live on exactly such a mount), chmod is commonly accepted and silently ignored. The resulting mode is therefore read BACK (`stat -c '%a'`) after every chmod call (directories and the staged CSV alike), and a mismatch emits one unmissable `log_warn` naming every affected path — deliberately never fatal (a hard die would make `--report-export` entirely unusable on exactly the mount this project's own owner deploys from) and deliberately never silent (a silently-assumed guarantee the filesystem cannot honour is exactly the failure mode this closes). |
+| **CWE-269** Improper privilege management | The container runs as root by default (§4.10.3, no `--user`) | No `--privileged`; no docker-socket mount; input mounted `:ro`; only the three fixed `production/` subdirectories are exposed, never the run directory, never `/`. An operator who needs a specific host uid instead may opt in via `LOG_PARSE_REPORT_EXPORT_USER` (whitelisted `^[0-9]+(:[0-9]+)?$`, bash builtins only — no `id` dependency). |
+| **CWE-367** TOCTOU | `docker image inspect` then `docker run` | Acknowledged and accepted (§4.10.1). The probe is a timing optimisation, not a guarantee; `docker run` itself remains authoritative, and its failure is fatal regardless (§4.10.6). |
+| **CWE-200 / CWE-359** Exposure of private/personal information | `access_detail.csv` carries `CLIENT_IP`, `HOSP_ID`, `PRSN_ID`, `PATIENT_ID_AES`, `BIRTHDAY`. This feature moves that data into `production/state/records.csv`, which accumulates **indefinitely** — far outliving the per-run directories — and mails a derived xlsx to every address in `conf/receivers.conf`. | This is the single most significant posture change in the feature (§4.10.8). Mitigations: `0700` directories, `0600` files, `--network none` (no exfiltration path from inside the container), and the xlsx flowing through `--notify`'s existing unsuppressable audit log and external-domain warning. `production/state` retention/purge is the **operator's** responsibility; `conf/receivers.conf` should be re-reviewed before enabling `--report-export`. |
+| **CWE-400** Uncontrolled resource consumption | `production/` grows monotonically: one CSV per distinct window, one xlsx per run, one `runs.jsonl` line per run | No automatic cleanup — deletion is a destructive operation requiring human approval, out of scope for this toolkit (§1). Documented as an operator obligation. |
+
+**Why the container runs as root by default.** The `report-export`
+image ships with **no `USER` directive** — it is designed to run as
+root (`report-export/docker/Dockerfile`; confirmed no `appuser`/`USER`
+line), so that any host bind-mount directory is writable regardless of
+its owning uid, with no image-baked uid to reconcile against a
+caller-owned directory. `docker run` therefore emits **no `--user`
+argument by default** — the exact command an operator would type by
+hand — rather than forcing an arbitrary uid that has no `passwd` entry
+inside the image. The trade-off, recorded here rather than left
+implicit: files the container writes under `production/state` and
+`production/output` are **root-owned**, requiring `sudo` to remove or
+edit from the host side — the identical, already-documented trade-off
+`report-export`'s own docs record for manual runs
+([`report-export/docs/usage.md`](../report-export/docs/usage.md), "HOST
+權限說明"). Forcing `--user` unconditionally would additionally make a
+`production/` tree a previous root run already created **unwritable**,
+trading one failure mode for another. An operator who prefers the
+container to run as a specific host uid may opt in via
+`LOG_PARSE_REPORT_EXPORT_USER=<uid>[:<gid>]`; leaving it unset (the
+default) is a deliberate choice, not an oversight.
+
+#### 4.10.8 PII and retention — the most significant posture change
+
+Before this feature, the toolkit's PII exposure was bounded by
+`RUN_OUTPUT_DIR`'s lifetime and by whatever `--notify` mailed once.
+`--report-export` changes that shape: `access_detail.csv`'s
+client-IP/`HOSP_ID`/`PRSN_ID`/`PATIENT_ID_AES`/`BIRTHDAY` fields flow
+into `production/state/records.csv`, which **accumulates indefinitely**
+across every distinct week ever exported, independent of any single
+run's lifetime — and the resulting xlsx is mailed to every address in
+`conf/receivers.conf` on every `--report-export --notify` run. This
+toolkit provides no rotation, purge, or retention policy for
+`production/state` (a scheduler is explicitly out of scope, §1); that
+responsibility belongs entirely to the operator, alongside re-reviewing
+`conf/receivers.conf` before first enabling the flag.
+
+#### 4.10.9 Known limitations
+
+- **No built-in timeout.** A wedged Docker daemon or a hung container
+  blocks indefinitely; `timeout(1)` is outside the sanctioned
+  dependency set. Mitigation is a scheduler-level timeout (`systemd`'s
+  `RuntimeMaxSec=`, or `cron` + an operator-supplied `timeout` wrapper).
+- **The deliverable's date need not match the analysis window**
+  (§4.10.4/§4.10.5): `run_date` comes from the container's own clock,
+  not from `--date`/`--from`/`--to`/`--days`. A back-filled export of a
+  past window produces a deliverable dated today.
+- **`production/state` accumulates PII indefinitely** (§4.10.8) with no
+  built-in rotation.
+- **Root-owned files under `production/` by default** (§4.10.7),
+  requiring `sudo` for host-side removal/editing unless an operator
+  opts into `LOG_PARSE_REPORT_EXPORT_USER`.
+- **UID/ownership assertions on container-written files are untestable
+  offline.** A non-root test environment cannot honestly simulate a
+  root-owned tree without pulling in `fakeroot` or real root as a new
+  test dependency; this is a documented production-only verification
+  gap, not a functional one. Section M's offline `fake_docker.sh` shim
+  (`.claude/rules/testing.md`) covers every other path in this section —
+  dependency gating, the legality guards, the tree contract, staging,
+  argv construction, deliverable selection (including the mtime-decoy
+  and idempotent-overwrite proofs), and every fatal path — without ever
+  touching a real Docker daemon or network endpoint.
+
+---
+
 ## 5. Capability matrix
 
 | Flag / Feature | analyze_overview | analyze_access | analyze_iis | analyze_errors | log_report | Default |
