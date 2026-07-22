@@ -858,13 +858,23 @@ opt-in, single-shot (no automatic retry), and is never reached unless
 object per `conf/receivers.conf` row, in file order; `Attachments` is a
 **key–value map** — key = attached file's basename, value = its base64
 content — never an array of objects. There are no `isBodyHtml`, `cc`,
-`bcc`, `fileName`, or `contentBase64` keys anywhere in the payload.
+`bcc`, `fileName`, or `contentBase64` keys anywhere in the payload — the
+API renders `Body` as HTML unconditionally, so there is nothing to toggle
+either way.
 
 `Body` is **not** boilerplate: it carries the run's real KEY SUMMARY,
 extracted by `gawk` from the run's own `overview_summary.txt` (envelope +
 the `▶ 總體概況` block, including the `整體健康判定` verdict), followed by
-an attachment manifest. Rendered example (`--date 2026-05-21`, default
-`--notify-attach all`):
+an attachment manifest. Because the API renders `Body` as HTML, the whole
+thing is then HTML-escaped and wrapped in a minimal
+`<html><body><pre>...</pre></body></html>` skeleton before it is sent —
+`<pre>` is what keeps the column alignment below intact in an HTML mail
+client instead of collapsing to one line; the escaping also means a
+recipient sees `a&lt;b&gt;&amp;c.txt` as text, never a live tag, if an
+attachment happens to be named with `<`, `>`, or `&`. The content itself
+(what a recipient actually reads) is unchanged. Rendered example
+(`--date 2026-05-21`, default `--notify-attach all`; HTML skeleton omitted
+below for readability):
 
 ```
 Run timestamp : 20260521_090000
@@ -911,8 +921,9 @@ The extractor stops at the hourly bar chart (a wall of block-drawing
 characters that is unreadable in a proportional mail font) or at the
 second `▶ ` section heading, whichever comes first, and hard-caps at 60
 printed lines; the whole Body is additionally capped at 65536 bytes
-(truncated with a visible marker line on overflow — the authoritative file
-is always attached in full regardless). If `overview_summary.txt` is
+**after** HTML-escaping and `<pre>`-wrapping (truncated with a visible
+marker line on overflow — the authoritative file is always attached in
+full regardless). If `overview_summary.txt` is
 absent (e.g. `--modules iis`), the Body falls back to the first 25 lines of
 the lexicographically-first `*_summary.txt` present; if no summary file
 exists at all, it falls back to a literal placeholder line — the Body is

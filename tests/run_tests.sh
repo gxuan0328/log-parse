@@ -5,7 +5,7 @@
 # and error handling. Baselines are derived from the examples/sample-logs/LUNG-CANCER-REPORT-LOG
 # sample data included in the project (dates 2026-05-18 ~ 2026-05-25).
 #
-# Total: 356 tests across thirteen sections (A access · B iis · C errors · D log_report ·
+# Total: 358 tests across thirteen sections (A access · B iis · C errors · D log_report ·
 #        E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
 #        J test-host/health · K timezone+core-function · L notify SMTP-API delivery ·
 #        M report-export container integration).
@@ -3043,8 +3043,17 @@ _l_utf8_tail_ok() {
 # 1, 2 extra ASCII bytes before a long run of the 3-byte CJK character 測)
 # shift the naive byte-wise cut through all 3 possible alignments relative
 # to a 3-byte character, so at least one iteration would have split a
-# character under the pre-fix plain substr().
+# character under the pre-fix plain substr(). notify_build_body now always
+# HTML-escapes and <pre>-wraps its output (NOTIFY_BODY_HTML_AWK), so
+# body.txt's true first/last bytes are the fixed "<html><body><pre>\n" /
+# "\n</pre></body></html>\n" skeleton, not the notice text -- the skeleton
+# is peeled off byte-exactly (never regex/sub, matching this file's own
+# LC_ALL=C substr() discipline) before the UTF-8-boundary check below, which
+# is otherwise unchanged from the pre-HTML fix this test still regression-
+# guards.
 l27_notice="... [body truncated at 200 bytes]"$'\n'
+l27_head_w="<html><body><pre>"$'\n'
+l27_tail_w=$'\n'"</pre></body></html>"$'\n'
 l27_ok=1
 l27_detail=""
 for pad in 0 1 2; do
@@ -3068,7 +3077,17 @@ for pad in 0 1 2; do
         RUN_OUTPUT_DIR='${TMPD_L27}'
         notify_build_body '${TMPD_L27}' '${TMPD_L27}/body.txt'
     " >/dev/null 2>&1
-    l27_res="$(_l_utf8_tail_ok "${TMPD_L27}/body.txt" "$l27_notice")"
+    LC_ALL=C gawk -v hw="$l27_head_w" -v tw="$l27_tail_w" '
+        BEGIN {
+            RS = "^$"
+            s = $0
+            if (substr(s, 1, length(hw)) == hw) s = substr(s, length(hw) + 1)
+            n = length(s); tn = length(tw)
+            if (n >= tn && substr(s, n - tn + 1) == tw) s = substr(s, 1, n - tn)
+            printf "%s", s
+        }
+    ' "${TMPD_L27}/body.txt" > "${TMPD_L27}/inner.txt"
+    l27_res="$(_l_utf8_tail_ok "${TMPD_L27}/inner.txt" "$l27_notice")"
     if [[ "$l27_res" != "ok" ]]; then l27_ok=0; l27_detail="pad=${pad}:${l27_res}"; fi
     rm -rf "$TMPD_L27"
 done
@@ -3244,6 +3263,67 @@ if [[ "$l31_ok" -eq 1 ]]; then
 else
     _fail "L31  FIX J 多日窗口 notify CLI 整合檢查失敗 [ft_rc=$l31ft_rc days_rc=$l31d_rc]"
 fi
+
+# L32/L33 below regression-cover the HTML Body fix: the SMTP API renders
+# Body as HTML unconditionally (no isBodyHtml toggle -- L03 already pins
+# that field's continued absence), which was collapsing the plaintext
+# report's column-aligned layout to one unreadable line. notify_build_body
+# now HTML-escapes the whole assembled body and wraps it in a minimal
+# <html><body><pre>...</pre></body></html> skeleton (NOTIFY_BODY_HTML_AWK).
+
+# L32: Body is minimal HTML -- the payload's Body value begins with the
+# exact <html><body><pre> skeleton opening and carries its <pre>/</pre>
+# balanced pair through to the </body></html> close, proving the fix is
+# live (the pre-fix plaintext Body could never contain any of these tags).
+_d32=$(_l_fixture)
+bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$_d32'
+" >/dev/null 2>&1
+_c32="$(cat "${_d32}/notify_payload.json" 2>/dev/null)"
+if [[ "$_c32" == *'"Body":"<html><body><pre>'* ]] \
+   && [[ "$_c32" == *'<pre>'* ]] \
+   && [[ "$_c32" == *'</pre>'* ]] \
+   && [[ "$_c32" == *'</body></html>'* ]]; then
+    _pass "L32  Body 為最小 HTML：payload 之 Body 以 <html><body><pre> 起始，並含平衡的 </pre></body></html>"
+else
+    _fail "L32  Body 應為 <pre>-wrapped 最小 HTML 骨架"
+fi
+rm -rf "$_d32"
+
+# L33: CWE-79 regression -- an attachment FILENAME containing < > & must
+# appear HTML-ESCAPED in the Body's attachments manifest (never as a live
+# tag), now that Body renders as HTML. The SAME raw filename also
+# legitimately appears elsewhere in this payload as the un-HTML-escaped
+# Attachments JSON key (a filename is a JSON key there, only jesc()-escaped,
+# never HTML-escaped) -- so this asserts the ESCAPED form a&lt;b&gt;&amp;c.txt
+# is PRESENT; it deliberately does NOT assert the raw form is globally
+# absent, which would be a false failure against that legitimate key.
+_d33=$(_l_fixture)
+printf 'evil' > "${_d33}/a<b>&c.txt"
+bash -c "
+    source '${PROJECT_DIR}/lib/common.sh'
+    source '${PROJECT_DIR}/lib/date_utils.sh'
+    source '${PROJECT_DIR}/lib/output_utils.sh'
+    source '${PROJECT_DIR}/lib/notify_utils.sh'
+    OPT_NOTIFY=1; OPT_NOTIFY_DRY_RUN=1; OPT_NOTIFY_ATTACH=all
+    OPT_NOTIFY_URL='http://127.0.0.1:9/x'
+    RECEIVERS_CONF='${PROJECT_DIR}/conf/receivers.conf'
+    RUN_TS='20260521_090000'; INTERVAL_ARGS=(--date 2026-05-21)
+    OPT_REGION='all'; OPT_MODULES='overview,iis,access'
+    notify_send '$_d33'
+" >/dev/null 2>&1
+_has L33 "檔名含 < > & 時，Body 附件清單顯示 HTML-escaped 形式 a&lt;b&gt;&amp;c.txt (CWE-79 迴歸)" \
+    "$(cat "${_d33}/notify_payload.json" 2>/dev/null)" 'a&lt;b&gt;&amp;c.txt'
+rm -rf "$_d33"
 
 # ---- Section L cleanup ------------------------------------------------------
 rm -rf "$_L_SRC" "$_L_SHIMDIR"

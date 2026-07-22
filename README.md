@@ -4,7 +4,7 @@
 > Correlates access tokens, surfaces IIS anomalies, and tracks application
 > lifecycle events across paired API / APP servers.
 
-[![Tests](https://img.shields.io/badge/tests-356%2F356-brightgreen)](tests/run_tests.sh)
+[![Tests](https://img.shields.io/badge/tests-358%2F358-brightgreen)](tests/run_tests.sh)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bash 4+](https://img.shields.io/badge/bash-4%2B-lightgrey)](https://www.gnu.org/software/bash/)
 
@@ -113,7 +113,7 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── sample-outputs/      Sample rendered reports
 │   └── *.sh                 Scenario-driving scripts
 ├── tests/
-│   └── run_tests.sh         356-test functional suite
+│   └── run_tests.sh         358-test functional suite
 ├── report-export/           Independent Python subtool: weekly xlsx export
 │   ├── src/report_export/   Package (pure-function core + I/O boundary)
 │   ├── docs/                design.md · usage.md · data-fidelity.md (zh-TW)

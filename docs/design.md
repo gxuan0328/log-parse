@@ -1301,7 +1301,10 @@ POST <url>   header: Content-Type: application/json
 `conf/receivers.conf` row, in file order; `Attachments` is a **key–value
 MAP** — key = attachment **filename**, value = its **base64 string** — not
 an array of objects. There are no `isBodyHtml`, `cc`, `bcc`, `fileName`, or
-`contentBase64` keys; introducing any of them is a defect. Because a
+`contentBase64` keys; introducing any of them is a defect — the API
+instead renders `Body` as HTML **unconditionally**, so there is no toggle
+to set either way; log-parse's own contribution is to emit valid, minimal
+HTML into that one string field (see **Body extraction** below). Because a
 filename is a JSON *key*, it passes through the identical `jesc()` escaper
 used for every string *value* (a single byte-wise gawk walker under
 `LC_ALL=C`, `NOTIFY_JSON_FUNC`) — keys and values are never escaped by two
@@ -1337,9 +1340,35 @@ in §7. When `overview_summary.txt` is absent (e.g. `--modules iis`), the
 Body falls back to the first 25 lines of the lexicographically-first
 `*_summary.txt` present (`log_warn`); with no summary file at all, to a
 literal placeholder line (`log_warn`) — never a blank Body, which would
-itself be a silent fallback (rule 1). The whole Body is separately hard-
-capped at 65536 bytes with a visible truncation marker on overflow; this is
-safe only because the authoritative file is always attached in full.
+itself be a silent fallback (rule 1).
+
+**HTML escape + `<pre>` wrap (both fallbacks included).** Once assembled,
+the WHOLE Body — envelope, KEY SUMMARY, attachments manifest (including
+filenames), footer, and either fallback above — is HTML-escaped end to end
+(`&` first, then `<`, then `>`, one `LC_ALL=C` gawk pass so only those
+three ASCII bytes are touched and no multi-byte UTF-8 sequence can be
+split) and wrapped in a minimal `<html><body><pre>...</pre></body></html>`
+skeleton: three structural tags, zero CSS/class/style/attributes. This is
+necessary, not decorative: the API renders `Body` as HTML unconditionally
+(see above), which would otherwise collapse the envelope's and KEY
+SUMMARY's space-padded, CJK-display-width column alignment into one
+unreadable line — `<pre>` is what makes that alignment survive HTML
+rendering. Escaping *first* is what makes this safe rather than merely
+readable: an attachment **filename** (attacker/operator-influenced; listed
+in the manifest above) containing `<`, `>`, or `&` would otherwise inject
+a live tag into the rendered mail (CWE-79) now that the API treats `Body`
+as markup — escaping turns it into inert visible text instead (e.g.
+`a<b>&c.txt` renders as the literal string `a&lt;b&gt;&amp;c.txt`). The
+65536-byte `NOTIFY_MAX_BODY_BYTES` cap now bounds the **final,
+escaped-and-wrapped** Body rather than the raw plaintext: the 40-byte
+wrapper (`<html><body><pre>\n` = 18 bytes + `\n</pre></body></html>\n` =
+22 bytes) is reserved *out of* the cap (budget = 65536 − 40 = 65496 for the
+escaped content), so the emitted Body can never exceed 65536 bytes and the
+closing `</pre></body></html>` can never be truncated away. On overflow,
+the escaped content is UTF-8-safe cut (same continuation-byte back-off
+idiom as before) and carries a visible final line
+`... [body truncated at 65536 bytes]` inside the `<pre>` — safe only
+because the authoritative file is always attached in full.
 
 **Attachment assembly.** Enumeration is a plain `shopt -s nullglob` bash
 glob over the run directory — never `find` (not in the sanctioned

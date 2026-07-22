@@ -9,7 +9,7 @@ Loaded when editing `tests/run_tests.sh` or any new test file.
 
 ## Single source of truth
 
-`tests/run_tests.sh` is the only regression suite. Currently 356 tests
+`tests/run_tests.sh` is the only regression suite. Currently 358 tests
 across thirteen sections (A access · B iis · C errors · D log_report ·
 E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
 J test-host/health · K timezone+core-function · L notification dispatch ·
@@ -42,7 +42,7 @@ Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
 - J01–J20  test-host filter + /health exclusion
 - K01–K16  timezone correction + core-function CATEGORY
   (K13/K14 intentionally vacant — gap preserved per commit history; K15/K16 continue past gap)
-- L01–L31  notification dispatch (`--notify`/`--notify-dry-run`/`--notify-attach`)
+- L01–L33  notification dispatch (`--notify`/`--notify-dry-run`/`--notify-attach`)
   — golden payload shape, attach-mode scoping, escaping round-trips, size
   caps, transport shim, fatal-on-failure; offline only, no test contacts a
   real endpoint. L23–L29: adversarial-review regression fixes — backslash
@@ -60,7 +60,20 @@ Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
   hid this (every earlier fixture used a single-day `--date`) is closed
   by driving `--from`/`--to` and `--days` through the full `--notify
   --notify-dry-run` CLI path and asserting the Subject/Analysis-range
-  render the complete window (L31)
+  render the complete window (L31). L32/L33: the HTML-Body fix (the SMTP
+  API renders `Body` as HTML unconditionally, which was collapsing the
+  plaintext report's column alignment to one line) — `notify_build_body`
+  now HTML-escapes the whole assembled body and wraps it in a minimal
+  `<html><body><pre>...</pre></body></html>` skeleton; L32 pins the
+  skeleton is present and balanced in the dry-run payload, L33 is the
+  CWE-79 regression proving an attachment filename containing `<`, `>`,
+  `&` renders HTML-escaped (`a&lt;b&gt;&amp;c.txt`) in the Body manifest,
+  never as a live tag, while the same raw filename legitimately continues
+  to appear as the un-HTML-escaped `Attachments` JSON key. L27 (UTF-8-safe
+  truncation boundary) was adjusted, not renumbered, to peel the new fixed
+  `<html><body><pre>`/`</pre></body></html>` wrapper off before applying
+  its pre-existing tail check — the wrapper is fixed-length ASCII, so the
+  boundary math itself is unchanged.
 - M01–M38  `--report-export` container integration — dependency
   conditionality (M01); the `--format csv`/access-module legality guards
   and their exact die text (M02–M04); the docker preflight gate, both its

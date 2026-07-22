@@ -7,7 +7,8 @@
 #   From        object            {DisplayName, Address}
 #   To          array of objects  [{DisplayName, Address}, ...]  (receivers.conf order)
 #   Subject     string            auto-derived, env-overridable
-#   Body        string            plain UTF-8; carries the run's KEY SUMMARY
+#   Body        string            minimal HTML (<pre>-wrapped, fully &<>-
+#                                  escaped) UTF-8; carries the run's KEY SUMMARY
 #   Attachments MAP               key = filename, value = base64 string
 # There are no isBodyHtml / cc / bcc / fileName / contentBase64 keys.
 #
@@ -605,19 +606,102 @@ END {
 }
 '
 
+# ---------------------------------------------------------------------------
+# NOTIFY_BODY_HTML_AWK -- HTML-escape + <pre>-wrap the assembled plaintext body
+# ---------------------------------------------------------------------------
+# The SMTP API renders Body as HTML unconditionally (no isBodyHtml toggle;
+# docs/design.md Sec3.4.7): plain newlines and the space-padded, CJK-
+# display-width column alignment the four printf blocks below build would
+# otherwise collapse to one unreadable line under HTML whitespace rules.
+# Wrapping the WHOLE body in a single <pre> preserves every space and
+# newline verbatim -- the only way that column alignment survives HTML
+# rendering -- but <pre> alone would still let an attacker/operator-
+# influenced attachment FILENAME (see the manifest block notify_build_body
+# renders below) inject a live tag (CWE-79), so the entire body is
+# HTML-escaped FIRST, before it is ever wrapped.
+NOTIFY_BODY_HTML_AWK='
+# ----------------------------------------------------------------------------
+# Purpose : HTML-escape the ENTIRE assembled plaintext body, UTF-8-safe cap
+#           it against a wrapper-reserved byte budget, then wrap it in a
+#           minimal <html><body><pre>...</pre></body></html> skeleton --
+#           the exact text notify_build_body writes back to OUT_FILE as the
+#           final HTML Body.
+# Input   : the plaintext body file the four printf blocks below already
+#           assembled (envelope + KEY SUMMARY + attachments manifest +
+#           footer), slurped whole via RS="^$" (one record; no assumption
+#           the file ends in LF).
+# Vars    : cap -- NOTIFY_MAX_BODY_BYTES, the hard ceiling on the FINAL
+#           (escaped + wrapped) Body, passed via -v.
+# Output  : the complete HTML Body on stdout, byte-precise.
+# Notes   : Escape order is LOAD-BEARING -- & FIRST, so the literal "&" of
+#           an entity THIS pass just emitted (e.g. the "&" in "&lt;") is
+#           never itself re-escaped into "&amp;lt;" -- then <, then >. Runs
+#           under LC_ALL=C so gsub matches only the three ASCII bytes < > &
+#           (all < 0x80); every CJK/multi-byte UTF-8 byte (>= 0x80) passes
+#           through untouched, so the escape pass itself can never split a
+#           sequence. Replacement literals are written "\\&amp;" etc.
+#           (backslash-backslash-amp;) because in a gsub replacement string
+#           an UNESCAPED & means "the matched text" -- \& is what inserts a
+#           literal ampersand character. The truncation idiom below (only
+#           reached when the ESCAPED text overflows the budget) is the same
+#           continuation-byte back-off the pre-HTML cap used: after
+#           computing a tentative cut length, keep backing off while the
+#           byte immediately AFTER the cut is a UTF-8 continuation byte
+#           (octal 200-277), so a multi-byte character is never split (a
+#           cut MAY still split an HTML entity like "&amp;" -- cosmetic
+#           only: entities are pure ASCII, so this never corrupts UTF-8 or
+#           produces invalid JSON once jesc() escapes this text later).
+#           head_w/tail_w are concatenated AFTER truncation and are never
+#           part of the truncatable region, so </pre></body></html> can
+#           never be cut away. Named head_w/tail_w, not open/close --
+#           "close" is a gawk builtin and would be a syntax error as a
+#           plain variable name.
+# ----------------------------------------------------------------------------
+BEGIN { RS = "^$" }
+{
+    content = $0
+    gsub(/&/, "\\&amp;", content)
+    gsub(/</, "\\&lt;",  content)
+    gsub(/>/, "\\&gt;",  content)
+
+    head_w = "<html><body><pre>\n"
+    tail_w = "\n</pre></body></html>\n"
+    budget = cap - length(head_w) - length(tail_w)
+    if (budget < 0) budget = 0
+
+    if (length(content) > budget) {
+        notice = "... [body truncated at " cap " bytes]\n"
+        keep = budget - length(notice)
+        if (keep < 0) keep = 0
+        while (keep > 0) {
+            nb = substr(content, keep + 1, 1)
+            if (nb < "\200" || nb > "\277") break
+            keep--
+        }
+        content = substr(content, 1, keep) notice
+    }
+
+    printf "%s%s%s", head_w, content, tail_w
+}
+'
+
 # notify_build_body DIR OUT_FILE
 #   Purpose : Render the four-block mail Body (envelope, KEY SUMMARY,
-#             attachment manifest, footer) to OUT_FILE.
+#             attachment manifest, footer) to OUT_FILE, then HTML-escape and
+#             <pre>-wrap the whole thing (see NOTIFY_BODY_HTML_AWK above)
+#             so the SMTP API's unconditional HTML rendering preserves the
+#             monospace column alignment those four blocks depend on.
 #   Args    : DIR — run directory (same one notify_collect_attachments read);
 #             OUT_FILE — output path.
 #   Output  : nothing on stdout. Writes OUT_FILE, mode 0600.
 #   Returns / Side effects : returns 0 on the ordinary path. Never dies for
 #             missing/absent SUMMARY CONTENT -- a body is always produced,
 #             see the fallback chain below -- but DOES die on a genuine I/O
-#             failure while measuring or truncating OUT_FILE (disk full,
-#             permissions, or an unopenable/misresolved path); a silently
-#             short or stale body would itself be the kind of silent
-#             fallback CLAUDE.md rule 1 forbids (FIX A/FIX H hardening).
+#             failure while measuring, escaping, or truncating OUT_FILE
+#             (disk full, permissions, or an unopenable/misresolved path); a
+#             silently short or stale body would itself be the kind of
+#             silent fallback CLAUDE.md rule 1 forbids (FIX A/FIX H
+#             hardening).
 #   Errors / Notes : Reads NOTIFY_ATTACH_TSV (already populated by
 #             notify_collect_attachments), RUN_TS, OPT_REGION, OPT_MODULES,
 #             OPT_NOTIFY_ATTACH, RUN_OUTPUT_DIR, INTERVAL_ARGS.
@@ -629,11 +713,24 @@ END {
 #                  line "(overview not run — showing <name>)"; log_warn.
 #               3. no *_summary.txt at all -> the literal line
 #                  "(no summary view available for this run)"; log_warn.
-#             Body is hard-capped at NOTIFY_MAX_BODY_BYTES; on overflow it is
-#             truncated with a visible final line
-#             "... [body truncated at 65536 bytes]" -- safe because the
-#             authoritative file is attached in full (attachments are never
-#             truncated).
+#             Both fallbacks flow through the SAME always-run HTML pass as
+#             the ordinary path -- there is no separate/unwrapped code path.
+#             Once assembled, the plaintext above is UNCONDITIONALLY (not
+#             only on overflow -- this is a behaviour change from the prior
+#             plain-text cap) HTML-escaped end to end (& then < then >,
+#             CWE-79: closes the injection hole an attacker/operator-
+#             influenced attachment FILENAME in the manifest block could
+#             otherwise open now that the API renders Body as HTML) and
+#             wrapped in a minimal <html><body><pre>...</pre></body></html>
+#             skeleton. The 64 KiB NOTIFY_MAX_BODY_BYTES cap now bounds the
+#             FINAL escaped+wrapped Body, with the 40-byte wrapper
+#             (<html><body><pre>\n + \n</pre></body></html>\n) reserved
+#             OUT OF the cap, not on top of it, so the emitted Body can
+#             never exceed the cap and the closing tags can never be cut
+#             away by truncation; on overflow the escaped content carries a
+#             visible final line "... [body truncated at 65536 bytes]"
+#             inside the <pre> -- safe because the authoritative file is
+#             attached in full (attachments are never truncated).
 notify_build_body() {
     local dir="$1" out="$2"
     local first last fb total_rows tag name bytes path
@@ -722,49 +819,19 @@ notify_build_body() {
         printf '%s on the analysis host.\n' "$dir"
     } >> "$out"
 
-    local body_bytes
-    body_bytes="$(_notify_file_bytes "$out")" \
-        || die "notify: could not measure body size (unopenable or misresolved path): $out"
-    if (( body_bytes > NOTIFY_MAX_BODY_BYTES )); then
-        log_warn "notify body exceeds ${NOTIFY_MAX_BODY_BYTES} bytes ($body_bytes); truncating (the full report remains attached)"
-        local trunc_tmp="${out}.trunc"
-        # FIX A: $out crosses to gawk as an OPERAND, never `-v` (same reason
-        # as _notify_file_bytes above). FIX D: substr() cuts by BYTE offset
-        # under LC_ALL=C and can slice a multi-byte UTF-8 sequence in half;
-        # jesc() (the JSON escaper applied later, when this body is embedded
-        # in the payload) passes bytes >= 0x80 through verbatim, so a
-        # mid-sequence cut would land invalid UTF-8 inside a JSON string.
-        # Fix: after computing the tentative cut length `keep`, inspect the
-        # byte immediately AFTER it -- content[keep+1], the first byte that
-        # would be DISCARDED. If that byte is a UTF-8 continuation byte
-        # (10xxxxxx, 0x80-0xBF / octal 200-277), the cut lands inside a
-        # sequence, so shrink `keep` by one and re-check. This is the
-        # correct side to probe: the LAST *kept* byte of a COMPLETE
-        # multi-byte character is legitimately a continuation byte too
-        # (every non-leading byte of a UTF-8 sequence is one), so checking
-        # the kept side instead would misfire on every clean boundary that
-        # happens to end in one.
-        if ! LC_ALL=C gawk -v cap="$NOTIFY_MAX_BODY_BYTES" '
-            BEGIN { RS = "^$" }
-            {
-                content = $0
-                notice = "... [body truncated at " cap " bytes]\n"
-                keep = cap - length(notice)
-                if (keep < 0) keep = 0
-                while (keep > 0) {
-                    nb = substr(content, keep + 1, 1)
-                    if (nb < "\200" || nb > "\277") break
-                    keep--
-                }
-                printf "%s", substr(content, 1, keep) notice
-            }
-        ' "$out" > "$trunc_tmp"; then
-            rm -f "$trunc_tmp"
-            die "notify: failed to truncate oversized body: $out"
-        fi
-        mv "$trunc_tmp" "$out" || die "notify: failed to install truncated body: $out"
-        chmod 600 "$out"        || die "notify: failed to chmod truncated body: $out"
+    # Post-process (ALWAYS runs -- not conditional on size, unlike the old
+    # plaintext-only cap; see NOTIFY_BODY_HTML_AWK above for the full
+    # escape/cap/wrap mechanism and why). FIX A: $out crosses to gawk as an
+    # OPERAND, never `-v` (same reason as _notify_file_bytes above -- a
+    # backslash in the path, e.g. an --output-dir under 'C:\reports', must
+    # never be silently rewritten by -v's C-string-escape processing).
+    local html_tmp="${out}.html"
+    if ! LC_ALL=C gawk -v cap="$NOTIFY_MAX_BODY_BYTES" "$NOTIFY_BODY_HTML_AWK" "$out" > "$html_tmp"; then
+        rm -f "$html_tmp"
+        die "notify: failed to HTML-escape/wrap body: $out"
     fi
+    mv "$html_tmp" "$out" || die "notify: failed to install HTML body: $out"
+    chmod 600 "$out"      || die "notify: failed to chmod HTML body: $out"
     return 0
 }
 

@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `--notify` mail `Body` is now minimal HTML
+  (`<html><body><pre>...</pre></body></html>`) instead of bare plaintext:
+  the SMTP API renders `Body` as HTML unconditionally (no `isBodyHtml`
+  toggle exists in the contract — see the "Security" entry below), which
+  was collapsing the report's space-padded, CJK-display-width column
+  alignment and every newline into one unreadable line. `<pre>` is what
+  makes that alignment survive HTML rendering; the payload contract, the
+  Subject, and the KEY SUMMARY content itself are all unchanged. The
+  65536-byte `NOTIFY_MAX_BODY_BYTES` cap now bounds the escaped-and-wrapped
+  Body rather than the raw plaintext, with the 40-byte wrapper
+  (`<html><body><pre>\n` + `\n</pre></body></html>\n`) reserved out of the
+  cap so the closing tags can never be truncated away.
+  `docs/usage.md`/`usage.zh-TW.md` and `docs/design.md`/`design.zh-TW.md`
+  §3.4.7 updated. Tests: 356 -> 358 (L32 pins the HTML skeleton; L27
+  adjusted to peel the new wrapper before its pre-existing UTF-8-boundary
+  check).
+
+### Security
+- `--notify` `Body` is now fully HTML-escaped (`&` first, then `<`, then
+  `>`; one `LC_ALL=C` gawk pass over the WHOLE assembled body) before
+  being wrapped in `<pre>`, closing an HTML-injection hole (CWE-79) the
+  HTML-rendering change above would otherwise have opened: an attachment
+  **filename** is attacker/operator-influenced and appears verbatim in
+  the Body's attachments manifest, so an unescaped `<`, `>`, or `&` in a
+  filename could inject a live tag into the rendered mail. Escaping runs
+  before wrapping and before the 65536-byte cap is applied, so truncation
+  can never expose an unescaped tag either. Test L33 regression-pins a
+  filename containing `<`, `>`, and `&` rendering as the inert text
+  `a&lt;b&gt;&amp;c.txt` in the Body — never as a live tag — while the
+  SAME raw filename continues to appear, correctly, as the un-HTML-escaped
+  `Attachments` JSON key (a filename is a JSON key there, `jesc()`-escaped
+  only).
+
+---
+
 ### Added
 - `--report-export` flag on `bin/log_report.sh` — runs the independent
   `report-export` Docker image against this run's own `access_detail.csv`

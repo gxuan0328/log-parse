@@ -4,7 +4,7 @@
 > 比對存取 Token、揭露 IIS 異常、追蹤應用程式生命週期事件，
 > 涵蓋兩個區域共六台 API / APP 伺服器。
 
-[![Tests](https://img.shields.io/badge/tests-356%2F356-brightgreen)](tests/run_tests.sh)
+[![Tests](https://img.shields.io/badge/tests-358%2F358-brightgreen)](tests/run_tests.sh)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bash 4+](https://img.shields.io/badge/bash-4%2B-lightgrey)](https://www.gnu.org/software/bash/)
 
@@ -113,7 +113,7 @@ bash bin/analyze_iis.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG 
 │   ├── sample-outputs/      範例輸出報告
 │   └── *.sh                 情境驅動腳本
 ├── tests/
-│   └── run_tests.sh         356 項功能測試套件
+│   └── run_tests.sh         358 項功能測試套件
 ├── report-export/           獨立 Python 子工具：週報 xlsx 匯出
 │   ├── src/report_export/   套件本體（純函式核心 + I/O 邊界）
 │   ├── docs/                design.md · usage.md · data-fidelity.md（zh-TW）

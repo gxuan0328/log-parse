@@ -1201,7 +1201,10 @@ POST <url>   header: Content-Type: application/json
 對應一個元素，順序與檔案內順序一致；`Attachments` 為**key-value 對照
 表**——key 為附件**檔名**，value 為其**base64 字串**——並非物件陣列。
 不存在 `isBodyHtml`、`cc`、`bcc`、`fileName`、`contentBase64` 任何一個
-鍵；出現其中任何一個皆屬缺陷。由於檔名本身即是一個 JSON *key*，它會
+鍵；出現其中任何一個皆屬缺陷——該 API 一律將 `Body` **無條件**渲染為
+HTML，因此本就沒有任何開關可切換；log-parse 自身的職責僅是在這唯一的
+字串欄位中，產出合法且最小化的 HTML（見下方「Body 擷取」）。由於檔名
+本身即是一個 JSON *key*，它會
 經過與每個字串 *value* 完全相同的 `jesc()` 跳脫函式（單一 byte-wise
 gawk walker，執行於 `LC_ALL=C` 之下，即 `NOTIFY_JSON_FUNC`）——key 與
 value 從不透過兩條不同的程式碼路徑跳脫（CWE-116/CWE-91 之緩解）。
@@ -1232,9 +1235,31 @@ payload 的關鍵：單日範圍渲染為
 `overview_summary.txt` 不存在時（例如 `--modules iis`），Body 會退回
 顯示字典序最前的 `*_summary.txt` 之前 25 行（`log_warn`）；若完全沒有
 任何 `*_summary.txt`，則退回一行文字提示（`log_warn`）——Body 永不為
-空，空白本身即是一種靜默回退（rule 1 所禁止）。整個 Body 另外獨立上限
-為 65536 bytes，超出時附上明顯的截斷提示——此舉安全，因為權威檔案本身
-永遠會完整附上。
+空，空白本身即是一種靜默回退（rule 1 所禁止）。
+
+**HTML 跳脫 + `<pre>` 包裹（兩種退回情境亦包含在內）。** 組裝完成後，
+整個 Body——信封資訊、KEY SUMMARY、附件清單（含檔名）、頁尾，以及上述
+任一退回情境——會經過首尾一致的 HTML 跳脫（依序為 `&`、`<`、`>`，單一
+`LC_ALL=C` gawk pass，僅觸及這三個 ASCII 位元組，任何多位元組 UTF-8
+序列都不會被切開），並包裹於最小化的
+`<html><body><pre>...</pre></body></html>` 骨架中：僅三個結構標籤，
+不含任何 CSS/class/style/attribute。此舉是必要而非裝飾性的：該 API
+一律將 `Body` 渲染為 HTML（見上文），若不如此處理，信封資訊與 KEY
+SUMMARY 賴以呈現的空格填補、CJK 顯示寬度欄位對齊，將被摺疊為無法閱讀
+的一行——`<pre>` 正是讓此欄位對齊得以在 HTML 渲染下存活的關鍵。先跳脫
+才是讓此舉「安全」而非僅「可讀」的關鍵：附件**檔名**（可能受攻擊者/
+操作者影響，列示於上方清單中）若含有 `<`、`>` 或 `&`，在 API 已將
+`Body` 視為標記語言的情況下，將可能注入實際存在的標籤（CWE-79）——
+跳脫後則轉為不具作用的純文字（例如 `a<b>&c.txt` 會顯示為字面字串
+`a&lt;b&gt;&amp;c.txt`）。65536 bytes 的 `NOTIFY_MAX_BODY_BYTES` 上限，
+如今限制的是**最終、已跳脫並包裹**的 Body，而非原始純文字：40 bytes
+的骨架開銷（`<html><body><pre>\n` 為 18 bytes + `\n</pre></body></html>\n`
+為 22 bytes）由上限「內部」保留（跳脫內容可用預算 = 65536 − 40 =
+65496），因此送出的 Body 絕不會超過 65536 bytes，且結尾的
+`</pre></body></html>` 絕不會被截斷切除。超出上限時，已跳脫的內容會
+以與先前相同的 UTF-8 安全延續位元組回退演算法截斷，並在 `<pre>` 內附上
+明顯的最終提示行 `... [body truncated at 65536 bytes]`——此舉安全，
+僅因為權威檔案本身永遠會完整附上。
 
 **附件組裝。** 列舉方式為單純的 `shopt -s nullglob` bash glob，走訪執行
 目錄——從不使用 `find`（不在核可的 `{bash gawk sort date mktemp}`
