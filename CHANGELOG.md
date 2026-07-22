@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing pending — the most recent changes shipped in v2.2.0 below.
+
+## [2.2.0] — 2026-07-22
+
 ### Changed
 - `--notify` mail `Body` is now minimal HTML
   (`<html><body><pre>...</pre></body></html>`) instead of bare plaintext:
@@ -306,6 +310,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `production/output`; an operator may substitute any absolute path
   for `production/`. `report-export/.gitignore` gains a `production/`
   rule (real, root-written runtime data — never committed).
+
+## [2.1.0] — 2026-07-15
+
+### Added
+- `analyze_access` — `BIRTHDAY` appended as the new last detail column
+  (text/tsv/csv), decoded from the report-url JWT `dob` claim via a new
+  pure-gawk base64url decoder (`JWT_DOB_FUNC`, `lib/csv_utils.sh`);
+  `_run_correlate`'s `CORRELATE_AWK` pass now runs under `LC_ALL=C` so
+  `sprintf("%c", byte)` decodes byte-exact regardless of the invoking shell's
+  locale. `BIRTHDAY` is emitted VERBATIM as `YYYYMMDD` with a `-` sentinel for
+  an absent/empty/malformed token (fail-loud: never silently coerced — see
+  `docs/design.md` §3.1.5). Additive last column — `PATIENT_ID_AES` stays
+  field 13, `BIRTHDAY` is the new field 14 — non-breaking (MINOR). The JWT
+  signature is **not** verified (payload read for reporting only, never
+  trusted for auth). PII note: `BIRTHDAY` is plaintext date-of-birth, unlike
+  the AES-encrypted `PATIENT_ID_AES`; `analyze_access.sh` remains an
+  internal, authorized, read-only tool.
+  Tests 267 → 275 (+8: A45–A52).
+
+## [2.0.0] — 2026-07-14
+
+### Added
 - `analyze_overview` — single-day 存取紀錄橫條圖 (每小時) bar chart rendered
   after 核心功能存取合計 in 總體概況 (global) and after each per-region
   category block in 分區別, using `agg_access_records` HOUR rows emitted by
@@ -349,21 +375,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   band boundaries): `trunc(NORMAL/TOTAL*100)` >=90 → 正常 — 系統整體運作健康;
   >=70 → 注意 — 存在異常存取，建議持續監控; <70 → 警告 — 存取異常比例偏高，
   建議立即調查; TOTAL=0 → 無資料 — 本期間無存取關聯記錄.
-- `analyze_access` — `BIRTHDAY` appended as the new last detail column
-  (text/tsv/csv), decoded from the report-url JWT `dob` claim via a new
-  pure-gawk base64url decoder (`JWT_DOB_FUNC`, `lib/csv_utils.sh`);
-  `_run_correlate`'s `CORRELATE_AWK` pass now runs under `LC_ALL=C` so
-  `sprintf("%c", byte)` decodes byte-exact regardless of the invoking shell's
-  locale. `BIRTHDAY` is emitted VERBATIM as `YYYYMMDD` with a `-` sentinel for
-  an absent/empty/malformed token (fail-loud: never silently coerced — see
-  `docs/design.md` §3.1.5). Additive last column — `PATIENT_ID_AES` stays
-  field 13, `BIRTHDAY` is the new field 14 — non-breaking (MINOR). The JWT
-  signature is **not** verified (payload read for reporting only, never
-  trusted for auth). PII note: `BIRTHDAY` is plaintext date-of-birth, unlike
-  the AES-encrypted `PATIENT_ID_AES`; `analyze_access.sh` remains an
-  internal, authorized, read-only tool.
-  Tests 267 → 275 (+8: A45–A52).
-
 ### Changed (breaking)
 - `lib/output_utils.sh` + all analyzers — persisted file PATH shape changed:
   `<base>/<module>_<kind>_<YYYYMMDD_HHMMSS>.<ext>` →
@@ -384,11 +395,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Per-run file-count invariant rises by 1 wherever access participates:
   D17/F08=7, F15/I12=6, F17=8. `--emit-stats` runs write nothing.
 
-### Added — pure, single-source
-  verdict mapping (encapsulates trunc + no-data guard; unit-testable at exact
-  band boundaries): `trunc(NORMAL/TOTAL*100)` >=90 → 正常 — 系統整體運作健康;
-  >=70 → 注意 — 存在異常存取，建議持續監控; <70 → 警告 — 存取異常比例偏高，
-  建議立即調查; TOTAL=0 → 無資料 — 本期間無存取關聯記錄.
+### Added
 - `analyze_iis --view summary` — Top 端點 (佔比 · 平均回應時間): each top-N
   endpoint now shows per-endpoint average response time pooled over the
   per-server `--top N` emitted rows. Caveat (GAP-3): avg/pct/count cover the
@@ -843,5 +850,8 @@ Tests: 258/258.
 - No silent error suppression in correlation paths.
 - Regions config validated before use; missing config aborts with explicit error.
 
-[Unreleased]: https://example.com/log-parse/compare/v1.0.0...HEAD
+[Unreleased]: https://example.com/log-parse/compare/v2.2.0...HEAD
+[2.2.0]: https://example.com/log-parse/compare/v2.1.0...v2.2.0
+[2.1.0]: https://example.com/log-parse/compare/v2.0.0...v2.1.0
+[2.0.0]: https://example.com/log-parse/compare/v1.0.0...v2.0.0
 [1.0.0]: https://example.com/log-parse/releases/tag/v1.0.0
