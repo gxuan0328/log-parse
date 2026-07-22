@@ -86,6 +86,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of *either* `--report-export` or `--notify` (previously only ahead of
   `--notify`) — `init_tmpdir` is not idempotent, so it must fire exactly
   once regardless of which of the two (or both) flags are set.
+- **`--report-export` now runs its container as the invoking user by
+  default** (`--user ${UID}:${GROUPS[0]}`), reversing this same
+  [Unreleased] feature's initial default of no `--user` at all (root) —
+  see the "Security" entry below for the shipped behaviour, recorded
+  here as a distinct entry since the reversal is itself a deliberate,
+  reviewed design change, not a bug fix. Why: `--report-export
+  --notify` reads the produced xlsx back on the host side to
+  base64-attach it, and a root-owned mode-`0600` deliverable — what the
+  image writes given no `--user` at all — is unreadable by the
+  typically non-root user invoking `log_report.sh`, silently defeating
+  the attach step (or forcing `log_report.sh` itself to run as root).
+  `LOG_PARSE_REPORT_EXPORT_USER` keeps both escape hatches: a numeric
+  `uid[:gid]` override, and a new `root`/`-` opt-out sentinel that
+  restores the original root-runs-by-default behaviour verbatim for an
+  operator who explicitly wants it. `docs/usage.md` / `docs/design.md`
+  (EN/zh-TW) updated throughout §4.10.7: rendered command examples, the
+  environment-variable table, the CWE-269/CWE-88 security-table rows,
+  and the failure-triage `dirs_perm` row. Tests: 352 -> 356 (M08's
+  CWE-88 probe moved off `'root'`, now a legal opt-out value, onto
+  `--privileged`; M17/M17b re-target the default/override/opt-out
+  matrix; new M35-M38 run the real `report-export:1.0.0` image
+  end-to-end, guarded to skip rather than fail when `docker` is
+  unavailable).
+- `examples/sample-logs/LUNG-CANCER-REPORT-LOG`'s `--date 2026-05-21`
+  fixture: the 6 `STATUS=NORMAL` access rows on app servers
+  `10.1.72.35`/`10.1.72.36` now carry realistic, reference-map-resolving
+  `CLIENT_IP`/`HOSP_ID`/`PRSN_ID` values (columns 5-7, plus the matching
+  `ISSUE_TOKEN` JWT claims) instead of blank ones, so `--report-export`
+  can be exercised end-to-end against this toolkit's own bundled,
+  version-controlled data (see `docs/usage.md` "Report export", "Try it
+  end-to-end against the bundled sample"). Previously these fields were
+  blank on every row, which `report-export` itself rejects
+  (`container_input`) once staged — the bundled fixture could not
+  previously demonstrate a real `--report-export` run at all.
+  `analyze_access`'s own `STATUS` classification is unaffected:
+  NORMAL/ORPHAN/UNVERIFIED remain 6/9 for the date.
 
 ### Security
 - `docker` joins `curl`/`base64` as a **third** lazily-gated optional
@@ -96,14 +132,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unaffected on every other workflow.
 - The `report-export` container runs with `--network none` (no
   exfiltration path for the PII the CSV carries) and, by default,
-  **no `--user`** — it runs as root, matching the image's own
-  no-`USER`-directive design and the exact command an operator would
-  type by hand. Files it writes under `production/state` and
-  `production/output` are therefore root-owned by default (`sudo`
-  required to remove/edit them from the host side) — the same trade-off
-  `report-export`'s own docs already record for manual runs. An operator
-  may opt into a specific host uid via `LOG_PARSE_REPORT_EXPORT_USER`
-  (whitelisted `uid[:gid]`); it is never forced.
+  **`--user ${UID}:${GROUPS[0]}`** — the invoking host user, not root
+  (bash builtins only, no `id` dependency; see the "Changed" entry
+  above for why this was reversed mid-development from an initial
+  no-`--user`/root default). Files it writes under `production/state`
+  and `production/output` are therefore owned by, and readable by, that
+  same invoking user by default — required for `--notify` to be able to
+  base64-attach the deliverable back. An operator may override to a
+  different numeric `uid[:gid]`, or opt OUT of `--user` entirely with
+  the sentinel `root` (case-insensitive) or `-`, restoring root-owned
+  output and the `sudo`-to-edit trade-off `report-export`'s own docs
+  record for manual runs; both are validated by the same whitelist gate
+  pre-analysis.
 - `production/state` accumulates this feature's PII-derived records
   (`CLIENT_IP`, `HOSP_ID`, `PRSN_ID`, `PATIENT_ID_AES`, `BIRTHDAY` via
   the staged CSV) **indefinitely**, independent of any single run's

@@ -34,12 +34,19 @@
 # verbatim, in the "Report export" section of docs/usage.md):
 #   LOG_PARSE_REPORT_EXPORT_DOCKER_BIN  default: docker
 #   LOG_PARSE_REPORT_EXPORT_IMAGE       default: report-export:1.0.0
-#   LOG_PARSE_REPORT_EXPORT_USER        default: (empty) -- OPT-IN. Empty
-#     means no `--user` argument is emitted at all (the rendered docker
-#     command is then EXACTLY the owner's literal command line and the
-#     container runs as root, matching the image's own no-USER-directive
-#     design). A non-empty value must match ^[0-9]+(:[0-9]+)?$ and is passed
-#     verbatim to `docker run --user`.
+#   LOG_PARSE_REPORT_EXPORT_USER        default: (empty) -- REVERSAL OF
+#     ORCHESTRATOR OVERRIDE #1: empty now means `--user ${UID}:${GROUPS[0]}`
+#     IS emitted (bash builtins only, no `id` dependency), NOT opt-out --
+#     the integrated --report-export + --notify flow needs the invoking,
+#     typically non-root, user to be able to READ the produced xlsx back to
+#     base64-attach it, and the container (the image has no USER directive)
+#     otherwise writes it root-owned mode 0600, unreadable by that user. A
+#     value matching ^[0-9]+(:[0-9]+)?$ overrides the default uid:gid,
+#     verbatim. The sentinel `root` (case-insensitive) or `-` opts OUT of
+#     --user entirely -- the container then runs as root exactly as the
+#     pre-reversal default did; the operator who chooses this then owns the
+#     root-owned-file trade-off and must run log_report.sh itself as root
+#     for the attachment step to read the deliverable back.
 #
 # Public function surface (call order mirrors report_export_run's sequence):
 #   report_export_preflight, report_export_assert_image_ref,
@@ -99,8 +106,20 @@ REPORT_EXPORT_DELIVERABLE_PREFIX='/data/output/'
 REPORT_EXPORT_IMAGE_RE='^[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]+)?(/[A-Za-z0-9._-]+)*(:[A-Za-z0-9._-]+)?(@sha256:[a-f0-9]{64})?$'
 
 # --user spec whitelist: digits only, optional :gid. Emptiness is handled
-# separately by report_export_assert_user_spec (opt-out is legal).
+# separately by report_export_assert_user_spec: it no longer means opt-out
+# (REVERSAL OF ORCHESTRATOR OVERRIDE #1 -- see the file header and
+# report_export_invoke's docblock) -- it now means the DEFAULT, --user
+# <uid>:<gid> of the invoking user. Opt-out is instead the explicit
+# sentinel below.
 REPORT_EXPORT_USER_RE='^[0-9]+(:[0-9]+)?$'
+
+# --user opt-out sentinel: the literal 'root' (case-insensitive) or a bare
+# '-'. Either means "emit NO --user argument at all" (container runs as
+# root, exactly the pre-reversal default) -- a deliberate, explicit choice
+# by the operator, never the toolkit's own default. Anchored, so this can
+# never accidentally also match a legal uid[:gid] (digits-only) or the
+# empty-string default.
+REPORT_EXPORT_USER_OPTOUT_RE='^(-|[Rr][Oo][Oo][Tt])$'
 
 # ---------------------------------------------------------------------------
 # Cross-call state (sanctioned; mirrors the NOTIFY_* style in lib/notify_utils.sh)
@@ -121,8 +140,10 @@ _RE_START_EPOCH=""
 # report_export_preflight
 #   Purpose : Verify docker is present and the report-export image is built/
 #             pulled and inspectable, BEFORE any analyzer subprocess runs.
-#             Also validates the image ref and the OPT-IN user spec here, so
-#             both surface pre-analysis. Idempotent (REPORT_EXPORT_PREFLIGHT_DONE).
+#             Also validates the image ref and the user spec here (empty is
+#             now the DEFAULT --user, not opt-out; see
+#             report_export_assert_user_spec), so both surface pre-analysis.
+#             Idempotent (REPORT_EXPORT_PREFLIGHT_DONE).
 #   Args    : none.
 #   Output  : nothing on success; two ERROR lines on stderr when docker is
 #             missing (see docs/usage.md "Report export").
@@ -159,17 +180,18 @@ report_export_preflight() {
     local image="${LOG_PARSE_REPORT_EXPORT_IMAGE:-$REPORT_EXPORT_DEFAULT_IMAGE}"
     report_export_assert_image_ref "$image"
 
-    # OPT-IN --user (ORCHESTRATOR OVERRIDE: default is empty -- no --user is
-    # emitted and the container runs as root, matching the owner's literal
-    # docker command line; see report_export_invoke). Validated here,
-    # pre-analysis, exactly like the image ref, so a typo'd override is
-    # never discovered only after a multi-minute analysis burn. Not part of
-    # the design spec's verbatim report_export_preflight body (which predates
-    # the override); added per the override's own instruction to "adjust ...
-    # the spec's ... uid decision ... accordingly" and per §11.1 row 4's own
-    # requirement that an invalid user spec is detected at parse_args
-    # (pre-analysis) -- the only pre-analysis call site available is this
-    # function's two call sites.
+    # --user (DEFAULT since the REVERSAL OF ORCHESTRATOR OVERRIDE #1 -- see
+    # the file header's env-var table and report_export_invoke's docblock
+    # for the full rationale): empty now means the DEFAULT --user
+    # <uid>:<gid> of the invoking user, NOT opt-out. Validated here,
+    # pre-analysis, exactly like the image ref, so a typo'd override -- or
+    # an unrecognised opt-out spelling -- is never discovered only after a
+    # multi-minute analysis burn. Not part of the design spec's verbatim
+    # report_export_preflight body (which predates both the override and
+    # its reversal); the pre-analysis-validation requirement itself is
+    # unchanged by the reversal (per §11.1 row 4: an invalid user spec must
+    # be detected at parse_args) -- the only pre-analysis call site
+    # available is this function's two call sites.
     report_export_assert_user_spec "${LOG_PARSE_REPORT_EXPORT_USER:-}"
 
     # Daemon reachability AND image presence in one round trip. Local,
@@ -200,27 +222,39 @@ report_export_assert_image_ref() {
 }
 
 # report_export_assert_user_spec SPEC
-#   Purpose : Fail-fast guard that SPEC is either empty (opt out of --user
-#             entirely -- the default) or a plain uid[:gid] docker accepts.
+#   Purpose : Fail-fast guard that SPEC is one of exactly three legal
+#             shapes: empty (the DEFAULT -- report_export_invoke will emit
+#             --user <uid>:<gid> of the invoking user), a plain uid[:gid]
+#             docker accepts (an explicit override), or the opt-out
+#             sentinel ('root', case-insensitive, or '-') that suppresses
+#             --user entirely. Anything else dies.
 #   Args    : SPEC — LOG_PARSE_REPORT_EXPORT_USER value (may be "").
 #   Output  : nothing on success.
 #   Returns / Side effects : never returns on failure -- exits via die().
-#   Errors / Notes : ORCHESTRATOR OVERRIDE: LOG_PARSE_REPORT_EXPORT_USER is
-#             OPT-IN. Empty (the default) means "no --user argument at all"
-#             -- the container runs as root, exactly the owner's literal
-#             docker command line and the image's own no-USER-directive
-#             design (report-export/docker/Dockerfile has no USER
-#             instruction; verified in-repo). A non-empty value must match
+#   Errors / Notes : REVERSAL OF ORCHESTRATOR OVERRIDE #1 (see the file
+#             header's env-var table and report_export_invoke's docblock for
+#             the full rationale): LOG_PARSE_REPORT_EXPORT_USER is no longer
+#             opt-in. Empty now means the DEFAULT --user <uid>:<gid> -- the
+#             integrated --report-export + --notify flow needs the
+#             invoking, typically non-root, user to be able to READ the
+#             produced xlsx back in order to base64-attach it, and a
+#             root-owned mode-0600 deliverable (what the image writes with
+#             no --user at all, since report-export/docker/Dockerfile has
+#             no USER instruction; verified in-repo) blocks exactly that. A
+#             non-empty, non-sentinel value must match
 #             ^[0-9]+(:[0-9]+)?$ (digits only; no name lookup, no shell
 #             metacharacter) before report_export_invoke may pass it to
 #             `docker run --user`, closing the same CWE-88 flag-injection
 #             vector as the image ref (a value starting with '-' could
-#             otherwise smuggle an extra docker flag after --user).
+#             otherwise smuggle an extra docker flag after --user) -- this
+#             is also exactly why the opt-out spelling is a fixed literal
+#             ('root' / '-'), never an arbitrary string.
 report_export_assert_user_spec() {
     local spec="$1"
     if [[ -z "$spec" ]]; then return 0; fi
+    if [[ "$spec" =~ $REPORT_EXPORT_USER_OPTOUT_RE ]]; then return 0; fi
     if [[ ! "$spec" =~ $REPORT_EXPORT_USER_RE ]]; then
-        die "report-export: invalid LOG_PARSE_REPORT_EXPORT_USER: '$spec'"
+        die "report-export: invalid LOG_PARSE_REPORT_EXPORT_USER: '$spec' (expected empty for the default --user <uid>:<gid>, digits[:digits] to override it, or 'root'/'-' to opt out of --user entirely)"
     fi
 }
 
@@ -679,16 +713,31 @@ report_export_stage_input() {
 #   Returns / Side effects : sets _RE_START_EPOCH immediately before exec.
 #             Returns 0 on container rc 0; dies (translating the container's
 #             exit code, §11.1 rows 11-16) on any non-zero rc.
-#   Errors / Notes : ORCHESTRATOR OVERRIDE (supersedes the design spec's
-#             original uid decision): LOG_PARSE_REPORT_EXPORT_USER is
-#             OPT-IN. Default is empty -- no `--user` argument is emitted at
-#             all, and the rendered command is EXACTLY the owner's literal
-#             docker command line. Only when the operator explicitly sets a
-#             non-empty, already-whitelisted (report_export_assert_user_spec,
-#             enforced in report_export_preflight) value is `--user <spec>`
-#             appended. `--network none` denies the container any network
-#             path (defence in depth: no exfiltration route for the PII this
-#             CSV carries). `-v` (not `--mount`) per the owner's own command
+#   Errors / Notes : REVERSAL OF ORCHESTRATOR OVERRIDE #1 (supersedes the
+#             override that itself superseded the design spec's original uid
+#             decision -- see the file header's env-var table and
+#             report_export_assert_user_spec's docblock for the full
+#             rationale): LOG_PARSE_REPORT_EXPORT_USER is no longer opt-in.
+#             DEFAULT (spec empty): `--user ${UID}:${GROUPS[0]}` is emitted
+#             -- bash builtins only, no new `id` dependency -- so the
+#             container writes the xlsx deliverable owned by the invoking
+#             user, not root; the integrated --report-export + --notify
+#             flow needs that same invoking user to READ the deliverable
+#             back to base64-attach it (notify_send), and a root-owned
+#             mode-0600 file (what the image writes with no --user at all,
+#             since report-export/docker/Dockerfile has no USER instruction)
+#             blocks exactly that read. OVERRIDE (spec is a whitelisted
+#             uid[:gid], enforced by report_export_assert_user_spec via
+#             report_export_preflight): that value is passed verbatim.
+#             OPT-OUT (spec is the sentinel 'root', case-insensitive, or
+#             '-'): NO `--user` argument is emitted at all -- the container
+#             runs as root exactly as the pre-reversal default did, and the
+#             operator who chose this then owns the resulting root-owned
+#             deliverable/production-tree trade-off (log_report.sh itself
+#             must then also run as root for the attachment step to read
+#             the file back). `--network none` denies the container any
+#             network path (defence in depth: no exfiltration route for the
+#             PII this CSV carries). `-v` (not `--mount`) per the owner's own command
 #             line; every host path was already absolutised and
 #             colon-checked by report_export_prepare_dirs. The full argv is
 #             logged via log_info BEFORE invocation (the "argv logged above"
@@ -713,7 +762,25 @@ report_export_invoke() {
         -v "${REPORT_EXPORT_STATE_DIR}:/data/state"
         -v "${REPORT_EXPORT_OUT_DIR}:/data/output"
     )
-    if [[ -n "$re_user" ]]; then
+    if [[ -z "$re_user" ]]; then
+        # DEFAULT (reverses ORCHESTRATOR OVERRIDE #1 -- see the file header
+        # and this function's own docblock): emit --user <uid>:<gid> from
+        # the bash builtins ${UID}/${GROUPS[0]} -- no new `id` dependency.
+        # The container then writes the deliverable owned by the invoking
+        # user, not root, so the base64-attach step in notify_send can read
+        # it back.
+        _RE_ARGV+=(--user "${UID}:${GROUPS[0]}")
+    elif [[ "$re_user" =~ $REPORT_EXPORT_USER_OPTOUT_RE ]]; then
+        # OPT-OUT ('root'/'-', already validated by
+        # report_export_assert_user_spec): emit no --user at all; the
+        # container runs as root and the operator who chose this owns the
+        # resulting root-owned-file trade-off (must then run log_report.sh
+        # itself as root for the attachment step to read the deliverable
+        # back).
+        :
+    else
+        # OVERRIDE: already whitelisted by report_export_assert_user_spec
+        # (^[0-9]+(:[0-9]+)?$) -- use verbatim.
         _RE_ARGV+=(--user "$re_user")
     fi
     _RE_ARGV+=("$image" "/data/input/week-${REPORT_EXPORT_WEEK_DATE}.csv")

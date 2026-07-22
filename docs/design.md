@@ -1840,6 +1840,36 @@ and safe because `report-export` keys idempotency on `input_sha256` and
 deduplicates on `REQUEST_ID`, so re-feeding identical or updated content
 is always semantically harmless.
 
+**Verified against the bundled sample.** The repository's own
+`examples/sample-logs/LUNG-CANCER-REPORT-LOG` dataset for `--date
+2026-05-21` is not merely schema-valid but semantically realistic: the
+six `STATUS=NORMAL` access rows (app servers `10.1.72.35`/`10.1.72.36`)
+carry populated, reference-map-resolving `CLIENT_IP`/`HOSP_ID`/
+`PRSN_ID` values (CSV columns 5-7, §3.1.2, plus the matching
+`ISSUE_TOKEN` JWT claims), rather than the blank fields that dataset
+originally shipped with. `--report-export --date 2026-05-21 --format
+csv` against this fixture is therefore a genuine end-to-end exercise of
+every mechanism in this section — staging, the real
+`report-export:1.0.0` image, and deliverable selection — not merely an
+offline shim proof; verified: the container reports `normal=6,
+unique_ips=5, unmapped_hosp_ids=0`, and its 院所分析 sheet resolves
+five distinct hospital names from those five IPs. This does not change
+`analyze_access`'s own `STATUS` classification for the date —
+NORMAL/ORPHAN/UNVERIFIED remain 6/9 (§3.1.4) — only the previously-blank
+`CLIENT_IP`/`HOSP_ID`/`PRSN_ID` fields on the already-`NORMAL` rows.
+Before this backfill, the bundled fixture's `NORMAL` rows had these
+fields blank — legal input to `analyze_access` itself, which never
+requires them non-empty for a `NORMAL` classification (§3.1.4), but
+rejected by `report-export`'s own input validation once staged
+(`container_input`, exit 2, §4.10.6): a connection record with no
+resolvable client IP or hospital code is not one `report-export` can
+meaningfully report on. The bundled sample could therefore prove every
+mechanism in this section up to and including staging, but not a real
+end-to-end `--report-export` run — an operator following this doc's
+own worked example (above) against log-parse's own committed fixture
+would have hit `container_input` on exactly the data the docs told
+them to try.
+
 #### 4.10.5 Deliverable selection — the correctness proof
 
 This is the single most important mechanism in the feature: the one
@@ -1991,35 +2021,66 @@ concurrent container wrote is irrelevant and invisible to it.
 | CWE | Exposure | Mitigation |
 |---|---|---|
 | **CWE-78** OS command injection | `docker run` argv is assembled from `--output-dir`, an image reference, a user spec, and a derived filename | Bash **array** argv executed directly — no `eval`, no `sh -c`, no word-splitting. The container-side input path is fully derived from a `validate_date`-checked date. |
-| **CWE-88** Argument injection | `LOG_PARSE_REPORT_EXPORT_IMAGE="--privileged"` (or a hostile `LOG_PARSE_REPORT_EXPORT_USER`) | Anchored whitelists forbid a leading `-` on both the image reference and the user spec; either dies rather than reaching `docker`'s argv. |
+| **CWE-88** Argument injection | `LOG_PARSE_REPORT_EXPORT_IMAGE="--privileged"` (or a hostile `LOG_PARSE_REPORT_EXPORT_USER`, e.g. `--privileged` or `$(...)`) | Anchored whitelists forbid a leading `-` on both the image reference and the user spec (`^[0-9]+(:[0-9]+)?$`); the opt-out sentinel is a separate, closed, case-insensitive literal match (`root` or `-`) — not a wildcard, so it cannot itself be abused to smuggle a flag. Anything else dies before reaching `docker`'s argv. |
 | **CWE-22** Path traversal | The container returns a path that log-parse then reads and **emails** | The `deliverable` value is treated as untrusted (§4.10.5): prefix + anchored basename whitelist, no `/`, no `..`, no leading `-`, no control bytes. This whitelist alone constrains only the reported NAME **string** — see the CWE-61 row directly below for the host-side inode check this boundary also requires. |
 | **CWE-61** UNIX symbolic link following | The anchored basename whitelist (CWE-22, above) says nothing about what the mapped HOST inode actually is. The container runs as root with `production/output` bind-mounted read-write, so a hostile or buggy image could plant `<D>_連線紀錄.xlsx -> /proc/net/tcp` (or any host file whose mtime happens to fall in the run's freshness window) at the exact whitelisted name | `_report_export_select_deliverable` rejects the mapped host path outright if it is a symlink (`-L`, an lstat that never follows) and additionally asserts physical containment — the path's containing directory, resolved via `cd && pwd -P`, must equal EXACTLY the already-resolved `REPORT_EXPORT_OUT_DIR` — BEFORE any subsequent probe. Without both checks, every remaining probe (`-f`, `_notify_file_bytes`, `date -r`) follows symlinks by construction and would silently validate, then base64-encode-and-mail, the symlink's TARGET rather than the deliverable. `report_export_prepare_dirs` applies the identical `-L` + `cd && pwd -P` pattern to the three mount-point subdirectories themselves, closing the same class of attack one level up (a pre-existing symlinked mount point redirecting the `docker -v` bind mount before the container ever runs). |
 | **CWE-732** Incorrect permission assignment | `production/state` holds PII-derived records | `umask 077` + best-effort `chmod 0700` on all four directories (their three mount-point subdirectories are additionally lstat-checked and physically resolved — see the CWE-61 row above); staged input `chmod 600`; the deliverable itself is written `0600` by `xlsx_writer`. **chmod exiting 0 is not proof the mode took effect**: on a filesystem that does not honour Unix permission bits (DrvFs/9p/WSL — this repository can itself live on exactly such a mount), chmod is commonly accepted and silently ignored. The resulting mode is therefore read BACK (`stat -c '%a'`) after every chmod call (directories and the staged CSV alike), and a mismatch emits one unmissable `log_warn` naming every affected path — deliberately never fatal (a hard die would make `--report-export` entirely unusable on exactly the mount this project's own owner deploys from) and deliberately never silent (a silently-assumed guarantee the filesystem cannot honour is exactly the failure mode this closes). |
-| **CWE-269** Improper privilege management | The container runs as root by default (§4.10.3, no `--user`) | No `--privileged`; no docker-socket mount; input mounted `:ro`; only the three fixed `production/` subdirectories are exposed, never the run directory, never `/`. An operator who needs a specific host uid instead may opt in via `LOG_PARSE_REPORT_EXPORT_USER` (whitelisted `^[0-9]+(:[0-9]+)?$`, bash builtins only — no `id` dependency). |
+| **CWE-269** Improper privilege management | A container given no `--user` at all runs as root inside its own namespace | **By default the container does NOT run as root**: `--user ${UID}:${GROUPS[0]}` (the invoking host user; bash builtins only, no `id` dependency) is emitted automatically (see "Why the container runs as the invoking user by default", below) — least privilege by default, not merely available as an opt-in. No `--privileged`; no docker-socket mount; input mounted `:ro`; only the three fixed `production/` subdirectories are exposed, never the run directory, never `/`. An operator may still opt OUT to root (`LOG_PARSE_REPORT_EXPORT_USER=root` or `-`, a fixed literal sentinel — see the CWE-88 row above) or override to a different numeric `uid[:gid]`; both are validated pre-analysis by the same whitelist gate. |
 | **CWE-367** TOCTOU | `docker image inspect` then `docker run` | Acknowledged and accepted (§4.10.1). The probe is a timing optimisation, not a guarantee; `docker run` itself remains authoritative, and its failure is fatal regardless (§4.10.6). |
 | **CWE-200 / CWE-359** Exposure of private/personal information | `access_detail.csv` carries `CLIENT_IP`, `HOSP_ID`, `PRSN_ID`, `PATIENT_ID_AES`, `BIRTHDAY`. This feature moves that data into `production/state/records.csv`, which accumulates **indefinitely** — far outliving the per-run directories — and mails a derived xlsx to every address in `conf/receivers.conf`. | This is the single most significant posture change in the feature (§4.10.8). Mitigations: `0700` directories, `0600` files, `--network none` (no exfiltration path from inside the container), and the xlsx flowing through `--notify`'s existing unsuppressable audit log and external-domain warning. `production/state` retention/purge is the **operator's** responsibility; `conf/receivers.conf` should be re-reviewed before enabling `--report-export`. |
 | **CWE-400** Uncontrolled resource consumption | `production/` grows monotonically: one CSV per distinct window, one xlsx per run, one `runs.jsonl` line per run | No automatic cleanup — deletion is a destructive operation requiring human approval, out of scope for this toolkit (§1). Documented as an operator obligation. |
 
-**Why the container runs as root by default.** The `report-export`
-image ships with **no `USER` directive** — it is designed to run as
-root (`report-export/docker/Dockerfile`; confirmed no `appuser`/`USER`
-line), so that any host bind-mount directory is writable regardless of
-its owning uid, with no image-baked uid to reconcile against a
-caller-owned directory. `docker run` therefore emits **no `--user`
-argument by default** — the exact command an operator would type by
-hand — rather than forcing an arbitrary uid that has no `passwd` entry
-inside the image. The trade-off, recorded here rather than left
-implicit: files the container writes under `production/state` and
-`production/output` are **root-owned**, requiring `sudo` to remove or
-edit from the host side — the identical, already-documented trade-off
-`report-export`'s own docs record for manual runs
+**Why the container runs as the invoking user by default (REVERSAL of
+an earlier decision).** The `report-export` image itself still ships
+with **no `USER` directive** — it is designed to run as root
+(`report-export/docker/Dockerfile`; confirmed no `appuser`/`USER`
+line), so that a *manual, standalone* `docker run` against any
+host bind-mount directory works regardless of its owning uid, with no
+image-baked uid to reconcile against a caller-owned directory. That
+fact is unchanged, and it is still why `report-export`'s own docs
 ([`report-export/docs/usage.md`](../report-export/docs/usage.md), "HOST
-權限說明"). Forcing `--user` unconditionally would additionally make a
-`production/` tree a previous root run already created **unwritable**,
-trading one failure mode for another. An operator who prefers the
-container to run as a specific host uid may opt in via
-`LOG_PARSE_REPORT_EXPORT_USER=<uid>[:<gid>]`; leaving it unset (the
-default) is a deliberate choice, not an oversight.
+權限說明") show no `--user` for a standalone manual run.
+
+But `log_report.sh --report-export` is not a standalone manual run —
+it is one stage of an integrated pipeline that, when `--notify` is also
+given, reads the produced deliverable back on the **host side**
+immediately afterward to base64-attach it
+(`notify_collect_attachments`, `lib/notify_utils.sh`). A root-owned,
+mode-`0600` xlsx — exactly what the image writes when given no
+`--user` at all — is unreadable by the typically non-root user
+invoking `log_report.sh`, so the integrated flow this feature exists
+to serve (`--report-export --notify` in one command) would silently
+need `sudo` on the *host* invocation too, or fail the attach step
+outright. `docker run` therefore now emits `--user ${UID}:${GROUPS[0]}`
+**by default** — bash builtins only, no `id` dependency — rather than
+forcing an arbitrary uid with no `passwd` entry inside the image: the
+container still runs unimpeded (its bind-mounted
+`production/{input,state,output}` directories already belong to that
+same uid, §4.10.3), and the deliverable comes back owned by, and
+readable by, the process that has to read it next.
+
+The trade-off, recorded here rather than left implicit: an operator
+whose `production/` tree already exists, root-owned, from an
+**earlier** run (before this default existed, or from a deliberate
+opt-out — see below) will hit `dirs_perm` (§4.10.6) until they either
+`chown` the tree or opt out again; that remedy is unchanged, and
+`report_export_prepare_dirs` prints the exact command by name either
+way. Two escape hatches remain, both via
+`LOG_PARSE_REPORT_EXPORT_USER` (reproduced verbatim in
+[`usage.md`](usage.md#report-export)'s environment-variable table): a
+numeric `uid[:gid]` overrides the default target uid; the fixed,
+case-insensitive literal sentinel `root` or `-` opts OUT of `--user`
+entirely, restoring the original root-runs-by-default behaviour and
+its trade-off — files under `production/state` and `production/output`
+become root-owned, `sudo` is required to remove or edit them from the
+host side (the same trade-off `report-export`'s own docs record for
+manual runs), and because the deliverable is then unreadable by a
+non-root operator, `log_report.sh` itself must also run as root for
+`--notify` to read it back. Leaving the variable unset — the default —
+is the deliberate choice for the integrated flow; opting out is a
+deliberate choice for an operator who does not need `--notify` to
+attach the result, or who has another reason to want a root-owned
+`production/` tree.
 
 #### 4.10.8 PII and retention — the most significant posture change
 
@@ -2048,19 +2109,35 @@ responsibility belongs entirely to the operator, alongside re-reviewing
   past window produces a deliverable dated today.
 - **`production/state` accumulates PII indefinitely** (§4.10.8) with no
   built-in rotation.
-- **Root-owned files under `production/` by default** (§4.10.7),
-  requiring `sudo` for host-side removal/editing unless an operator
-  opts into `LOG_PARSE_REPORT_EXPORT_USER`.
-- **UID/ownership assertions on container-written files are untestable
-  offline.** A non-root test environment cannot honestly simulate a
-  root-owned tree without pulling in `fakeroot` or real root as a new
-  test dependency; this is a documented production-only verification
-  gap, not a functional one. Section M's offline `fake_docker.sh` shim
-  (`.claude/rules/testing.md`) covers every other path in this section —
-  dependency gating, the legality guards, the tree contract, staging,
-  argv construction, deliverable selection (including the mtime-decoy
-  and idempotent-overwrite proofs), and every fatal path — without ever
-  touching a real Docker daemon or network endpoint.
+- **Files under `production/` are invoking-user-owned by default, not
+  root-owned** (§4.10.7) — a reversal of this feature's own earlier
+  default. Root ownership is now opt-in (`LOG_PARSE_REPORT_EXPORT_USER=root`
+  or `-`), and an operator who chooses it needs `sudo` for host-side
+  removal/editing, plus root itself to run `log_report.sh` for
+  `--notify` to read the deliverable back.
+- **Real container-enforced UID ownership is untestable offline for the
+  opt-out path.** The offline `fake_docker.sh` shim can verify the
+  *argv shape* passed to `docker run` (default: `--user <uid>:<gid>`;
+  numeric override; `root`/`-` opt-out: no `--user` token at all) and
+  that a shim-produced file is owned by the invoking uid — but a shell
+  shim can never actually run as, or write files as, a different uid,
+  so it cannot honestly simulate what a REAL container does when the
+  operator opts out to `root`, without pulling in `fakeroot` or real
+  root as a new test dependency. This is a documented production-only
+  verification gap for the opt-out path specifically, not a functional
+  one, and not a regression: before this reversal, the entire default
+  path had this same gap, since root ownership *was* the default.
+  Section M's offline `fake_docker.sh` shim (`.claude/rules/testing.md`)
+  covers every other path in this section — dependency gating, the
+  legality guards, the tree contract, staging, argv construction,
+  deliverable selection (including the mtime-decoy and
+  idempotent-overwrite proofs), and every fatal path — without ever
+  touching a real Docker daemon or network endpoint; a small,
+  explicitly-guarded set of tests additionally runs the genuine
+  `report-export:1.0.0` image end-to-end (skipped, not failed, when
+  `docker` is unavailable) to confirm the default `--user` argv
+  actually produces an invoking-uid-owned, readable deliverable against
+  real Docker, not just against the shim.
 
 ---
 

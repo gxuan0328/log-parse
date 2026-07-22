@@ -78,7 +78,7 @@
 | `access_all_week.tsv`                | TSV 平面輸出（全區域、整週），供下游 ETL / SIEM 進一步處理；確定性 ASC 排序，單一 REQUEST_ID 欄位 + BIRTHDAY（JWT dob） | `bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --format tsv --output-dir /tmp/sample` |
 | `access_all_week.csv`                | CSV 平面輸出（全區域、整週），符合 RFC-4180 條件式引號；與 TSV 相同之確定性排序 + BIRTHDAY（JWT dob） | `bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --from 2026-05-18 --to 2026-05-25 --format csv --output-dir /tmp/sample` |
 | `access_all_merged_2026-05-21.txt`   | 跨區域合併交叉比對詳細視圖（所有區域視為單一主機無關語料庫）；合併後 NORMAL 數 >= 各區域加總 + BIRTHDAY（JWT dob） | `bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --date 2026-05-21 --merge --output-dir /tmp/sample` |
-| `access_ip_counts_all_2026-05-21.tsv` | IP 歸因檔案 — 常態性第三輸出物；2026-05-21、全區域、預設 `--test-hosts exclude` 之 NORMAL+ORPHAN 客戶端 IP 計數；兩欄：`CLIENT_IP<TAB>REQUEST_COUNT`；排序：計數降冪、IP 升冪；空值 / `-` IP 歸一為哨兵值 `-`；基準值：`-\t9`（9 筆 IP 欄位為空或橫線之記錄） | `bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --date 2026-05-21 --output-dir /tmp/sample` |
+| `access_ip_counts_all_2026-05-21.tsv` | IP 歸因檔案 — 常態性第三輸出物；2026-05-21、全區域、預設 `--test-hosts exclude` 之 NORMAL+ORPHAN 客戶端 IP 計數；兩欄：`CLIENT_IP<TAB>REQUEST_COUNT`；排序：計數降冪、IP 升冪；空值 / `-` IP 歸一為哨兵值 `-`；基準值：`-\t3`（3 筆 ORPHAN 記錄 IP 為空或橫線；已回填的 6 筆 2026-05-21 NORMAL 列現帶真實 CLIENT_IP） | `bash bin/analyze_access.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG --date 2026-05-21 --output-dir /tmp/sample` |
 
 ## 應用程式錯誤
 

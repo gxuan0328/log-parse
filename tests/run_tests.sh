@@ -5,7 +5,7 @@
 # and error handling. Baselines are derived from the examples/sample-logs/LUNG-CANCER-REPORT-LOG
 # sample data included in the project (dates 2026-05-18 ~ 2026-05-25).
 #
-# Total: 352 tests across thirteen sections (A access · B iis · C errors · D log_report ·
+# Total: 356 tests across thirteen sections (A access · B iis · C errors · D log_report ·
 #        E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
 #        J test-host/health · K timezone+core-function · L notify SMTP-API delivery ·
 #        M report-export container integration).
@@ -1457,7 +1457,10 @@ else
     _fail "A51  欄位索引/NF 不符 [h2=$_a51_h2 h7=$_a51_h7 h13=$_a51_h13 hnf=$_a51_hnf baddata_rows=$_a51_baddata]"
 fi
 
-# A52: csv header/NF=14 一致 + summary 不含 BIRTHDAY (NORMAL=6) + access_ip_counts.tsv 不變 ('-'<TAB>9)
+# A52: csv header/NF=14 一致 + summary 不含 BIRTHDAY (NORMAL=6) + access_ip_counts.tsv 首行 ('-'<TAB>3)
+# NOTE: '-' 的 REQUEST_COUNT 由 9 降為 3 (2026-07 sample-log CLIENT_IP backfill 迴歸基準線
+# 重新生成 -- taichung 6 筆 NORMAL 記錄現帶有真實 CLIENT_IP，僅 taipei 3 筆 ORPHAN 記錄仍為 '-'；
+# 見 access_ip_counts.tsv 全量：'-'=3, 10.243.129.44=2, 其餘 4 個 IP 各=1，sum 仍為 9)
 _a52_csv=$(bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv 2>/dev/null)
 _a52_csvhdr=$(printf '%s\n' "$_a52_csv" | head -1)
 _a52_csv_ok=0
@@ -1471,8 +1474,8 @@ _a52_ipfile=$(ls "$TMPD_A52"/*/access_ip_counts.tsv 2>/dev/null | head -1)
 _a52_ipline=$(gawk -F'\t' '$1=="-"{print $1"\t"$2; exit}' "$_a52_ipfile" 2>/dev/null)
 rm -rf "$TMPD_A52"
 if [[ "$_a52_csv_ok" == "1" && "$_a52_csv_baddata" == "0" && "$_a52_sum_normal" == "6" \
-      && "$_a52_ipline" == $'-\t9' ]] && ! printf '%s\n' "$_a52_sum" | grep -qF "BIRTHDAY"; then
-    _pass "A52  csv header/NF=14 一致; summary 不含 BIRTHDAY 且 NORMAL=6; access_ip_counts.tsv 仍為 '-<TAB>9'"
+      && "$_a52_ipline" == $'-\t3' ]] && ! printf '%s\n' "$_a52_sum" | grep -qF "BIRTHDAY"; then
+    _pass "A52  csv header/NF=14 一致; summary 不含 BIRTHDAY 且 NORMAL=6; access_ip_counts.tsv 仍為 '-<TAB>3'"
 else
     _fail "A52  regression 不符 [csv_ok=$_a52_csv_ok csv_bad=$_a52_csv_baddata sum_normal=$_a52_sum_normal ipline=$_a52_ipline]"
 fi
@@ -3248,7 +3251,8 @@ unset SHIM_LOG_DIR
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section M — bin/log_report.sh --report-export: report-export container
-#             integration (docker-shimmed; no daemon/network ever touched)
+#             integration (docker-shimmed for M01-M34; M35-M38 are the one
+#             REAL-docker exception, guarded to skip cleanly without docker)
 # Baselines (fixed date 2026-05-21, --format csv, default modules
 #   overview,iis,access): --format csv persists exactly 6 files --
 #   access_detail.csv, access_ip_counts.tsv, access_summary.txt,
@@ -3256,15 +3260,23 @@ unset SHIM_LOG_DIR
 #   Section L's baseline, but with .csv detail extensions since
 #   --report-export REQUIRES --format csv, §1.3). production/{input,state,
 #   output} is a SIBLING of the per-run timestamped directory under the same
-#   --output-dir, never a child of it (§5.1). ORCHESTRATOR OVERRIDE #1 is in
-#   force throughout: NO --user is ever rendered by default; LOG_PARSE_REPORT_
-#   EXPORT_USER is strictly opt-in (M17).
-# No test in this section ever contacts a real Docker daemon or a network
-#   endpoint: every test that reaches report_export_preflight/_invoke pins
-#   LOG_PARSE_REPORT_EXPORT_DOCKER_BIN at a local fake-docker shim (below)
-#   that only touches the local filesystem, mirroring Section L's fake_curl.sh
-#   mechanism (spec §12.2) via the SAME single indirection point production
-#   code already reads.
+#   --output-dir, never a child of it (§5.1). The REVERSAL OF ORCHESTRATOR
+#   OVERRIDE #1 is in force throughout: --user "${UID}:${GROUPS[0]}" of the
+#   invoking user IS rendered by DEFAULT (so the --notify attachment step can
+#   read the container-authored, otherwise-root-owned xlsx back); LOG_PARSE_
+#   REPORT_EXPORT_USER overrides it (digits[:digits], verbatim) or opts OUT
+#   of --user entirely ('root'/'-', case-insensitive) (M08, M17).
+# M01-M34 never contact a real Docker daemon or a network endpoint: every
+#   test that reaches report_export_preflight/_invoke pins LOG_PARSE_REPORT_
+#   EXPORT_DOCKER_BIN at a local fake-docker shim (below) that only touches
+#   the local filesystem, mirroring Section L's fake_curl.sh mechanism (spec
+#   §12.2) via the SAME single indirection point production code already
+#   reads. M35-M38 (appended after "Section M cleanup" below, once the shim
+#   is torn down and its env var unset) are the SOLE exception: one real,
+#   end-to-end run against the genuine `docker` binary and the genuine
+#   report-export:1.0.0 image, GUARDED to skip cleanly (PASS with a
+#   "skipped: no docker" note) when either is unavailable, so the suite
+#   stays green on a docker-less CI/dev host.
 # ─────────────────────────────────────────────────────────────────────────────
 
 section "M  bin/log_report.sh --report-export — report-export container integration"
@@ -3504,15 +3516,26 @@ else
 fi
 rm -rf "$TMPD_M07"
 
-# M08: LOG_PARSE_REPORT_EXPORT_USER='root' -> dies with invalid user spec
-# (whitelist ^[0-9]+(:[0-9]+)?$ rejects a non-numeric override).
+# M08: LOG_PARSE_REPORT_EXPORT_USER='--privileged' -> dies with invalid user
+# spec (whitelist ^[0-9]+(:[0-9]+)?$ rejects a leading '-'; CWE-88: a value
+# starting with '-' could otherwise smuggle an extra docker flag onto the
+# argv immediately after --user, the same flag-injection vector M07 closes
+# for the image ref). REPOINTED by the REVERSAL OF ORCHESTRATOR OVERRIDE #1
+# (lib/report_export_utils.sh): this test used to probe 'root', which the
+# PRE-reversal whitelist rejected as non-numeric; 'root' (and '-') are now
+# the explicit, legal --user OPT-OUT sentinel (REPORT_EXPORT_USER_OPTOUT_RE)
+# and must NOT die -- that positive acceptance path is proven instead by
+# M17's third sub-case (opt-out -> no --user token, rc=0). M08 keeps this
+# section's negative-path whitelist coverage alive with a value that is
+# still genuinely invalid under all three legal shapes (empty default,
+# digits[:digits] override, root/- opt-out).
 _m_shim_reset
 TMPD_M08=$(mktemp -d /tmp/lp_m08.XXXXXX)
-out08=$(LOG_PARSE_REPORT_EXPORT_USER='root' bash "$REPORT" \
+out08=$(LOG_PARSE_REPORT_EXPORT_USER='--privileged' bash "$REPORT" \
     --log-dir "$LOG_DIR" --date 2026-05-21 --format csv --output-dir "$TMPD_M08" \
     --report-export 2>&1 >/dev/null); rc=$?
 if [[ "$rc" -ne 0 ]] && printf '%s\n' "$out08" | grep -qF "invalid LOG_PARSE_REPORT_EXPORT_USER"; then
-    _pass "M08  LOG_PARSE_REPORT_EXPORT_USER='root'：die invalid LOG_PARSE_REPORT_EXPORT_USER"
+    _pass "M08  LOG_PARSE_REPORT_EXPORT_USER='--privileged'：die invalid LOG_PARSE_REPORT_EXPORT_USER (CWE-88; 'root'/'-' are now the legal opt-out, see M17)"
 else
     _fail "M08  user spec 白名單檢查失敗 [rc=$rc]"
 fi
@@ -3690,11 +3713,17 @@ rm -rf "$TMPD_M16_BASE"
 # --network none present; exactly three -v elements with :ro on the INPUT
 # mount only; the input mount's host side is the real, absolute
 # production/input path; image second-to-last and the container CSV path
-# (/data/input/week-<D>.csv) last; and, per ORCHESTRATOR OVERRIDE #1, NO
-# --user token anywhere by default -- the rendered command is then EXACTLY
-# the owner's own literal docker command line. A second, independent run
-# with LOG_PARSE_REPORT_EXPORT_USER set proves the opt-in escape hatch still
-# works in the other direction.
+# (/data/input/week-<D>.csv) last; and, per the REVERSAL OF ORCHESTRATOR
+# OVERRIDE #1 (lib/report_export_utils.sh file header + report_export_
+# invoke's docblock), --user "${UID}:${GROUPS[0]}" of THIS test process's
+# own invoking uid/gid IS present by default -- computed the identical way
+# production code does (bash builtins, no `id` dependency), so the literal
+# value naturally matches whatever host/CI user actually runs the suite,
+# never a hardcoded uid. A second, independent run with
+# LOG_PARSE_REPORT_EXPORT_USER='1234:1234' proves the numeric override
+# still works verbatim; a third, with the 'root' opt-out sentinel, proves
+# --user is suppressed ENTIRELY (rc=0, no --user token at all) -- the
+# container then runs as root exactly as the pre-reversal default did.
 _m_shim_reset
 TMPD_M17=$(mktemp -d /tmp/lp_m17.XXXXXX)
 bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
@@ -3707,7 +3736,7 @@ if [[ "$(printf '%s' "$m17_run" | grep -oE ' -v ' | wc -l | tr -d ' ')" -ne 3 ]]
 if [[ "$m17_run" != *"${TMPD_M17}/production/input:/data/input:ro"* ]]; then m17_ok=0; fi
 if [[ "$m17_run" == *":/data/state:ro"* || "$m17_run" == *":/data/output:ro"* ]]; then m17_ok=0; fi
 if [[ "$m17_run" != *' report-export:1.0.0 /data/input/week-2026-05-21.csv '* ]]; then m17_ok=0; fi
-if [[ "$m17_run" == *'--user'* ]]; then m17_ok=0; fi
+if [[ "$m17_run" != *" --user ${UID}:${GROUPS[0]} "* ]]; then m17_ok=0; fi
 rm -rf "$TMPD_M17"
 
 _m_shim_reset
@@ -3719,10 +3748,20 @@ m17b_run="$(grep '^run --rm' "${_M_SHIMDIR}/docker.calls")"
 if [[ "$m17b_run" != *'--user 1234:1234'* ]]; then m17_ok=0; fi
 rm -rf "$TMPD_M17B"
 
+_m_shim_reset
+TMPD_M17C=$(mktemp -d /tmp/lp_m17c.XXXXXX)
+LOG_PARSE_REPORT_EXPORT_USER='root' bash "$REPORT" --log-dir "$LOG_DIR" \
+    --date 2026-05-21 --format csv --output-dir "$TMPD_M17C" --report-export \
+    >/dev/null 2>/dev/null; m17c_rc=$?
+m17c_run="$(grep '^run --rm' "${_M_SHIMDIR}/docker.calls")"
+if [[ "$m17c_rc" -ne 0 ]]; then m17_ok=0; fi
+if [[ "$m17c_run" == *'--user'* ]]; then m17_ok=0; fi
+rm -rf "$TMPD_M17C"
+
 if [[ "$m17_ok" -eq 1 ]]; then
-    _pass "M17  argv 形狀正確 (--rm/--network none/3x -v/:ro 僅於 input/image+operand 順序)；預設無 --user (override #1)；設定後 --user 1234:1234 出現"
+    _pass "M17  argv 形狀正確 (--rm/--network none/3x -v/:ro 僅於 input/image+operand 順序)；預設 --user \${UID}:\${GROUPS[0]} 出現 (reversal)；覆寫後 --user 1234:1234 出現；'root' opt-out 下完全無 --user (rc=0)"
 else
-    _fail "M17  docker argv 形狀或 --user 覆寫檢查失敗 [run=$m17_run]"
+    _fail "M17  docker argv 形狀或 --user 預設/覆寫/opt-out 檢查失敗 [run=$m17_run]"
 fi
 
 # M18: LOG_PARSE_REPORT_EXPORT_IMAGE overrides the pinned image reference,
@@ -4271,6 +4310,124 @@ fi
 # ---- Section M cleanup ------------------------------------------------------
 rm -rf "$_M_SRC" "$_M_SHIMDIR"
 unset SHIM_LOG_DIR LOG_PARSE_REPORT_EXPORT_DOCKER_BIN
+
+# ─────────────────────────────────────────────────────────────────────────────
+# M35-M38 — REAL docker integration (the ONE place in this file that touches
+#   an actual Docker daemon). Every M01-M34 test above is offline via
+#   fake_docker.sh; the cleanup immediately above already removed that shim
+#   and unset LOG_PARSE_REPORT_EXPORT_DOCKER_BIN, so this block runs the REAL
+#   `docker` binary on PATH against the REAL report-export:1.0.0 image --
+#   proving the argv/attachment/deliverable contracts M01-M34 assert against
+#   the shim's MODEL of a container actually hold against the genuine one.
+# GUARDED (skip cleanly, never fail, when docker tooling is unavailable): a
+#   missing `docker` binary or a `docker image inspect report-export:1.0.0`
+#   failure makes all four tests below PASS with a "skipped: no docker" note,
+#   so this suite stays green on a CI/dev host without docker -- the same
+#   "conditional dependency, never unconditional" contract --report-export
+#   itself keeps (CLAUDE.md §6, docs/design.md §4.10).
+# LOG_PARSE_REPORT_EXPORT_USER is deliberately left UNSET here (the reversed
+#   DEFAULT): the container must run as the invoking uid:gid so the
+#   immediately-following --notify --notify-dry-run step can read the xlsx
+#   back to base64-attach it -- this is the exact end-to-end property the
+#   REVERSAL OF ORCHESTRATOR OVERRIDE #1 exists for (lib/report_export_
+#   utils.sh file header; report_export_invoke's docblock).
+# The REAL container names its deliverable from ITS OWN clock (verified
+#   empirically: NOT the --date 2026-05-21 analysis-window start the fake
+#   shim uses), so every assertion below matches on the "*連線紀錄.xlsx"
+#   SUFFIX only, never a hardcoded date prefix (testing.md's `_glob`
+#   guidance for filenames carrying a timestamp component).
+# ─────────────────────────────────────────────────────────────────────────────
+
+section "M  (cont.) --report-export — REAL docker integration (M35-M38)"
+
+_m35_skip=0
+if ! command -v docker >/dev/null 2>&1; then
+    _m35_skip=1
+elif ! docker image inspect report-export:1.0.0 >/dev/null 2>&1; then
+    _m35_skip=1
+fi
+
+if [[ "$_m35_skip" -eq 1 ]]; then
+    _pass "M35  skipped: no docker (docker binary or report-export:1.0.0 image not available on this host)"
+    _pass "M36  skipped: no docker"
+    _pass "M37  skipped: no docker"
+    _pass "M38  skipped: no docker"
+else
+    TMPD_M35=$(mktemp -d /tmp/lp_m35.XXXXXX)
+    M35_ERR=$(mktemp /tmp/lp_m35err.XXXXXX)
+    out35=$(NO_COLOR=1 bash "$REPORT" --log-dir "$LOG_DIR" --date 2026-05-21 --format csv \
+        --report-export --notify --notify-dry-run --output-dir "$TMPD_M35" 2>"$M35_ERR"); rc35=$?
+
+    # M35: the real end-to-end run (--report-export + --notify
+    # --notify-dry-run, real container, default --user) exits 0.
+    if [[ "$rc35" -eq 0 ]]; then
+        _pass "M35  REAL docker (未 shim)：--report-export --notify --notify-dry-run 端到端執行成功"
+    else
+        _fail "M35  REAL docker 端到端執行失敗 [rc=$rc35; stderr tail: $(tail -5 "$M35_ERR" 2>/dev/null | tr '\n' ' ')]"
+    fi
+
+    # M36: a real xlsx exists under production/output/, owned by the
+    # invoking uid (this test process's own $UID -- the same uid:gid
+    # docker run --user was just given by default) and readable by it.
+    m35_xlsx=$(find "${TMPD_M35}/production/output" -maxdepth 1 -type f -name '*連線紀錄.xlsx' 2>/dev/null | head -1)
+    m36_ok=0
+    m35_owner_uid=""
+    if [[ -n "$m35_xlsx" && -f "$m35_xlsx" && -r "$m35_xlsx" ]]; then
+        m35_owner_uid=$(stat -c '%u' -- "$m35_xlsx" 2>/dev/null)
+        if [[ "$m35_owner_uid" == "$UID" ]]; then m36_ok=1; fi
+    fi
+    if [[ "$m36_ok" -eq 1 ]]; then
+        _pass "M36  REAL docker：xlsx 存在於 production/output/、owner uid=$UID (呼叫者本人) 且可讀 ($m35_xlsx)"
+    else
+        _fail "M36  REAL docker：xlsx 存在性/擁有者/可讀性檢查失敗 [xlsx=$m35_xlsx owner=${m35_owner_uid:-?} expect_uid=$UID]"
+    fi
+
+    # M37: the run dir's notify_payload.json Attachments map carries exactly
+    # 7 keys, and the 7th (last -- the xlsx is always collected after the 6
+    # base module files, M22's established ordering) ends in 連線紀錄.xlsx;
+    # its base64 value decodes to a non-empty file starting with the ZIP
+    # local-file-header magic "PK\x03\x04" (an xlsx IS a zip -- the same
+    # magic the reversal's own manual verification checked via Python's
+    # zipfile/openpyxl, reproduced here with base64/od only, no new
+    # dependency).
+    m35_run=$(find "$TMPD_M35" -mindepth 1 -maxdepth 1 -type d ! -name production | head -1)
+    m35_payload="${m35_run}/notify_payload.json"
+    m37_ok=0
+    m37_cnt=0
+    m37_7th=""
+    if [[ -f "$m35_payload" ]]; then
+        m37_cnt=$(grep -oE '"[^"]+":"[A-Za-z0-9+/=]*"' "$m35_payload" 2>/dev/null | wc -l | tr -d ' ')
+        m37_7th=$(grep -oE '"[^"]+":"[A-Za-z0-9+/=]*"' "$m35_payload" 2>/dev/null | sed -n '7p')
+        if [[ "$m37_cnt" -eq 7 && "$m37_7th" =~ 連線紀錄\.xlsx\":\"[A-Za-z0-9+/=]+\"$ ]]; then
+            m37_val=$(printf '%s' "$m37_7th" | sed -E 's/^"[^"]*":"//; s/"$//')
+            m37_zip=$(mktemp /tmp/lp_m37.XXXXXX)
+            if base64 -d <<<"$m37_val" >"$m37_zip" 2>/dev/null && [[ -s "$m37_zip" ]]; then
+                m37_magic=$(od -An -tx1 -N4 "$m37_zip" 2>/dev/null | tr -d ' \n')
+                if [[ "$m37_magic" == "504b0304" ]]; then m37_ok=1; fi
+            fi
+            rm -f "$m37_zip"
+        fi
+    fi
+    if [[ "$m37_ok" -eq 1 ]]; then
+        _pass "M37  REAL docker：notify_payload.json 第 7 個 key 以 連線紀錄.xlsx 結尾，base64 解碼為非空 zip (PK header)"
+    else
+        _fail "M37  REAL docker：notify_payload.json 附件檢查失敗 [cnt=$m37_cnt 7th=$m37_7th]"
+    fi
+
+    # M38: the container's own JSON summary (identified by its "deliverable"
+    # field, the same marker M19 uses against the shim) never reaches
+    # log_report.sh's own report stdout -- report_export_invoke captures the
+    # real container's stdout to a FILE and never inherits it (rule 3),
+    # proven here against the GENUINE container, not just the shim's model.
+    if printf '%s\n' "$out35" | grep -qF '"deliverable"'; then
+        _fail "M38  REAL docker：容器 JSON 摘要洩漏至 log-parse stdout"
+    else
+        _pass "M38  REAL docker：容器 JSON 摘要 (\"deliverable\" 欄位) 從未出現於 log-parse stdout"
+    fi
+
+    rm -rf "$TMPD_M35"
+    rm -f "$M35_ERR"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Summary

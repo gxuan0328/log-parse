@@ -374,12 +374,17 @@ IP 欄位取自欄 11（`CLIENT_IP`）；空值或 `-` 均歸一為哨兵值 `-`
 
 ```
 CLIENT_IP	REQUEST_COUNT
--	9
+-	3
 192.168.139.110	3
+10.243.129.44	2
+10.238.23.241	1
+10.241.93.164	1
+10.248.1.29	1
+10.249.8.10	1
 ```
 
 （以上為 2026-05-21、全區域、`--test-hosts all` 之預期值）。
-預設 `--test-hosts exclude` 模式：`-\t9`（測試主機 IP 已被預先篩除）。
+預設 `--test-hosts exclude` 模式：`-\t3` 加上各業務 CLIENT_IP（測試主機 IP `192.168.139.110` 已被預先篩除）。
 
 > 範例：[`../examples/sample-outputs/access_ip_counts_all_2026-05-21.tsv`](../examples/sample-outputs/access_ip_counts_all_2026-05-21.tsv)
 
@@ -1002,10 +1007,10 @@ bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
 三個子目錄名稱與 `production/` 本身皆為固定值，不可設定。四個目錄皆以
 `mkdir -p` 於 `umask 077` 下建立，每一個目錄若為符號連結皆會被直接拒
 絕（防止預先存在的符號連結掛載點，將 `docker -v` 綁定掛載重導向至任
-意 host 目錄），接著才盡力（best-effort）`chmod 0700`；若先前的
-**root** 容器執行已使其不可寫（見下方「root 擁有的檔案」），本次執
-行會提早失敗，並附上明確的 `chown` 補救指令，而非一則含糊的執行中權
-限錯誤。
+意 host 目錄），接著才盡力（best-effort）`chmod 0700`；若先前**不同 uid** 的執行已
+使其不可寫——最常見的情況是先前選擇了 `root`/`-` 選配跳出（見下
+方）——本次執行會提早失敗，並附上明確的 `chown` 補救指令，而非一則
+含糊的執行中權限錯誤。
 
 **權限並非在每種檔案系統上都能獲得保證。** `chmod 0700`（目錄）與
 `chmod 600`（暫存 CSV）皆為盡力而為：在不支援 Unix 權限位元的檔案系
@@ -1058,24 +1063,40 @@ docker build -t report-export:1.0.0 -f docker/Dockerfile .
 
 **實際送出的 `docker run` 指令。** 恰為三個固定 bind mount、
 `--network none`（容器不需要任何網路存取；此舉杜絕本 CSV 所含 PII 的
-任何滲漏路徑），且**預設不含 `--user`**：
+任何滲漏路徑），且**預設會**附上呼叫者（invoking）使用者的
+`--user <uid>:<gid>`：
 
 ```
 docker run --rm --network none \
   -v <output-dir>/production/input:/data/input:ro \
   -v <output-dir>/production/state:/data/state \
   -v <output-dir>/production/output:/data/output \
+  --user <uid>:<gid> \
   report-export:1.0.0 /data/input/week-<WINDOW_START>.csv
 ```
 
-`report-export` 映像本身無 `USER` 指令——依設計以 root 執行（見
+`<uid>:<gid>` 即 `${UID}:${GROUPS[0]}`——僅使用 bash 內建功能，不新增
+對 `id` 的依賴。`report-export` 映像本身仍然無 `USER` 指令，針對
+*獨立、手動*執行時依然依設計以 root 執行（見
 [`report-export/docs/usage.md`](../report-export/docs/usage.md)「HOST
-權限說明」），因此上述指令與操作者手動輸入的指令完全相同；容器寫入
-`production/state` 與 `production/output` 的檔案會**歸屬 root**。如
-需從 host 端刪除或編輯這些檔案，請用 `sudo`——這與 `report-export` 自
-身文件針對手動執行所記載的取捨完全一致。若操作者需要容器改以特定
-host uid 執行，可設定 `LOG_PARSE_REPORT_EXPORT_USER`（見下表）——這是
-一項**選配（opt-in）**的逃生口，絕非預設行為。
+權限說明」）——此事實與該份文件皆未變動。但 `log_report.sh
+--report-export` 並非獨立執行：當同時提供 `--notify` 時，它會緊接著
+在 **host** 端把交付檔讀回，以進行 base64 附加（見下方「將 xlsx 附加
+至郵件」）；而容器在完全不帶 `--user` 時所寫出的、歸屬 root、模式
+`0600` 的檔案，對執行 `log_report.sh` 的（通常為非 root）使用者而言
+是無法讀取的。預設附上 `--user` 正是為了填補這個落差：容器所綁定掛
+載的 `production/{input,state,output}` 目錄本就歸屬同一個
+uid（見 [`design.zh-TW.md`](design.zh-TW.md) §4.10.3），因此容器自身的寫
+入行為完全不受影響，而交付檔回傳時就會歸屬、且可被下一步需要讀取它
+的行程讀取。
+
+兩項逃生口，皆透過 `LOG_PARSE_REPORT_EXPORT_USER`（見下表）：以數字
+`uid[:gid]` 覆寫預設目標；或以哨符 `root`（不分大小寫）或 `-` 完全選
+配跳出 `--user`。選配跳出會恢復原本的取捨——`production/state` 與
+`production/output` 下的檔案將**歸屬 root**，需要 `sudo` 才能從 host
+端刪除或編輯（與 `report-export` 自身文件針對手動執行所記載的取捨相
+同），且因為交付檔此時對非 root 操作者而言無法讀取，`log_report.sh`
+本身也必須以 root 執行，`--notify` 才能將其附加。
 
 **環境變數**（全部為選配）：
 
@@ -1083,7 +1104,7 @@ host uid 執行，可設定 `LOG_PARSE_REPORT_EXPORT_USER`（見下表）——�
 |---|---|---|
 | `LOG_PARSE_REPORT_EXPORT_DOCKER_BIN` | `docker` | 容器執行環境二進位檔；亦為自動化測試替身掛鉤點。 |
 | `LOG_PARSE_REPORT_EXPORT_IMAGE` | `report-export:1.0.0` | 映像參照（正式環境可視需要 pin `@sha256:` digest）。支援含 port 的私有 registry，例如 `registry.example.com:5000/report-export:1.0.0`。 |
-| `LOG_PARSE_REPORT_EXPORT_USER` | （空） | **選配（opt-in）。** 空值（預設）代表完全不附加 `--user` 引數——容器如上例以 root 執行。非空值必須符合 `uid[:gid]`（僅限數字，例如 `1000:1000`），並會逐字傳給 `docker run --user`。 |
+| `LOG_PARSE_REPORT_EXPORT_USER` | （空） | **預設**（空值）：附上 `--user ${UID}:${GROUPS[0]}`，即呼叫者本身，如上例所示。**覆寫**：符合 `uid[:gid]`（僅限數字，例如 `1000:1000`）的值會逐字傳給 `docker run --user`。**選配跳出**：哨符 `root`（不分大小寫）或 `-` 會完全不附加 `--user`——容器以 root 執行，其輸出歸屬 root。其他任何值皆會在 preflight 階段、分析開始前直接失敗（die）。 |
 
 **依賴套件 — 選配、延遲檢查。** `docker` **不**屬於本工具組的無條件
 依賴集合（`bash gawk sort date mktemp`）。它僅在
@@ -1134,6 +1155,33 @@ bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
     --report-export --notify
 ```
 
+**針對內建範例端到端試跑。** 一旦映像建置完成（見上文），無需任何正
+式環境資料或網路存取，即可端到端演練完整流程：
+`examples/sample-logs/LUNG-CANCER-REPORT-LOG` 中 `--date 2026-05-21`
+的範例資料，其六筆 `STATUS=NORMAL` 存取紀錄已附有真實、可被參照表解
+析的 `CLIENT_IP`/`HOSP_ID`/`PRSN_ID` 值，因此下列單一指令即會執行分
+析、暫存 CSV、呼叫真正的 `report-export:1.0.0` 映像、並選取交付
+檔——且因提供了 `--notify-dry-run`，會將郵件 payload 寫入檔案而非寄
+出：
+
+```bash
+bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --date 2026-05-21 --format csv --output-dir /tmp/log-parse-demo \
+    --report-export --notify --notify-dry-run
+```
+
+此指令會在 `/tmp/log-parse-demo/` 下產出
+`production/output/<run_date>_連線紀錄.xlsx`（容器摘要：`normal=6,
+unique_ips=5, unmapped_hosp_ids=0`），並將本次執行的
+`notify_payload.json` 寫出，xlsx 為其第 7 個附件——上文「將 xlsx 附加
+至郵件」的每一個步驟皆可在完全不觸及真實 SMTP 端點的情況下直接檢視
+（`conf/receivers.conf` 仍需符合平常「至少一列」的要求，
+見[通知功能](#通知功能)；`--notify-dry-run` 只是不會真的寄出）。
+此舉並不會改變
+`analyze_access` 本身針對該日期的 `STATUS` 判定——NORMAL/ORPHAN/UNVERIFIED
+仍為 6/9——僅是這些原已為 `NORMAL` 的紀錄上，原本空白的
+`CLIENT_IP`/`HOSP_ID`/`PRSN_ID` 欄位如今已有值。
+
 **PII 與資料保留 — 啟用前請詳閱。** `production/state` 會**無限期**
 累積每一個不同週次的記錄——它是跨執行的 canonical state，而非單次執
 行的暫存資料，本工具組不對其執行任何輪替或清除。資料保留是**操作者**
@@ -1156,7 +1204,7 @@ stderr 行承載（比照 `NOTIFY_RESULT`）：
 |---|---|---|
 | （分析前；尚無 result 行） | `--report-export` 未搭配 `--format csv` / 未搭配 access 模組 / `docker` 缺失 / 映像或 user-spec 覆寫值不合法 / `docker image inspect` 失敗 | 修正對應旗標、環境變數或映像建置後重跑；尚未建立任何執行目錄。 |
 | `dirs` | `production/` 無法建立，或其解析後路徑不安全（層級過淺，或 `--output-dir` 解析為 `/`） | 檢查 `--output-dir` 與 host 檔案系統權限。 |
-| `dirs_perm` | `production/{input,state,output}` 已存在但此 uid 無法寫入——通常代表**先前有 root 容器執行過** | 執行錯誤訊息中列印的確切 `sudo chown -R <uid>:<gid> .../production` 指令。 |
+| `dirs_perm` | `production/{input,state,output}` 已存在但此 uid 無法寫入——通常代表**先前有不同 uid 的執行**（最常見為先前的 `root`/`-` 選配跳出） | 執行錯誤訊息中列印的確切 `sudo chown -R <uid>:<gid> .../production` 指令。 |
 | `path_colon` | 解析後的 `--output-dir` 路徑含 `:` | `docker -v` 無法解析 host 路徑中的冒號；請改用不含冒號的路徑。 |
 | `window_start` | 無法推導分析窗口的起始日 | 僅為防禦性檢查——理論上不應發生，因為 `resolve_interval` 在此步驟執行前早已驗證過區間；請視為統籌邊界缺陷回報。 |
 | `source_missing` / `source_empty` | 本次執行的 `access_detail.csv` 缺失或為 0 位元組 | 確認已使用 `--format csv` 且 access 模組確實執行過；僅含表頭的 CSV 是合法的，**不屬於**此錯誤。 |

@@ -1675,6 +1675,30 @@ failed」訊息，而非具體的那一則。另外，無論 `chmod` 自身的�
 的，因為 `report-export` 以 `input_sha256` 作為冪等鍵、以
 `REQUEST_ID` 去重，因此重新餵入相同或更新後的內容永遠語義上無害。
 
+**已針對內建範例驗證。** 本儲存庫自身的
+`examples/sample-logs/LUNG-CANCER-REPORT-LOG` 資料集，其 `--date
+2026-05-21` 不僅格式合法，內容也具語意真實性：六筆 `STATUS=NORMAL`
+存取紀錄（app 伺服器 `10.1.72.35`/`10.1.72.36`）帶有已填入、可被參照
+表解析的 `CLIENT_IP`/`HOSP_ID`/`PRSN_ID` 值（CSV 欄位 5-7，§3.1.2，
+連同對應的 `ISSUE_TOKEN` JWT claims），而非該資料集原本出貨時的空白
+欄位。針對此範例執行 `--report-export --date 2026-05-21 --format
+csv`，因此是本節每一項機制——暫存、真正的 `report-export:1.0.0` 映
+像、以及交付檔選取——的真實端到端演練，而非僅止於離線替身證明；已驗
+證：容器回報 `normal=6, unique_ips=5, unmapped_hosp_ids=0`，其院所分
+析分頁從這五個 IP 解析出五個相異的院所名稱。此舉並未改變
+`analyze_access` 本身針對該日期的 `STATUS` 判定——NORMAL/ORPHAN/UNVERIFIED
+仍為 6/9（§3.1.4）——僅是這些原已為 `NORMAL` 的紀錄上，原本空白的
+`CLIENT_IP`/`HOSP_ID`/`PRSN_ID` 欄位如今已有值。在此次回填之前，內
+建範例的 `NORMAL` 紀錄這些欄位皆為空白——這對 `analyze_access` 本身
+而言是合法輸入，其 `NORMAL` 判定從不要求這些欄位非空（§3.1.4）——但
+一旦暫存後交給 `report-export`，會被其自身的輸入驗證拒絕
+（`container_input`，exit 2，§4.10.6）：一筆沒有可解析客戶端 IP 或
+醫院代碼的連線紀錄，並非 `report-export` 能夠有意義報表化的狀態。內
+建範例因此能夠證明本節除了「真正跑完 `--report-export`」之外的每一
+項機制，卻無法證明真實的端到端 `--report-export` 執行——依照本文件
+上方所附的範例指令、對 log-parse 自身已提交的範例資料執行，操作者原
+本會恰好在文件叫他們嘗試的那份資料上遇到 `container_input`。
+
 #### 4.10.5 交付檔選取——正確性論證
 
 這是本功能中最重要的機制：唯一一個若選錯就會在無人察覺的情況下寄出
@@ -1807,31 +1831,54 @@ deliverable=<basename|->` stderr 行承載，與 `NOTIFY_RESULT` 完全一
 | CWE | 暴露面 | 緩解措施 |
 |---|---|---|
 | **CWE-78** OS 指令注入 | `docker run` 的 argv 由 `--output-dir`、映像參照、user spec 與衍生檔名組成 | Bash **陣列** argv 直接執行——不使用 `eval`、不使用 `sh -c`、不進行 word-splitting。容器內輸入路徑完全衍生自經 `validate_date` 檢查過的日期。 |
-| **CWE-88** 引數注入 | `LOG_PARSE_REPORT_EXPORT_IMAGE="--privileged"`（或惡意的 `LOG_PARSE_REPORT_EXPORT_USER`） | 錨定白名單禁止映像參照與 user spec 兩者皆不得以 `-` 開頭；違反者直接 die，絕不會進入 `docker` 的 argv。 |
+| **CWE-88** 引數注入 | `LOG_PARSE_REPORT_EXPORT_IMAGE="--privileged"`（或惡意的 `LOG_PARSE_REPORT_EXPORT_USER`，例如 `--privileged` 或 `$(...)`） | 錨定白名單禁止映像參照與 user spec（`^[0-9]+(:[0-9]+)?$`）兩者皆不得以 `-` 開頭；選配跳出用的哨符是另一組獨立、封閉、不分大小寫的字面比對（`root` 或 `-`）——並非萬用字元，因此本身也無法被濫用來夾帶額外旗標。其餘任何值皆會在進入 `docker` 的 argv 之前直接 die。 |
 | **CWE-22** 路徑穿越 | 容器回傳的路徑會被 log-parse 讀取並**寄出郵件** | `deliverable` 值被視為不受信任（§4.10.5）：前綴 + 錨定檔名白名單，不含 `/`、不含 `..`、不含開頭 `-`、不含控制位元組。此白名單本身只約束回報的名稱**字串**——host 端實際對映到的 inode，見下方 CWE-61 列所述的檢查。 |
 | **CWE-61** UNIX 符號連結跟隨 | 上方的錨定檔名白名單（CWE-22）對於對映後的 host **inode** 實際為何完全未加約束。容器以 root 執行，且 `production/output` 以讀寫方式綁定掛載，因此有缺陷或惡意的映像可以在完全符合白名單的檔名處，埋設 `<D>_連線紀錄.xlsx -> /proc/net/tcp`（或任何 mtime 恰落在本次執行新鮮度窗口內的 host 檔案） | `_report_export_select_deliverable` 會在任何後續探測**之前**，直接拒絕對映後的 host 路徑若為符號連結（`-L`，一個絕不跟隨連結的 lstat），並額外斷言物理包含性——該路徑所在目錄以 `cd && pwd -P` 解析後，必須恰好等於已解析完成的 `REPORT_EXPORT_OUT_DIR`。若無這兩項檢查，其後每一個探測（`-f`、`_notify_file_bytes`、`date -r`）在設計上都會跟隨符號連結，將會靜默驗證、接著 base64 編碼並寄出符號連結的**目標**，而非交付檔本身。`report_export_prepare_dirs` 對三個掛載點子目錄本身套用相同的 `-L` + `cd && pwd -P` 模式，在更早一層（`docker -v` 綁定掛載於容器執行前即遭預先埋設的符號連結掛載點重導向）關閉同一類攻擊。 |
 | **CWE-732** 權限指派錯誤 | `production/state` 存放源自 PII 的記錄 | 四個目錄皆 `umask 077` + 盡力 `chmod 0700`（其三個掛載點子目錄現在也會被 lstat 檢查並物理解析——見上方 CWE-61 列）；暫存輸入 `chmod 600`；交付檔本身由 `xlsx_writer` 以 `0600` 寫出。**`chmod` 回傳 0 並不代表模式已生效**：在不支援 Unix 權限位元的檔案系統（DrvFs/9p/WSL——本專案自身的 `--output-dir` 就可能座落於此類掛載點）上，`chmod` 經常被接受但實際上被靜默忽略。因此每次 `chmod` 呼叫後（目錄與暫存 CSV 皆然），模式都會被讀回（`stat -c '%a'`），不一致時會發出一則彙整、不可忽視的 `log_warn`，列出所有受影響路徑——刻意設計為絕不致命（硬性 die 將使 `--report-export` 在本專案自身擁有者所部署的那類掛載點上完全無法使用），也絕不靜默（靜默地假設檔案系統無法提供的保證，正是此修正要關閉的失效模式）。 |
-| **CWE-269** 權限管理不當 | 容器預設以 root 執行（§4.10.3，未帶 `--user`） | 不使用 `--privileged`；不掛載 docker socket；輸入以 `:ro` 掛載；僅暴露 `production/` 下三個固定子目錄，絕非執行目錄，也絕非 `/`。若操作者需要容器以特定 host uid 執行，可透過 `LOG_PARSE_REPORT_EXPORT_USER` 選配啟用（白名單 `^[0-9]+(:[0-9]+)?$`，僅用 bash 內建功能——不依賴 `id`）。 |
+| **CWE-269** 權限管理不當 | 完全不帶 `--user` 的容器，會在其自身命名空間內以 root 執行 | **預設情況下容器並不以 root 執行**：系統會自動附加 `--user ${UID}:${GROUPS[0]}`（即呼叫者的 host 使用者；僅用 bash 內建功能——不依賴 `id`）（見下文「為何容器預設以呼叫者身分執行」）——這是預設即最小權限，而非僅止於選配可用。不使用 `--privileged`；不掛載 docker socket；輸入以 `:ro` 掛載；僅暴露 `production/` 下三個固定子目錄，絕非執行目錄，也絕非 `/`。操作者仍可選配跳出改為 root（`LOG_PARSE_REPORT_EXPORT_USER=root` 或 `-`，一組固定的字面哨符——見上方 CWE-88 列），或覆寫為其他數字 `uid[:gid]`；兩者皆由相同的白名單閘門在分析前完成驗證。 |
 | **CWE-367** TOCTOU | 先 `docker image inspect` 再 `docker run` | 已知悉並接受（§4.10.1）。此探測是時機面向的優化，而非保證；`docker run` 本身仍是唯一具權威性者，其失敗無論如何皆為致命（§4.10.6）。 |
 | **CWE-200 / CWE-359** 私人／個人資訊外洩 | `access_detail.csv` 攜帶 `CLIENT_IP`、`HOSP_ID`、`PRSN_ID`、`PATIENT_ID_AES`、`BIRTHDAY`。本功能將這些資料移入 `production/state/records.csv`，其累積為**無限期**——遠比逐次執行目錄長壽——並將衍生的 xlsx 寄給 `conf/receivers.conf` 中的每一個地址。 | 這是本功能中單一最重大的態勢變化（§4.10.8）。緩解措施：`0700` 目錄、`0600` 檔案、`--network none`（容器內部無滲漏路徑），以及 xlsx 透過 `--notify` 既有、無法關閉的稽核紀錄與外部網域警告。`production/state` 的保留與清除是**操作者**的責任；啟用 `--report-export` 前應重新檢視 `conf/receivers.conf`。 |
 | **CWE-400** 資源使用失控 | `production/` 單調成長：每個不同窗口一份 CSV、每次執行一份 xlsx、每次執行一行 `runs.jsonl` | 無自動清除機制——刪除屬破壞性操作，需人工核准，超出本工具組範圍（§1）。已記載為操作者義務。 |
 
-**為何容器預設以 root 執行。** `report-export` 映像**無 `USER` 指
-令**——依設計即以 root 執行（`report-export/docker/Dockerfile`；已確
-認無 `appuser`/`USER` 那一行），如此一來任何 host bind-mount 目錄皆
-可寫入，不論其擁有 uid 為何，也沒有映像內建的 uid 需要與呼叫者擁有
-的目錄調解。因此 `docker run` **預設不會**產生任何 `--user`
-引數——與操作者手動輸入的指令完全相同——而非強加一個在映像內完全沒
-有 `passwd` 項目的任意 uid。此取捨在此明確記載，而非留作隱含假設：
-容器寫入 `production/state` 與 `production/output` 的檔案會**歸屬
-root**，需要 `sudo` 才能從 host 端刪除或編輯——這與 `report-export`
-自身文件針對手動執行所記載的取捨完全相同
-（[`report-export/docs/usage.md`](../report-export/docs/usage.md)，
-「HOST 權限說明」）。若無條件強制 `--user`，還會讓先前 root 執行已
-建立的 `production/` 目錄樹變成**不可寫**，等於是拿一種失敗模式換另
-一種。若操作者偏好容器以特定 host uid 執行，可透過
-`LOG_PARSE_REPORT_EXPORT_USER=<uid>[:<gid>]` 選配啟用；預設不設定此
-值是刻意的選擇，並非疏漏。
+**為何容器預設以呼叫者身分執行（對先前決策的 REVERSAL）。**
+`report-export` 映像本身依然**無 `USER` 指令**——依設計即以 root 執
+行（`report-export/docker/Dockerfile`；已確認無 `appuser`/`USER` 那
+一行），如此一來*獨立、手動*的 `docker run` 針對任何 host bind-mount
+目錄皆可寫入，不論其擁有 uid 為何，也沒有映像內建的 uid 需要與呼叫者
+擁有的目錄調解。此事實並未改變，這也依然是為何 `report-export` 自身
+文件（[`report-export/docs/usage.md`](../report-export/docs/usage.md)，
+「HOST 權限說明」）針對獨立手動執行仍不顯示任何 `--user` 的原因。
+
+但 `log_report.sh --report-export` 並非獨立手動執行——它是一段整合式
+流程中的一個階段：當同時提供 `--notify` 時，會緊接著在 **host** 端
+把產出的交付檔讀回，以進行 base64 附加（`notify_collect_attachments`，
+`lib/notify_utils.sh`）。容器在完全不帶 `--user` 時所寫出的、歸屬
+root、模式 `0600` 的 xlsx，對執行 `log_report.sh` 的（通常為非
+root）使用者而言是無法讀取的，因此本功能存在的整個目的——單一指令內
+完成 `--report-export --notify`——若非在 *host* 端的呼叫也悄悄需要
+`sudo`，就是附加步驟直接失敗。`docker run` 現在**預設**會附加
+`--user ${UID}:${GROUPS[0]}`——僅用 bash 內建功能，不依賴
+`id`——而非強加一個在映像內完全沒有 `passwd` 項目的任意 uid：容器本
+身的執行完全不受影響（其綁定掛載的 `production/{input,state,output}`
+目錄本就歸屬同一個 uid，見 §4.10.3），而交付檔回傳時就會歸屬、且可
+被下一步需要讀取它的行程讀取。
+
+此取捨在此明確記載，而非留作隱含假設：若操作者的 `production/` 目
+錄樹是**先前**（在此預設值存在之前，或來自刻意選配跳出——見下文）
+執行所留下、歸屬 root 的舊樹，會遇到 `dirs_perm`（§4.10.6），直到
+其 `chown` 該目錄樹或再次選配跳出為止；此補救方式並未改變，
+`report_export_prepare_dirs` 無論哪種情況都會具名印出確切指令。仍保
+留兩項逃生口，皆透過 `LOG_PARSE_REPORT_EXPORT_USER`（逐字重現於
+[`usage.zh-TW.md`](usage.zh-TW.md#報表匯出) 的環境變數表中）：數字
+`uid[:gid]` 可覆寫預設目標 uid；固定、不分大小寫的字面哨符 `root` 或
+`-` 則完全選配跳出 `--user`，恢復原本「預設以 root 執行」的行為與其
+取捨——`production/state` 與 `production/output` 下的檔案將歸屬
+root，需要 `sudo` 才能從 host 端刪除或編輯（與 `report-export` 自身
+文件針對手動執行所記載的取捨相同），且因為交付檔此時對非 root 操作
+者而言無法讀取，`log_report.sh` 本身也必須以 root 執行，`--notify`
+才能將其讀回。不設定此變數（預設值）是為整合式流程所做的刻意選擇；
+選配跳出則是為不需要 `--notify` 附加結果、或另有理由需要
+root 擁有 `production/` 目錄樹的操作者所做的刻意選擇。
 
 #### 4.10.8 PII 與資料保留——最重大的態勢變化
 
@@ -1857,17 +1904,29 @@ root**，需要 `sudo` 才能從 host 端刪除或編輯——這與 `report-exp
   自容器自身的時鐘，而非 `--date`/`--from`/`--to`/`--days`。回補過
   去窗口的匯出會產出一份以今天為日期的交付檔。
 - **`production/state` 無限期累積 PII**（§4.10.8），無內建輪替機制。
-- **`production/` 下的檔案預設歸屬 root**（§4.10.7），除非操作者選配
-  啟用 `LOG_PARSE_REPORT_EXPORT_USER`，否則從 host 端刪除／編輯需要
-  `sudo`。
-- **容器寫入檔案的 UID／擁有權斷言在離線環境下無法測試。** 非 root
-  的測試環境若不額外引入 `fakeroot` 或真正的 root 作為新測試依賴，
-  便無法誠實模擬一個 root 擁有的目錄樹；這是已記載的正式環境限定驗
-  證缺口，而非功能缺陷。Section M 的離線 `fake_docker.sh` 替身
+- **`production/` 下的檔案預設歸屬呼叫者本身，而非 root**（§4.10.7）
+  ——這是本功能自身早期預設值的一次 reversal。root 擁有權現在改為選
+  配啟用（`LOG_PARSE_REPORT_EXPORT_USER=root` 或 `-`），選擇此路徑的
+  操作者需要 `sudo` 才能從 host 端刪除／編輯，且需要以 root 執行
+  `log_report.sh`，`--notify` 才能將交付檔讀回。
+- **真實容器強制的 UID 擁有權，僅選配跳出路徑在離線環境下無法測
+  試。** 離線 `fake_docker.sh` 替身可以驗證傳給 `docker run` 的
+  *argv 外觀*（預設：`--user <uid>:<gid>`；數字覆寫；`root`/`-` 選配
+  跳出：完全不帶 `--user`），也能驗證替身產出的檔案歸屬呼叫者本身的
+  uid——但 shell 替身終究無法真的以另一個 uid 執行或寫入檔案，因此
+  當操作者選配跳出為 `root` 時，若不額外引入 `fakeroot` 或真正的
+  root 作為新測試依賴，便無法誠實模擬真實容器的行為。這是已記載的、
+  僅限選配跳出路徑的正式環境限定驗證缺口，而非功能缺陷，也並非退
+  步——在此次 reversal 之前，root 擁有權本身就是預設值，整條預設路
+  徑都存在相同缺口。Section M 的離線 `fake_docker.sh` 替身
   （`.claude/rules/testing.md`）涵蓋本節其餘每一條路徑——依賴閘門、
   合法性檢查、目錄樹合約、暫存、argv 建構、交付檔選取（包含 mtime
   誘餌與冪等覆寫兩項證明），以及每一種致命路徑——且從未觸碰真正的
-  Docker daemon 或網路端點。
+  Docker daemon 或網路端點；另有一小組明確設有防護閘門的測試，會針
+  對真正的 `report-export:1.0.0` 映像端到端執行（`docker` 不可用時
+  為 skip 而非 fail），以確認預設的 `--user` argv 在真實 Docker 環境
+  下，而不僅是替身環境下，確實會產出歸屬呼叫者 uid、可讀取的交付
+  檔。
 
 ---
 

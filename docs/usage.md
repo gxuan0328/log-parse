@@ -398,7 +398,12 @@ the run directory `<base>/<YYYYMMDD_HHMMSS>/`:
 Sample (2026-05-21, all regions, default `--test-hosts exclude`):
 ```
 CLIENT_IP	REQUEST_COUNT
--	9
+-	3
+10.243.129.44	2
+10.238.23.241	1
+10.241.93.164	1
+10.248.1.29	1
+10.249.8.10	1
 ```
 
 > Fixture: [`../examples/sample-outputs/access_ip_counts_all_2026-05-21.tsv`](../examples/sample-outputs/access_ip_counts_all_2026-05-21.tsv)
@@ -1059,10 +1064,10 @@ configurable. All four directories are created with `mkdir -p` under
 `umask 077`, each is rejected outright if it is a symlink (protects
 against a pre-existing symlinked mount point redirecting the `docker -v`
 bind mount to an arbitrary host directory), and each is then
-best-effort `chmod 0700`'d; if a previous **root** container run left
-them unwritable (see "Root-owned files", below), the run dies early
-with an explicit `chown` remedy rather than an opaque mid-run
-permission error.
+best-effort `chmod 0700`'d; if a previous run under a **different
+uid** left them unwritable — most commonly a prior `root`/`-` opt-out
+(see below) — the run dies early with an explicit `chown` remedy
+rather than an opaque mid-run permission error.
 
 **Permissions are not guaranteed on every filesystem.** `chmod 0700`
 (directories) and `chmod 600` (the staged CSV) are best-effort: on a
@@ -1125,27 +1130,44 @@ daemon or an unbuilt image is a fast, pre-analysis failure:
 **The rendered `docker run` command.** Exactly the three fixed bind
 mounts, `--network none` (the container needs no network; this closes
 off any exfiltration path for the PII the CSV carries), and — by
-default — **no `--user`**:
+default — `--user <uid>:<gid>` of the **invoking** user:
 
 ```
 docker run --rm --network none \
   -v <output-dir>/production/input:/data/input:ro \
   -v <output-dir>/production/state:/data/state \
   -v <output-dir>/production/output:/data/output \
+  --user <uid>:<gid> \
   report-export:1.0.0 /data/input/week-<WINDOW_START>.csv
 ```
 
-The `report-export` image ships with no `USER` directive — it runs as
-root by design (see
+`<uid>:<gid>` is `${UID}:${GROUPS[0]}` — bash builtins, no new
+dependency on `id`. The `report-export` image itself still ships with
+no `USER` directive and is still designed to run as root for a
+*standalone, manual* invocation (see
 [`report-export/docs/usage.md`](../report-export/docs/usage.md), "HOST
-權限說明") — so this is the same command an operator would type by
-hand, and files the container writes under `production/state` and
-`production/output` are **root-owned**. Use `sudo` to remove or edit
-them from the host side; this is the same documented trade-off
-`report-export`'s own docs record for manual runs. An operator who
-needs the container to run as a specific host uid instead may set
-`LOG_PARSE_REPORT_EXPORT_USER` (below) — this is an **opt-in** escape
-hatch, never the default.
+權限說明") — that fact, and that doc, are unchanged. But
+`log_report.sh --report-export` is not a standalone invocation: when
+`--notify` is also given, it reads the deliverable back on the **host**
+side immediately afterward to base64-attach it (see "Attaching the
+xlsx to the mail", below), and a root-owned, mode-`0600` file — what
+the image writes given no `--user` at all — is unreadable by the
+typically non-root user running `log_report.sh`. Passing `--user` by
+default closes that gap: the container's bind-mounted
+`production/{input,state,output}` directories already belong to that
+same uid ([`design.md`](design.md) §4.10.3), so nothing about the
+container's own writes is impeded, and the deliverable comes back
+owned by, and readable by, the process that has to read it next.
+
+Two escape hatches, both via `LOG_PARSE_REPORT_EXPORT_USER` (below): a
+numeric `uid[:gid]` overrides the default target; the sentinel `root`
+(case-insensitive) or `-` opts OUT of `--user` entirely. Opting out
+restores the original trade-off — files under `production/state` and
+`production/output` become **root-owned**, `sudo` is required to
+remove or edit them from the host side (the same trade-off
+`report-export`'s own docs record for manual runs), and because the
+deliverable is then unreadable by a non-root operator, `log_report.sh`
+itself must also run as root for `--notify` to attach it.
 
 **Environment variables** (all optional):
 
@@ -1153,7 +1175,7 @@ hatch, never the default.
 |---|---|---|
 | `LOG_PARSE_REPORT_EXPORT_DOCKER_BIN` | `docker` | Container-runtime binary; also the automated-test shim hook. |
 | `LOG_PARSE_REPORT_EXPORT_IMAGE` | `report-export:1.0.0` | Image reference (pin an `@sha256:` digest in production if desired). A private registry with a port is supported, e.g. `registry.example.com:5000/report-export:1.0.0`. |
-| `LOG_PARSE_REPORT_EXPORT_USER` | *(empty)* | **Opt-in.** Empty (the default) means no `--user` argument is emitted at all — the container runs as root, exactly as shown above. A non-empty value must match `uid[:gid]` (digits only, e.g. `1000:1000`) and is passed verbatim to `docker run --user`. |
+| `LOG_PARSE_REPORT_EXPORT_USER` | *(empty)* | **Default** (empty): emits `--user ${UID}:${GROUPS[0]}`, the invoking user, exactly as shown above. **Override**: a value matching `uid[:gid]` (digits only, e.g. `1000:1000`) is passed verbatim to `docker run --user`. **Opt-out**: the sentinel `root` (case-insensitive) or `-` emits no `--user` at all — the container runs as root and its output becomes root-owned. Any other value dies at preflight, before analysis starts. |
 
 **Dependencies — optional, checked lazily.** `docker` is **not** part of
 the toolkit's unconditional dependency set (`bash gawk sort date
@@ -1213,6 +1235,34 @@ bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
     --report-export --notify
 ```
 
+**Try it end-to-end against the bundled sample.** No production data or
+network access is required to exercise the full pipeline once the
+image is built (above): `examples/sample-logs/LUNG-CANCER-REPORT-LOG`'s
+`--date 2026-05-21` fixture carries realistic, reference-map-resolving
+`CLIENT_IP`/`HOSP_ID`/`PRSN_ID` values on its six `STATUS=NORMAL`
+access rows, so this one command runs analysis, stages the CSV,
+invokes the real `report-export:1.0.0` image, and selects the
+deliverable — and, because `--notify-dry-run` is given, writes rather
+than sends the mail payload:
+
+```bash
+bash bin/log_report.sh --log-dir ./examples/sample-logs/LUNG-CANCER-REPORT-LOG \
+    --date 2026-05-21 --format csv --output-dir /tmp/log-parse-demo \
+    --report-export --notify --notify-dry-run
+```
+
+This lands `production/output/<run_date>_連線紀錄.xlsx` under
+`/tmp/log-parse-demo/` (container summary: `normal=6, unique_ips=5,
+unmapped_hosp_ids=0`) and writes the run's `notify_payload.json` with
+the xlsx as its 7th attachment — every step of "Attaching the xlsx to
+the mail" (above) is inspectable without ever reaching a real SMTP
+endpoint (`conf/receivers.conf` still needs its usual at-least-one-row,
+see [Notification](#notification); `--notify-dry-run` just never
+actually sends). This does not change `analyze_access`'s
+own `STATUS` classification for the date — NORMAL/ORPHAN/UNVERIFIED
+remain 6/9 — only the previously-blank `CLIENT_IP`/`HOSP_ID`/`PRSN_ID`
+fields on those already-`NORMAL` rows are now populated.
+
 **PII and retention — read before enabling.** `production/state`
 accumulates every distinct week's records **indefinitely** — it is
 canonical, cross-run state, not per-run scratch, and this toolkit
@@ -1238,7 +1288,7 @@ stderr line (mirroring `NOTIFY_RESULT`):
 |---|---|---|
 | *(pre-analysis; no result line yet)* | `--report-export` without `--format csv` / without the access module / `docker` missing / a bad image or user-spec override / `docker image inspect` failed | Fix the flag, env var, or image build and rerun; no run directory was created. |
 | `dirs` | `production/` could not be created, or its resolved path is unsafe (too shallow, or `--output-dir` resolves to `/`) | Check `--output-dir` and host filesystem permissions. |
-| `dirs_perm` | `production/{input,state,output}` exist but are not writable by this uid — typically a **previous root container run** | Run the exact `sudo chown -R <uid>:<gid> .../production` command printed in the error message. |
+| `dirs_perm` | `production/{input,state,output}` exist but are not writable by this uid — typically a **previous run under a different uid** (most often a prior `root`/`-` opt-out) | Run the exact `sudo chown -R <uid>:<gid> .../production` command printed in the error message. |
 | `path_colon` | The resolved `--output-dir` path contains `:` | `docker -v` cannot parse a colon in a host path; choose a path without one. |
 | `window_start` | The analysis window's start date could not be derived | Defensive check only — should not occur, since `resolve_interval` has already validated the interval before this step runs; report as an orchestration-boundary defect. |
 | `source_missing` / `source_empty` | This run's `access_detail.csv` is missing or zero bytes | Confirm `--format csv` and that the access module actually ran; a header-only CSV is fine and is **not** this error. |

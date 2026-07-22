@@ -44,4 +44,6 @@ tests/output/
 tests/tmp/
 
 # Always-on persistence default output dir (D6 — created on every run)
-/log-parse/
+# Persisted run output + the --report-export production/ tree, created under
+# whatever CWD the operator runs from (repo root, bin/, ...) — never tracked.
+log-parse/

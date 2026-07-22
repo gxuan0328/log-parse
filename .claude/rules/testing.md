@@ -9,7 +9,7 @@ Loaded when editing `tests/run_tests.sh` or any new test file.
 
 ## Single source of truth
 
-`tests/run_tests.sh` is the only regression suite. Currently 352 tests
+`tests/run_tests.sh` is the only regression suite. Currently 356 tests
 across thirteen sections (A access · B iis · C errors · D log_report ·
 E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
 J test-host/health · K timezone+core-function · L notification dispatch ·
@@ -61,17 +61,21 @@ Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
   by driving `--from`/`--to` and `--days` through the full `--notify
   --notify-dry-run` CLI path and asserting the Subject/Analysis-range
   render the complete window (L31)
-- M01–M34  `--report-export` container integration — dependency
+- M01–M38  `--report-export` container integration — dependency
   conditionality (M01); the `--format csv`/access-module legality guards
   and their exact die text (M02–M04); the docker preflight gate, both its
   missing-binary and `image inspect`-failure paths, and the image-ref /
-  user-spec whitelists (M05–M08); the `production/{input,state,output}`
+  user-spec whitelists (M05–M08, M08 probing `--privileged` for CWE-88
+  after the reversal below turned its original probe, `'root'`, into a
+  legal value); the `production/{input,state,output}`
   tree as a sibling of the run directory with mode 700 (M09); the
   window-start staging derivation across `--days`/`--date`/`--from`-`--to`
   (M10–M12); staging copy-not-move semantics and the identical/differing
   overwrite branches (M13–M15); the `:`-in-path guard (M16); the rendered
-  `docker run` argv shape, including the default no-`--user` behaviour
-  and the `LOG_PARSE_REPORT_EXPORT_USER` opt-in escape hatch (M17), and
+  `docker run` argv shape — REVERSAL OF ORCHESTRATOR OVERRIDE #1: the
+  default `--user "${UID}:${GROUPS[0]}"` behaviour, the
+  `LOG_PARSE_REPORT_EXPORT_USER` numeric override, and its `root`/`-`
+  opt-out (no `--user` token at all) (M17) — and
   image-reference override propagation (M18); stdout isolation
   and byte-identity with/without the flag, and stderr diagnostic
   preservation (M19–M21); the happy path plus `--notify` integration
@@ -107,9 +111,20 @@ Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
   on a run-directory file before the xlsx was ever reached, so the
   cap-applies-to-the-xlsx claim was never actually exercised — now a
   6000-byte cap against an 8000-byte sentinel xlsx, comfortably above
-  every real run-directory file). Offline only via a `fake_docker.sh`
-  shim (mirrors Section L's `fake_curl.sh` pattern) — no test ever
-  contacts a real Docker daemon or network endpoint.
+  every real run-directory file). M01–M34 are offline only via a
+  `fake_docker.sh` shim (mirrors Section L's `fake_curl.sh` pattern) — no
+  test among them ever contacts a real Docker daemon or network endpoint.
+  M35–M38 are the ONE exception: a REAL, end-to-end integration run
+  (`--report-export --notify --notify-dry-run`, default `--user`, the
+  genuine `report-export:1.0.0` image, no shim) proving exit 0; a real
+  xlsx under `production/output/` owned by and readable by the invoking
+  uid; the run directory's `notify_payload.json` carrying exactly 7
+  Attachments keys with the 7th ending `連線紀錄.xlsx` and base64-decoding
+  to a non-empty ZIP (`PK` magic); and the container's own JSON summary
+  never reaching log-parse's stdout. GUARDED: `command -v docker` and
+  `docker image inspect report-export:1.0.0` are probed first, and all
+  four tests PASS with a "skipped: no docker" note when either is
+  absent, so the suite stays green on a docker-less CI/dev host.
 
 When inserting tests, keep numbering monotonic — append new tests at the
 end of the relevant section, do not renumber existing ones.
