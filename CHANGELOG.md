@@ -37,6 +37,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   malformed-entry negative).
 
 ### Changed
+- **`conf/test_hosts.conf` is now the external-user-only production policy:
+  `192.168.0.0/16` + `10.252.130.178`** (replacing the enumerated exact-IP
+  list). One CIDR line covers every internal 192.168.x.x source — QA, health
+  probes, and the internal gateway `192.168.139.119` alike — so the list needs
+  no per-host maintenance and the analysis reflects external users only. This
+  deliberately reclassifies `.119` (a private-range gateway is internal
+  infrastructure, not an external user) as non-business. On the bundled sample
+  `.119` is 712 of 723 business IIS requests, so excluding it would collapse the
+  sample's IIS/overview data to ~11 requests and vacate the IIS feature
+  baselines (`--top N`, status distribution, DICOM, endpoint CATEGORY,
+  per-region breakdowns). To keep the suite meaningful, the regression tests and
+  the sample-output demo are **decoupled** from the shipped conf: both export
+  `LOG_PARSE_TEST_HOSTS_CONF=tests/fixtures/test_hosts.conf` (a new exact-IP QA
+  fixture that does NOT list `.119`, so the gateway stays business), so every
+  baseline keeps its data unchanged. The shipped `/16` policy is validated
+  directly by J16 (the shipped file loads as 2 entries), J24–J27 (CIDR
+  matching), and the new J29 (the shipped conf excludes `.119` and the 10.x QA
+  host while keeping a real external IP). `tests/run_tests.sh` (global fixture
+  export + J29), `tests/fixtures/test_hosts.conf` (new), `Makefile`
+  (`samples-regen` uses the fixture), `docs/usage.md`/`usage.zh-TW.md`, and
+  `docs/design.md`/`design.zh-TW.md` updated. Tests: 367 -> 368 (J29 added; the
+  fixture keeps every other baseline unchanged).
 - **`report-export` deliverable drops the `BIRTHDAY` column.** The weekly
   連線紀錄 workbook's 調閱紀錄 sheet no longer emits the plaintext
   date-of-birth: the column is removed and `PATIENT ID AES` shifts left from

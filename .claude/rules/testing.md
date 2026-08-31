@@ -9,7 +9,7 @@ Loaded when editing `tests/run_tests.sh` or any new test file.
 
 ## Single source of truth
 
-`tests/run_tests.sh` is the only regression suite. Currently 367 tests
+`tests/run_tests.sh` is the only regression suite. Currently 368 tests
 across thirteen sections (A access · B iis · C errors · D log_report ·
 E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
 J test-host/health · K timezone+core-function · L notification dispatch ·
@@ -25,6 +25,14 @@ Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
   since the resolved window drifts with `$(date +%F)`.
 - Document baseline numbers in section header comments so reviewers can
   validate at a glance.
+- The suite exports `LOG_PARSE_TEST_HOSTS_CONF=tests/fixtures/test_hosts.conf`
+  so every analyzer run filters against a fixed QA test-host set (which keeps
+  the sample's dominant client `192.168.139.119` as business), decoupling the
+  baselines from the SHIPPED `conf/test_hosts.conf` — a `192.168.0.0/16`
+  external-user-only production template that would otherwise exclude `.119`
+  and collapse the sample's IIS/overview data. J16/J29 validate the shipped
+  file's own semantics; per-test overrides (J21–J28, E39) set their own path.
+  `make samples-regen` uses the same fixture so the demo stays consistent.
 
 ## Test ID convention
 
@@ -39,12 +47,15 @@ Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
 - G01–G05  CJK display-width alignment (+ A35, A36, C22; G04: fmt_bar determinism; G05: agg_access_records malformed-APP_TIME guard)
 - H01–H25  `analyze_overview` (H16-H21: per-region N/O/U + verdict boundaries; H22: single-day global chart; H23: per-region chart counts; H24: multi-day no chart; H25: today-cap + midnight)
 - I01–I12  persistence (always-on report files)
-- J01–J28  test-host filter + /health exclusion (J21–J28: CIDR test-host
+- J01–J29  test-host filter + /health exclusion (J21–J28: CIDR test-host
   entries — end-to-end exclude/only via a temp conf pointed at by
   `LOG_PARSE_TEST_HOSTS_CONF`, a non-covering CIDR that must NOT over-match,
   the `/24` member/network/broadcast/outside boundary, `/32`==exact IP with an
   explicit-IP ∪ CIDR set, non-canonical-network canonicalisation, `mode=all`
-  keeps everything, and `load_test_hosts` preserving IP+CIDR tokens verbatim)
+  keeps everything, and `load_test_hosts` preserving IP+CIDR tokens verbatim;
+  J29: the SHIPPED conf/test_hosts.conf — the `192.168.0.0/16` external-only
+  production policy — excludes the internal gateway `.119` and the 10.x QA host
+  while keeping a real external IP)
 - K01–K16  timezone correction + core-function CATEGORY
   (K13/K14 intentionally vacant — gap preserved per commit history; K15/K16 continue past gap)
 - L01–L33  notification dispatch (`--notify`/`--notify-dry-run`/`--notify-attach`)

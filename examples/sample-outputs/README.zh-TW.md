@@ -11,9 +11,14 @@
 
 > **預設行為 — 僅業務流量。**
 > 所有報告均以 `--test-hosts exclude`（預設值）產生。
-> 這代表：(1) 列於 `conf/test_hosts.conf` 中的內部 QA / 測試用戶端 IP
-> （192.168.139.79、.110、.28）在聚合前即被排除；
+> 這代表：(1) 內部 QA / 測試用戶端 IP 在聚合前即被排除；
 > (2) `/health` 端點請求無論任何模式，均無條件從所有 IIS 聚合中排除。
+>
+> 這些 demo 輸出（與回歸測試套件相同）經 `LOG_PARSE_TEST_HOSTS_CONF` 指向
+> `tests/fixtures/test_hosts.conf`（一份明確 IP 的 QA 集）產生，使 sample 的
+> 閘道客戶端維持業務、報告保有可測資料。**shipped** 的 `conf/test_hosts.conf`
+> 是另一份生產範本（`192.168.0.0/16`——涵蓋所有內部來源、含閘道）；以它對此
+> sample 執行會呈現近乎空白的 IIS 報告，故 demo 改用 fixture。
 > 因此 `Total requests` / `IIS 總請求數` 僅反映真實外部用戶流量。
 > 若要顯示 QA 用戶端流量（非健康檢查部分），可使用 `--test-hosts only`；
 > 若要同時包含業務與測試主機流量，則使用 `--test-hosts all`。

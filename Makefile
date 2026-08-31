@@ -58,7 +58,7 @@ errors:      ## Run error analysis only
 
 samples-regen: ## Regenerate examples/sample-outputs/ (pins TS+NO_COLOR for determinism)
 	@echo "Regenerating sample outputs (TS=$(SAMPLE_TS), NO_COLOR=1)..."
-	@export NO_COLOR=1 LOG_PARSE_RUN_TS=$(SAMPLE_TS); \
+	@export NO_COLOR=1 LOG_PARSE_RUN_TS=$(SAMPLE_TS) LOG_PARSE_TEST_HOSTS_CONF=$(CURDIR)/tests/fixtures/test_hosts.conf; \
 	SOUT=$(SAMPLE_OUT); SLOG=$(SAMPLE_LOGS); \
 	D=$(SAMPLE_DATE); F=$(SAMPLE_FROM); T=$(SAMPLE_TO); \
 	\

@@ -12,10 +12,17 @@ all fixtures deterministically.
 
 > **Default behaviour — business traffic only.**
 > Every report is generated with `--test-hosts exclude` (the default).
-> This means (1) requests from internal QA/test client IPs listed in
-> `conf/test_hosts.conf` (192.168.139.79, .110, .28) are removed before
-> aggregation, and (2) `/health` endpoint requests are unconditionally
+> This means (1) requests from the internal QA / test client IPs are removed
+> before aggregation, and (2) `/health` endpoint requests are unconditionally
 > excluded from all IIS aggregation regardless of mode.
+>
+> These demo outputs (like the regression suite) are generated against
+> `tests/fixtures/test_hosts.conf` — an exact-IP QA set — via
+> `LOG_PARSE_TEST_HOSTS_CONF`, so the sample's gateway client stays business
+> and the reports keep meaningful data. The SHIPPED `conf/test_hosts.conf` is a
+> production template (`192.168.0.0/16` — every internal source, the gateway
+> included); running the tool with it against this sample would show near-empty
+> IIS reports, which is why the demo pins the fixture instead.
 > `Total requests` / `IIS 總請求數` therefore reflect real external user
 > traffic only.  Use `--test-hosts only` to surface QA-client traffic
 > (non-health hits only) or `--test-hosts all` to include both.

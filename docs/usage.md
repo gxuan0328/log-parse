@@ -77,9 +77,10 @@ All `analyze_iis` and `analyze_access` runs require **`conf/test_hosts.conf`** �
 plain-text list of internal QA / health-probe client IPs, **one entry per line**.
 Each entry is either an exact IPv4 (`192.168.117.90`) or an IPv4/prefix **CIDR
 block** (`192.168.0.0/16`) that matches a whole subnet without enumerating every
-host. The file seeds seven exact addresses: `192.168.139.79`, `192.168.139.110`,
-`192.168.139.28`, `192.168.117.90`, `192.168.105.149`, `192.168.117.73`, and
-`192.168.117.104`. A missing file is a fatal error even with `--test-hosts all`
+host. The shipped file is the **external-user-only production policy**: the
+internal-range CIDR `192.168.0.0/16` (every 192.168.x.x source — QA, health
+probes, and the internal gateway alike) plus the exact host `10.252.130.178`.
+A missing file is a fatal error even with `--test-hosts all`
 (fail-fast, consistent with `regions.conf`); a malformed entry (bad octet, or a
 prefix outside 0–32) aborts the run at load with a per-line diagnostic.
 

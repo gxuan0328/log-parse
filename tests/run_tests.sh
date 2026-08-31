@@ -5,7 +5,7 @@
 # and error handling. Baselines are derived from the examples/sample-logs/LUNG-CANCER-REPORT-LOG
 # sample data included in the project (dates 2026-05-18 ~ 2026-05-25).
 #
-# Total: 358 tests across thirteen sections (A access · B iis · C errors · D log_report ·
+# Total: 368 tests across thirteen sections (A access · B iis · C errors · D log_report ·
 #        E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
 #        J test-host/health · K timezone+core-function · L notify SMTP-API delivery ·
 #        M report-export container integration).
@@ -21,6 +21,14 @@ export TZ=UTC
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LOG_DIR="${PROJECT_DIR}/examples/sample-logs/LUNG-CANCER-REPORT-LOG"
+
+# Decouple the suite from the SHIPPED conf/test_hosts.conf (a production template
+# using 192.168.0.0/16 — external-user-only — which would exclude the bundled
+# sample's dominant business client 192.168.139.119 and vacate the IIS feature
+# baselines). Every analyzer run below filters against this fixed QA fixture
+# instead; the shipped conf's /16 semantics are validated separately (J16/J29).
+# Per-test overrides (J21–J28, E39) set their own LOG_PARSE_TEST_HOSTS_CONF inline.
+export LOG_PARSE_TEST_HOSTS_CONF="${PROJECT_DIR}/tests/fixtures/test_hosts.conf"
 
 ACCESS="${PROJECT_DIR}/bin/analyze_access.sh"
 IIS="${PROJECT_DIR}/bin/analyze_iis.sh"
@@ -1711,7 +1719,7 @@ _has H12  "overview --today 期間含 '(1 天)'" "$out12" "(1 天)"
 
 # H13: EXTERNAL anchor — IIS business total == raw grep count (+8h UTC window, 獨立驗算)
 # Independent baseline: +8h window = u_ex260520 rows $2>="16:00:00" + u_ex260521 rows $2<"16:00:00"
-# Filters: NF>=17, !/^#/, $5!="/health", exclude test-host IPs .79/.110/.28
+# Filters: NF>=17, !/^#/, $5!="/health", exclude the QA fixture's .79/.110/.28 (keeps .119 business)
 _h13_total=0
 for _h13_srv in 10.1.72.35 10.1.72.36 10.1.73.37 10.21.3.35 10.21.3.36 10.22.63.37; do
     _h13_f20="${LOG_DIR}/${_h13_srv}/iis/u_ex260520.log"
@@ -2115,10 +2123,10 @@ fi
 bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --test-hosts bogus >/dev/null 2>&1; rc_j15=$?
 _err J15 "access --test-hosts bogus → non-zero exit (assert_enum)" "$rc_j15"
 
-# J16: load_test_hosts reads exactly 7 test-host IP tokens from conf/test_hosts.conf
+# J16: load_test_hosts reads exactly 2 entries (192.168.0.0/16 CIDR + one exact IP) from conf/test_hosts.conf
 th_set=$(bash -c "source \"${PROJECT_DIR}/lib/common.sh\"; load_test_hosts \"${PROJECT_DIR}/conf/test_hosts.conf\"")
 th_count=$(printf '%s\n' "$th_set" | wc -w | tr -d ' ')
-_eq J16 "load_test_hosts 返回恰好 7 個測試主機 IP tokens" "$th_count" "7"
+_eq J16 "load_test_hosts 返回恰好 2 個測試主機項目 (1 CIDR + 1 明確 IP)" "$th_count" "2"
 
 # J17: analyze_errors --test-hosts only → non-zero exit (Unknown option; no flag support)
 bash "$ERRORS" --log-dir "$LOG_DIR" --date 2026-05-21 --test-hosts only >/dev/null 2>&1; rc_j17=$?
@@ -2142,7 +2150,7 @@ j20_out=$(bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null)
 j20_total=$(printf '%s\n' "$j20_out" | grep "核心功能存取合計" | grep -oE '[0-9]+' | head -1)
 _eq J20 "overview 預設 (exclude): 核心功能存取合計 == 624" "$j20_total" "624"
 
-# ── Section J (cont.) — CIDR test-host entries (J21–J28) ──────────────────────
+# ── Section J (cont.) — CIDR test-host entries (J21–J29) ──────────────────────
 # test_hosts.conf now accepts IPv4/prefix CIDR blocks (e.g. 192.168.0.0/16)
 # alongside exact IPs; th_skip() matches a client IP if it EQUALS an exact entry
 # OR falls inside any CIDR block. LOG_PARSE_TEST_HOSTS_CONF overrides the conf
@@ -2197,6 +2205,16 @@ j28_conf=$(mktemp /tmp/lp_j28.XXXXXX); printf '# mixed\n192.168.117.90\n192.168.
 j28_set=$(bash -c "source \"${PROJECT_DIR}/lib/common.sh\"; load_test_hosts \"$j28_conf\"")
 rm -f "$j28_conf"
 _eq J28 "load_test_hosts 保留 IP+CIDR tokens 逐字 (檔序)" "$j28_set" "192.168.117.90 192.168.0.0/16 10.1.1.5/32"
+
+# J29: the SHIPPED conf/test_hosts.conf (192.168.0.0/16 + 10.252.130.178, the
+# production external-user-only policy) excludes the internal gateway .119 via
+# the /16, keeps a real external client IP, and excludes the explicit 10.x QA
+# host. (The suite otherwise runs against tests/fixtures/test_hosts.conf, which
+# keeps .119 as business; this pins the shipped file's own /16 semantics.)
+j29_set=$(bash -c "source \"${PROJECT_DIR}/lib/common.sh\"; load_test_hosts \"${PROJECT_DIR}/conf/test_hosts.conf\"")
+_eq J29 "shipped conf /16 排除內部 .119 + 保留外部 IP + 排除 10.x QA" \
+    "$(_th_skip "$j29_set" exclude 192.168.139.119) $(_th_skip "$j29_set" exclude 10.242.246.93) $(_th_skip "$j29_set" exclude 10.252.130.178)" \
+    "1 0 1"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section K — timezone correction + core-function CATEGORY (K01–K16)

@@ -42,7 +42,7 @@ NOT a daemon. NOT a database. NOT a service. Do not introduce one.
 | `bin/`      | CLI entry points; one file = one command.                            |
 | `lib/`      | Sourced-only helpers (common, date_utils, csv_utils, fmt_utils, notify_utils, report_export_utils). |
 | `conf/`     | `regions.conf` — region ↔ server mapping read by `load_regions`; `receivers.conf` — `--notify` recipients. |
-| `tests/`    | `run_tests.sh` — single-file regression suite (currently 367 tests). |
+| `tests/`    | `run_tests.sh` — single-file regression suite (currently 368 tests). |
 | `docs/`     | `design.md` + `usage.md` (+ zh-TW). Update both languages together.  |
 | `examples/` | `sample-logs/` (dataset), `sample-outputs/` (expected reports), `*.sh`.|
 | `.claude/`  | Project rules (this file + `rules/` + `skills/`).                    |
