@@ -74,11 +74,21 @@ artifacts.
 ### Test-host filtering
 
 All `analyze_iis` and `analyze_access` runs require **`conf/test_hosts.conf`** — a
-plain-text list of internal QA / health-probe client IPs (one IPv4 per line).
-The file seeds seven addresses: `192.168.139.79`, `192.168.139.110`,
+plain-text list of internal QA / health-probe client IPs, **one entry per line**.
+Each entry is either an exact IPv4 (`192.168.117.90`) or an IPv4/prefix **CIDR
+block** (`192.168.0.0/16`) that matches a whole subnet without enumerating every
+host. The file seeds seven exact addresses: `192.168.139.79`, `192.168.139.110`,
 `192.168.139.28`, `192.168.117.90`, `192.168.105.149`, `192.168.117.73`, and
 `192.168.117.104`. A missing file is a fatal error even with `--test-hosts all`
-(fail-fast, consistent with `regions.conf`).
+(fail-fast, consistent with `regions.conf`); a malformed entry (bad octet, or a
+prefix outside 0–32) aborts the run at load with a per-line diagnostic.
+
+A client IP matches the set if it **equals** an exact entry **or falls inside**
+any CIDR block — host bits of a non-canonical network like `192.168.5.9/16` are
+ignored, so it still covers the whole `/16`. Mix the two freely: keep listing
+individual hosts and add a CIDR line to sweep in a same-subnet cohort at once.
+Set **`LOG_PARSE_TEST_HOSTS_CONF=/path/to/file`** to read the list from an
+alternate path instead of the bundled `conf/test_hosts.conf`.
 
 The `--test-hosts` flag controls how those IPs are treated at the read stage:
 

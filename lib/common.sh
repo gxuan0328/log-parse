@@ -184,41 +184,100 @@ assert_enum() { local name="$1" val="$2"; shift 2; local a
                 die "$name must be one of: $* (got '$val')"; }
 
 # ----------------------------------------------------------------------------
-# Purpose : Read test_hosts.conf and emit its IP set as one space-joined string
-#           for passing to gawk via -v th_set=... (matched exactly, never regex).
+# Purpose : Read test_hosts.conf and emit its entry set as one space-joined
+#           string for passing to gawk via -v th_set=... . Each entry is either
+#           an exact IPv4 (e.g. 192.168.117.90) or an IPv4/prefix CIDR block
+#           (e.g. 192.168.0.0/16); TH_FILTER_FUNC's th_skip() matches a client
+#           IP against both. Never regex/substring.
 # Args    : $1 CONF — path to test_hosts.conf.
-# Output  : space-joined IP string on stdout (empty string if file has no IPs).
-# Returns : 0; dies (fail-fast) if CONF is given but unreadable.
+# Output  : space-joined entry string on stdout (empty string if file has none).
+# Returns : 0; dies (fail-fast) if CONF is unreadable OR any entry is neither a
+#           valid IPv4 nor a valid IPv4 CIDR (a per-line diagnostic is printed
+#           to stderr for every offending entry before aborting).
 # Notes   : Strips inline/whole-line '#' comments, blank lines, and surrounding
-#           whitespace/CR. Single source for the test-host IP list. First true
+#           whitespace/CR. Single source for the test-host set. First true
 #           shared loader in common.sh (mirrors assert_enum/die placement, NOT
 #           the per-bin load_regions).
 # ----------------------------------------------------------------------------
 load_test_hosts() {
-    local conf="$1"
+    local conf="$1" out
     if [[ ! -f "$conf" ]]; then die "test-hosts config not found: $conf"; fi
-    gawk '
-        { sub(/#.*/, ""); gsub(/[ \t\r]+/, "") }
-        $0 != "" { ips = (ips == "" ? $0 : ips " " $0) }
-        END { print ips }
-    ' "$conf"
+    # Validate every entry as an exact IPv4 or an IPv4/prefix CIDR, then emit
+    # them space-joined. gawk reports each malformed entry to stderr and exits 2
+    # so a typo fails loudly at load, never silently at match time (§2 rule 1).
+    out="$(gawk '
+        function octet_ok(o) { return o ~ /^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$/ }
+        function ipv4_ok(ip,   a) {
+            return (split(ip, a, ".") == 4) &&
+                   octet_ok(a[1]) && octet_ok(a[2]) && octet_ok(a[3]) && octet_ok(a[4])
+        }
+        function entry_ok(tok,   sl) {
+            sl = index(tok, "/")
+            if (sl == 0) return ipv4_ok(tok)
+            return ipv4_ok(substr(tok, 1, sl - 1)) &&
+                   (substr(tok, sl + 1) ~ /^(3[0-2]|[12]?[0-9])$/)
+        }
+        { entry = $0; sub(/#.*/, "", entry); gsub(/[ \t\r]+/, "", entry) }
+        entry == "" { next }
+        !entry_ok(entry) {
+            printf "[test_hosts.conf] invalid entry at line %d: %s\n", NR, $0 > "/dev/stderr"
+            bad = 1; next
+        }
+        { ips = (ips == "" ? entry : ips " " entry) }
+        END { if (bad) exit 2; print ips }
+    ' "$conf")" || die "test_hosts.conf has invalid entries (see above): $conf"
+    printf '%s\n' "$out"
 }
 
 # TH_FILTER_FUNC — gawk snippet implementing the test-host membership filter.
 # Prepend to any gawk program that filters by client IP. Requires the program
-# to set, via -v: _th_mode=exclude|only|all and th_set="ip ip ...".
-# Call th_init(th_set) in BEGIN; then `if (th_skip(ip)) next` at the read stage.
+# to set, via -v: _th_mode=exclude|only|all and th_set="entry entry ...", where
+# each entry is an exact IPv4 or an IPv4/prefix CIDR block (as emitted by
+# load_test_hosts). Call th_init(th_set) in BEGIN; then `if (th_skip(ip)) next`
+# at the read stage. All private state is _th-prefixed to avoid colliding with
+# the host program's globals.
 TH_FILTER_FUNC='
-function th_init(set_str,   n, i, a) {
+# _th_ip2int(ip) -> the 32-bit integer for a dotted IPv4, or -1 if not 4 octets.
+function _th_ip2int(ip,   a) {
+    if (split(ip, a, ".") != 4) return -1
+    return a[1]*16777216 + a[2]*65536 + a[3]*256 + a[4]
+}
+# th_init(set_str): partition the space-joined token string into the exact-IP
+# set _th[] and _th_nc CIDR ranges _th_lo[]/_th_hi[]. A token containing "/" is
+# a CIDR network/prefix (prefix 0-32); every other token is an exact IP. A CIDR
+# spans [base, base + 2^(32-prefix) - 1]; host bits of a non-canonical network
+# (e.g. 192.168.5.9/16) are cleared via integer division so it still covers the
+# whole block.
+function th_init(set_str,   n, i, a, tok, sl, blk) {
+    _th_nc = 0
     n = split(set_str, a, " ")
-    for (i = 1; i <= n; i++) if (a[i] != "") _th[a[i]] = 1
+    for (i = 1; i <= n; i++) {
+        tok = a[i]
+        if (tok == "") continue
+        sl = index(tok, "/")
+        if (sl == 0) { _th[tok] = 1; continue }
+        blk = 2 ^ (32 - (substr(tok, sl + 1) + 0))
+        _th_nc++
+        _th_lo[_th_nc] = int(_th_ip2int(substr(tok, 1, sl - 1)) / blk) * blk
+        _th_hi[_th_nc] = _th_lo[_th_nc] + blk - 1
+    }
+}
+# _th_match(ip) -> 1 if ip is an exact member OR falls inside any CIDR block.
+function _th_match(ip,   v, i) {
+    if (ip in _th) return 1
+    if (_th_nc) {
+        v = _th_ip2int(ip)
+        if (v >= 0)
+            for (i = 1; i <= _th_nc; i++)
+                if (v >= _th_lo[i] && v <= _th_hi[i]) return 1
+    }
+    return 0
 }
 # th_skip(ip) -> 1 = DROP this record, 0 = KEEP, per mode.
 #   exclude (default): drop test hosts; only: keep ONLY test hosts; all: keep all.
-function th_skip(ip,   inset) {
-    inset = (ip in _th)
-    if (_th_mode == "only") return !inset
+function th_skip(ip) {
     if (_th_mode == "all")  return 0
-    return inset            # exclude (default)
+    if (_th_mode == "only") return !_th_match(ip)
+    return _th_match(ip)            # exclude (default)
 }
 '

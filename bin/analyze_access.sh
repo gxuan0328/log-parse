@@ -45,7 +45,7 @@ source "${SCRIPT_DIR}/../lib/aggregate_utils.sh"
 source "${SCRIPT_DIR}/../lib/output_utils.sh"
 
 REGIONS_CONF="${SCRIPT_DIR}/../conf/regions.conf"
-TEST_HOSTS_CONF="${SCRIPT_DIR}/../conf/test_hosts.conf"
+TEST_HOSTS_CONF="${LOG_PARSE_TEST_HOSTS_CONF:-${SCRIPT_DIR}/../conf/test_hosts.conf}"
 OPT_TEST_HOSTS="exclude"
 TEST_HOST_SET=""
 

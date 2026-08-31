@@ -9,7 +9,7 @@ Loaded when editing `tests/run_tests.sh` or any new test file.
 
 ## Single source of truth
 
-`tests/run_tests.sh` is the only regression suite. Currently 358 tests
+`tests/run_tests.sh` is the only regression suite. Currently 367 tests
 across thirteen sections (A access · B iis · C errors · D log_report ·
 E validation · F user scenarios · G CJK alignment · H overview · I persistence ·
 J test-host/health · K timezone+core-function · L notification dispatch ·
@@ -34,12 +34,17 @@ Run with `make test` or `bash tests/run_tests.sh`. Exit 0 = all passed.
 - B01–B40  `analyze_iis` (B39: Top-端點 avg; B40: rank-fix)
 - C01–C25  `analyze_errors`
 - D01–D35  `log_report`
-- E01–E38  validation paths (E27–E37: `--notify*` negatives — bad enum, missing `--notify`, bad URL/receivers/From-address, missing curl, duplicate address; E38: receivers.conf content validation dies in parse_args, before persist_init)
+- E01–E39  validation paths (E27–E37: `--notify*` negatives — bad enum, missing `--notify`, bad URL/receivers/From-address, missing curl, duplicate address; E38: receivers.conf content validation dies in parse_args, before persist_init; E39: a malformed `test_hosts.conf` entry — bad octet or a CIDR prefix outside 0–32 — aborts the run at load, fail-fast, driven via `LOG_PARSE_TEST_HOSTS_CONF`)
 - F01–F18  user scenarios
 - G01–G05  CJK display-width alignment (+ A35, A36, C22; G04: fmt_bar determinism; G05: agg_access_records malformed-APP_TIME guard)
 - H01–H25  `analyze_overview` (H16-H21: per-region N/O/U + verdict boundaries; H22: single-day global chart; H23: per-region chart counts; H24: multi-day no chart; H25: today-cap + midnight)
 - I01–I12  persistence (always-on report files)
-- J01–J20  test-host filter + /health exclusion
+- J01–J28  test-host filter + /health exclusion (J21–J28: CIDR test-host
+  entries — end-to-end exclude/only via a temp conf pointed at by
+  `LOG_PARSE_TEST_HOSTS_CONF`, a non-covering CIDR that must NOT over-match,
+  the `/24` member/network/broadcast/outside boundary, `/32`==exact IP with an
+  explicit-IP ∪ CIDR set, non-canonical-network canonicalisation, `mode=all`
+  keeps everything, and `load_test_hosts` preserving IP+CIDR tokens verbatim)
 - K01–K16  timezone correction + core-function CATEGORY
   (K13/K14 intentionally vacant — gap preserved per commit history; K15/K16 continue past gap)
 - L01–L33  notification dispatch (`--notify`/`--notify-dry-run`/`--notify-attach`)

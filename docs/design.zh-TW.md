@@ -98,7 +98,7 @@ LUNG-CANCER-REPORT 系統為兩家醫院（台北 / 台中）提供臨床研究�
    `RUN_OUTPUT_DIR`、`RUN_TS`、`INTERVAL_ARGS`）。
 3. **設定檔層**（`conf/`） — 純文字檔，不含可執行內容。`regions.conf`
    為管道字元分隔格式，由各 bin 內的 `load_regions()` 讀取。
-   `test_hosts.conf` 每行一個 IPv4，由 `lib/common.sh` 中的
+   `test_hosts.conf` 每行一個 IPv4 或 CIDR 網段，由 `lib/common.sh` 中的
    `load_test_hosts` 讀取（見 §3.2.14）。`receivers.conf` 每行一筆
    `DISPLAY_NAME|ADDRESS` 郵件收件者，供 `--notify` 使用，由
    `lib/notify_utils.sh` 中的 `load_receivers` 讀取（見 §3.4.7）。
@@ -175,16 +175,23 @@ IIS 指標 awk 與 RFC-4180 CSV 引號處理器的單一事實來源：
 
 #### `lib/common.sh` — 測試主機載入器與謂詞（單一事實來源）
 
-`load_test_hosts(conf)` 讀取 `conf/test_hosts.conf`，去除 `#` 註解與空行，
-以空格串接 IP 集合後輸出，供 gawk 透過 `-v th_set=...` 接收（以精確字串
-相等方式比對，從不使用正規表達式）。若檔案不存在，`load_test_hosts` 以
-`die` 中止——與 `regions.conf` 的 fail-fast 行為一致。
+`load_test_hosts(conf)` 讀取 `conf/test_hosts.conf`（或 `LOG_PARSE_TEST_HOSTS_CONF`
+所指路徑，若已設定），去除 `#` 註解與空行，並驗證每一筆項目為明確 IPv4 或
+IPv4/prefix CIDR 網段，再以空格串接後輸出，供 gawk 透過 `-v th_set=...` 接收。
+若檔案不存在，`load_test_hosts` 以 `die` 中止——與 `regions.conf` 的 fail-fast
+行為一致；若任一項目為格式錯誤的 IPv4/CIDR，亦逐行報錯後中止，使拼寫錯誤在
+載入時即大聲失敗，而非在讀取階段靜默錯配。
 
-`TH_FILTER_FUNC` 為 gawk 程式片段（shell 變數），實作三種過濾模式。呼叫
-方以 `"$TH_FILTER_FUNC$AWK_PROG"` 前置方式注入至任何需按用戶端 IP 過濾
-的 gawk 程式，並傳入 `-v _th_mode=exclude|only|all` 與 `-v th_set="ip ip
-..."`，在 `BEGIN` 區塊呼叫 `th_init(th_set)`，在讀取階段以
-`if (th_skip(ip)) next` 過濾紀錄。`th_skip` 回傳 1（丟棄）或 0（保留）：
+`TH_FILTER_FUNC` 為 gawk 程式片段（shell 變數），實作三種過濾模式**外加 CIDR
+比對**。呼叫方以 `"$TH_FILTER_FUNC$AWK_PROG"` 前置方式注入至任何需按用戶端 IP
+過濾的 gawk 程式，並傳入 `-v _th_mode=exclude|only|all` 與 `-v th_set="entry
+entry ..."`，在 `BEGIN` 區塊呼叫 `th_init(th_set)`，在讀取階段以
+`if (th_skip(ip)) next` 過濾紀錄。`th_init` 將 tokens 分成明確 IP 集合與 CIDR
+範圍清單：含 `/` 的 token 為 `network/prefix` 網段，涵蓋
+`[base, base + 2^(32-prefix) - 1]`（非正規網路的 host bits 以整數除法清除）。
+`th_skip` 回傳 1（丟棄）或 0（保留）；用戶端 IP 只要等於某明確項目，**或**其
+32-bit 整數落於任一 CIDR 範圍即為成員（所有私有狀態均以 `_th` 前綴，避免與
+宿主程式全域變數衝突）：
 - `exclude`（預設）— 丟棄用戶端 IP 位於測試主機集合中的請求。
 - `only` — 僅保留來自測試主機 IP 的請求。
 - `all` — 不論 IP 為何，保留所有請求。

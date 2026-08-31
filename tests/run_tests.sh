@@ -1097,6 +1097,17 @@ else
 fi
 rm -rf "$TMPD_E38"
 
+# E39: a malformed test_hosts.conf entry (bad CIDR prefix / octet) aborts the
+# run with a non-zero exit (load_test_hosts fail-fast validation). Driven
+# through a real analyzer via LOG_PARSE_TEST_HOSTS_CONF, which overrides the
+# conf path (default: conf/test_hosts.conf).
+TMPD_E39=$(mktemp -d /tmp/lp_e39.XXXXXX)
+printf '192.168.0.0/33\n999.1.1.1\n' > "${TMPD_E39}/bad.conf"
+LOG_PARSE_TEST_HOSTS_CONF="${TMPD_E39}/bad.conf" \
+    bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 >/dev/null 2>&1; rc_e39=$?
+rm -rf "$TMPD_E39"
+_err E39 "無效 test_hosts.conf entry (壞 CIDR prefix/octet) → 非零離開 (fail-fast)" "$rc_e39"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Section F — 使用情境模擬 (User Scenario Smoke Tests)
 # 模擬真實使用者日常操作，只驗證執行成功且輸出非空白
@@ -2130,6 +2141,62 @@ _eq J19 "overview --test-hosts only: 核心功能存取合計 == 179" "$j19_tota
 j20_out=$(bash "$OVERVIEW" --log-dir "$LOG_DIR" --date 2026-05-21 2>/dev/null)
 j20_total=$(printf '%s\n' "$j20_out" | grep "核心功能存取合計" | grep -oE '[0-9]+' | head -1)
 _eq J20 "overview 預設 (exclude): 核心功能存取合計 == 624" "$j20_total" "624"
+
+# ── Section J (cont.) — CIDR test-host entries (J21–J28) ──────────────────────
+# test_hosts.conf now accepts IPv4/prefix CIDR blocks (e.g. 192.168.0.0/16)
+# alongside exact IPs; th_skip() matches a client IP if it EQUALS an exact entry
+# OR falls inside any CIDR block. LOG_PARSE_TEST_HOSTS_CONF overrides the conf
+# path so an analyzer can be driven against a temp conf; _th_skip() unit-tests
+# the real TH_FILTER_FUNC directly (1=drop, 0=keep).
+_th_skip() {  # SET MODE IP -> prints th_skip() using the real TH_FILTER_FUNC
+    TH_S="$1" TH_M="$2" TH_I="$3" bash -c 'source "'"$PROJECT_DIR"'/lib/common.sh"
+gawk -v th_set="$TH_S" -v _th_mode="$TH_M" -v ip="$TH_I" \
+    "${TH_FILTER_FUNC} BEGIN{th_init(th_set);print th_skip(ip)}" </dev/null'
+}
+
+# J21: a CIDR covering .110 excludes it end-to-end (exclude) — CIDR matching
+# flows through a real analyzer run, not just the gawk function in isolation.
+j21_conf=$(mktemp /tmp/lp_j21.XXXXXX); printf '192.168.139.0/24\n' > "$j21_conf"
+j21_out=$(LOG_PARSE_TEST_HOSTS_CONF="$j21_conf" bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all 2>/dev/null)
+_lacks J21 "CIDR 192.168.139.0/24 exclude：.110 經 CIDR 排除 (非明確 IP)" "$j21_out" "192.168.139.110"
+
+# J22: same CIDR, only mode -> .110 kept as a test host (CIDR membership).
+j22_out=$(LOG_PARSE_TEST_HOSTS_CONF="$j21_conf" bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all --test-hosts only 2>/dev/null)
+_has J22 "CIDR 192.168.139.0/24 only：.110 經 CIDR 命中保留" "$j22_out" "192.168.139.110"
+rm -f "$j21_conf"
+
+# J23: a NON-covering CIDR must not over-match — .110 stays business traffic.
+j23_conf=$(mktemp /tmp/lp_j23.XXXXXX); printf '10.0.0.0/8\n' > "$j23_conf"
+j23_out=$(LOG_PARSE_TEST_HOSTS_CONF="$j23_conf" bash "$ACCESS" --log-dir "$LOG_DIR" --date 2026-05-21 --region all 2>/dev/null)
+_has J23 "非涵蓋 CIDR 10.0.0.0/8 exclude：.110 未被過度比對 (仍出現)" "$j23_out" "192.168.139.110"
+rm -f "$j23_conf"
+
+# J24: /24 boundary — member + network (.0) + broadcast (.255) match; the
+# adjacent .140.1 does not (exclude: 1=drop, 0=keep).
+_eq J24 "th_skip CIDR /24：成員/網路/廣播=1，界外=0" \
+    "$(_th_skip '192.168.139.0/24' exclude 192.168.139.110) $(_th_skip '192.168.139.0/24' exclude 192.168.139.0) $(_th_skip '192.168.139.0/24' exclude 192.168.139.255) $(_th_skip '192.168.139.0/24' exclude 192.168.140.1)" \
+    "1 1 1 0"
+
+# J25: /32 behaves as an exact IP; an explicit IP and a CIDR coexist in one set.
+_eq J25 "th_skip /32==明確 IP 且 明確 IP 與 CIDR 並存" \
+    "$(_th_skip '10.1.1.5/32 192.168.117.90' exclude 10.1.1.5) $(_th_skip '10.1.1.5/32 192.168.117.90' exclude 10.1.1.6) $(_th_skip '10.1.1.5/32 192.168.117.90' exclude 192.168.117.90)" \
+    "1 0 1"
+
+# J26: a non-canonical network (host bits set) still spans its whole block.
+_eq J26 "th_skip 非正規 192.168.5.9/16 涵蓋整段 /16" \
+    "$(_th_skip '192.168.5.9/16' exclude 192.168.0.1) $(_th_skip '192.168.5.9/16' exclude 192.168.255.254) $(_th_skip '192.168.5.9/16' exclude 192.169.0.1)" \
+    "1 1 0"
+
+# J27: mode=all ignores the set entirely (never drops, CIDR or not).
+_eq J27 "th_skip mode=all：CIDR 集合一律保留 (0 0)" \
+    "$(_th_skip '192.168.0.0/16' all 192.168.1.1) $(_th_skip '192.168.0.0/16' all 10.0.0.1)" \
+    "0 0"
+
+# J28: load_test_hosts preserves both exact-IP and CIDR tokens, in file order.
+j28_conf=$(mktemp /tmp/lp_j28.XXXXXX); printf '# mixed\n192.168.117.90\n192.168.0.0/16\n10.1.1.5/32\n' > "$j28_conf"
+j28_set=$(bash -c "source \"${PROJECT_DIR}/lib/common.sh\"; load_test_hosts \"$j28_conf\"")
+rm -f "$j28_conf"
+_eq J28 "load_test_hosts 保留 IP+CIDR tokens 逐字 (檔序)" "$j28_set" "192.168.117.90 192.168.0.0/16 10.1.1.5/32"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section K — timezone correction + core-function CATEGORY (K01–K16)

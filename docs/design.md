@@ -100,7 +100,7 @@ Each server emits three log families:
    `RUN_OUTPUT_DIR`, `RUN_TS`, `INTERVAL_ARGS`).
 3. **Configuration layer** (`conf/`) — plain text files with no executable
    content. `regions.conf` is pipe-delimited and consumed by the per-bin
-   `load_regions()`. `test_hosts.conf` lists one IPv4 per line and is consumed
+   `load_regions()`. `test_hosts.conf` lists one IPv4 or CIDR block per line and is consumed
    by `load_test_hosts` in `lib/common.sh` (see §3.2.14). `receivers.conf`
    lists mail recipients (`DISPLAY_NAME|ADDRESS`, one per line) for
    `--notify` and is consumed by `load_receivers` in `lib/notify_utils.sh`
@@ -185,18 +185,27 @@ Two additions support the IIS UTC→UTC+8 correction (see §3.2.14):
 
 #### `lib/common.sh` — test-host loader and predicate (single source)
 
-`load_test_hosts(conf)` reads `conf/test_hosts.conf`, strips `#` comments and
-blank lines, and returns the IP set as a single space-joined string for passing
-to gawk via `-v th_set=...` (matched by exact string equality, never regex).
+`load_test_hosts(conf)` reads `conf/test_hosts.conf` (or the path in
+`LOG_PARSE_TEST_HOSTS_CONF`, if set), strips `#` comments and blank lines,
+validates every entry as an exact IPv4 or an IPv4/prefix CIDR block, and returns
+the set as a single space-joined string for passing to gawk via `-v th_set=...`.
 `load_test_hosts` dies if the file is absent — fail-fast parity with
-`regions.conf`.
+`regions.conf` — and also if any entry is a malformed IPv4/CIDR (a per-line
+diagnostic is emitted for every offender before aborting), so a typo fails
+loudly at load rather than silently mis-matching at read time.
 
 `TH_FILTER_FUNC` is a gawk snippet (a shell variable) that implements the
-three filter modes. It is prepended to any gawk program that needs to filter
-by client IP, via `"$TH_FILTER_FUNC$AWK_PROG"`. Callers pass
-`-v _th_mode=exclude|only|all` and `-v th_set="ip ip ..."`, then call
+three filter modes plus **CIDR matching**. It is prepended to any gawk program
+that needs to filter by client IP, via `"$TH_FILTER_FUNC$AWK_PROG"`. Callers pass
+`-v _th_mode=exclude|only|all` and `-v th_set="entry entry ..."`, then call
 `th_init(th_set)` in `BEGIN` and `if (th_skip(ip)) next` at the read stage.
-`th_skip` returns 1 (drop) or 0 (keep):
+`th_init` partitions the tokens into an exact-IP set and a list of CIDR ranges:
+a token with `/` is a `network/prefix` block spanning `[base, base +
+2^(32-prefix) - 1]` (host bits of a non-canonical network are cleared via
+integer division). `th_skip` returns 1 (drop) or 0 (keep); a client IP is a
+member if it equals an exact entry **or** its 32-bit integer falls inside any
+CIDR range (all private state is `_th`-prefixed to avoid colliding with the host
+program's globals):
 - `exclude` (default) — drops requests whose client IP is in the test-host set.
 - `only` — keeps only requests from test-host IPs.
 - `all` — keeps every request regardless of IP.

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`conf/test_hosts.conf` now accepts IPv4/prefix CIDR blocks** (e.g.
+  `192.168.0.0/16`) alongside exact IPs, so a whole same-subnet cohort can be
+  covered by one line instead of enumerating every host — while explicit
+  single-IP entries keep working exactly as before (the two mix freely in one
+  file). `lib/common.sh`'s `TH_FILTER_FUNC` (the gawk `th_init`/`th_skip`
+  predicate shared by `analyze_iis`/`analyze_access` through
+  `extract_*_records` and `AGG_IIS_AWK`) now partitions the space-joined token
+  set into exact IPs and CIDR ranges and treats a client IP as a member if it
+  EQUALS an exact entry OR its 32-bit integer falls inside any `network/prefix`
+  block (host bits of a non-canonical network are cleared via integer
+  division; all private state is `_th`-prefixed to avoid gawk-global
+  collisions). The transport interface (`TEST_HOST_SET`, a space-joined
+  string) is unchanged — CIDR tokens carry no spaces — so every call site is
+  untouched. `load_test_hosts` now validates every entry as a well-formed IPv4
+  or IPv4/CIDR and aborts the run with a per-line diagnostic on a malformed one
+  (fail-fast at load, never a silent mis-match at read time). A new
+  `LOG_PARSE_TEST_HOSTS_CONF` env var overrides the conf path (mirroring the
+  other `LOG_PARSE_*` overrides), giving operators an alternate-file escape
+  hatch and enabling end-to-end CIDR tests. The bundled `conf/test_hosts.conf`
+  keeps its seven active exact IPs UNCHANGED (every existing baseline is
+  undisturbed); a commented CIDR example documents the syntax.
+  `bin/analyze_iis.sh` + `bin/analyze_access.sh` (env override),
+  `conf/test_hosts.conf` (header + example), `docs/usage.md`/`usage.zh-TW.md`
+  (Test-host filtering) and `docs/design.md`/`design.zh-TW.md` (§3.2.14 loader)
+  updated. Tests: 358 -> 367 (J21–J28 CIDR positives/boundaries incl. an
+  end-to-end analyzer run driven through `LOG_PARSE_TEST_HOSTS_CONF`; E39 the
+  malformed-entry negative).
+
 ### Changed
 - **`report-export` deliverable drops the `BIRTHDAY` column.** The weekly
   連線紀錄 workbook's 調閱紀錄 sheet no longer emits the plaintext
