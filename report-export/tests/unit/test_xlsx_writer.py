@@ -88,28 +88,9 @@ def test_records_sheet_header_is_exact() -> None:
         "HOSP_ID",
         "HOSP_ABBR",
         "PRSN_ID",
+        "BIRTHDAY",
         "PATIENT ID AES",
     ]
-
-
-def test_records_sheet_omits_birthday_though_state_record_carries_it(tmp_path: Path) -> None:
-    # design.md §3.1.2: the deliverable drops BIRTHDAY, but the StateRecord
-    # (and thus records.csv) still carries it -- assert the value never
-    # leaks into ANY cell of the 調閱紀錄 sheet, while PATIENT ID AES (the
-    # former column I) now closes the sheet at column H.
-    record = _record()
-    assert record.birthday == "19560711"  # state record still carries it
-    workbook = xlsx_writer.build_workbook([record], [])
-    sheet = workbook["調閱紀錄"]
-    header = [cell.value for cell in sheet[1]]
-    assert "BIRTHDAY" not in header
-    assert len(header) == 8
-    assert header[-1] == "PATIENT ID AES"  # closes at column H (index 8)
-    reloaded = _save_and_reload(workbook, tmp_path)
-    for row in reloaded["調閱紀錄"].iter_rows():
-        for cell in row:
-            assert cell.value != "19560711"  # birthday never projected into any cell
-    assert reloaded["調閱紀錄"]["H2"].value == record.patient_id_aes
 
 
 def test_aggregate_sheet_header_is_exact() -> None:
@@ -191,7 +172,7 @@ def test_text_columns_get_at_number_format(tmp_path: Path) -> None:
     workbook = xlsx_writer.build_workbook([_record()], [])
     reloaded = _save_and_reload(workbook, tmp_path)
     sheet = reloaded["調閱紀錄"]
-    for column in "CDEFGH":
+    for column in "CDEFGHI":
         assert sheet[f"{column}2"].number_format == "@"
 
 
@@ -276,7 +257,7 @@ def test_latest_batch_rows_get_yellow_fill() -> None:
     records = [_record(batch_id=1, request_id="a"), _record(batch_id=2, request_id="b")]
     workbook = xlsx_writer.build_workbook(records, [])
     sheet = workbook["調閱紀錄"]
-    for column in "ABCDEFGH":
+    for column in "ABCDEFGHI":
         cell = sheet[f"{column}3"]  # row 2 of data = batch 2 = latest
         assert cell.fill.patternType == "solid"
         assert cell.fill.fgColor.rgb.endswith("FFFF00")
@@ -286,7 +267,7 @@ def test_older_batch_rows_get_no_fill() -> None:
     records = [_record(batch_id=1, request_id="a"), _record(batch_id=2, request_id="b")]
     workbook = xlsx_writer.build_workbook(records, [])
     sheet = workbook["調閱紀錄"]
-    for column in "ABCDEFGH":
+    for column in "ABCDEFGHI":
         assert sheet[f"{column}2"].fill.patternType is None  # row 2 = batch 1 = not latest
 
 
@@ -389,7 +370,7 @@ def test_yellow_fill_and_thin_border_and_center_coexist_on_latest_batch_rows() -
     records = [_record(batch_id=1, request_id="a"), _record(batch_id=2, request_id="b")]
     workbook = xlsx_writer.build_workbook(records, [])
     sheet = workbook["調閱紀錄"]
-    for column in "ABCDEFGH":
+    for column in "ABCDEFGHI":
         cell = sheet[f"{column}3"]  # latest (highlighted) batch-2 row
         assert cell.fill.patternType == "solid"
         assert cell.fill.fgColor.rgb == "FFFFFF00"
@@ -423,7 +404,8 @@ def test_column_widths_match_e2e1_anchors_on_a_representative_state() -> None:
         "E": 12.0,  # HOSP_ID: 10-digit string * 1.2
         "F": 12.0,  # HOSP_ABBR: "彰基二林醫" (width 10) * 1.2
         "G": 38.4,  # PRSN_ID: hex32 (32) * 1.2
-        "H": 38.4,  # PATIENT ID AES: hex32 (32) * 1.2 (BIRTHDAY removed; was col I)
+        "H": 9.6,  # BIRTHDAY: "19560711" (8) * 1.2
+        "I": 38.4,  # PATIENT ID AES: hex32 (32) * 1.2
     }
     for column, width in expected_records_widths.items():
         assert records_sheet.column_dimensions[column].width == width

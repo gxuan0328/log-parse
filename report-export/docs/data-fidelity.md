@@ -1,7 +1,7 @@
 # report-export — 資料型別與格式契約（data-fidelity.md）
 
 > 本文件是型別／格式的**單一真實來源對照表**：輸入 14 欄 → state 10 欄 →
-> 交付 8+5 欄，逐欄列出型別、number_format、與保真理由。完整設計推導見
+> 交付 9+5 欄，逐欄列出型別、number_format、與保真理由。完整設計推導見
 > [`design.md`](design.md) §1.5 保真基準錨點、§3.1 資料模型；操作手冊見
 > [`usage.md`](usage.md)。技術名詞、程式識別字、sheet 名稱一律
 > 保留原文。
@@ -20,7 +20,7 @@
 state 層 records.csv（10 欄：2 內部鍵 + 8 payload；累積、持久化）
         │  aggregate（由完整 state 重算 院所分析）
         ▼
-交付 xlsx（2 sheet：調閱紀錄 8 欄、院所分析 5 欄；純值、無公式）
+交付 xlsx（2 sheet：調閱紀錄 9 欄、院所分析 5 欄；純值、無公式）
 ```
 
 三層欄數差異的原因：
@@ -30,9 +30,9 @@ state 層 records.csv（10 欄：2 內部鍵 + 8 payload；累積、持久化）
 - 8 payload + 2 內部鍵 = state 10 欄：`BATCH_ID`、`REQUEST_ID` 是**內部隱藏
   鍵**（去重自然鍵 + 最新批次高亮依據），存於 `records.csv` 但**永不**進
   交付檔。
-- state 10 欄 → 交付 8 欄：移除 `BATCH_ID`+`REQUEST_ID`（內部鍵）與
-  `BIRTHDAY`（交付不輸出，見 §4.1），並將 `APP_TIME_ISO` 一欄**展開為
-  DATE+TIME 兩欄**（同一個 `datetime` 值、兩種 number_format）。
+- state 10 欄 → 交付 9 欄：移除 `BATCH_ID`+`REQUEST_ID`，並將
+  `APP_TIME_ISO` 一欄**展開為 DATE+TIME 兩欄**（同一個 `datetime` 值、
+  兩種 number_format）。
 - 交付另有 院所分析 5 欄（CLIENT IP, HOSP_ID, HOSP_ABBR, WEEKLY ACCESS,
   TOTAL ACCESS），是由完整 state**重新聚合**而來（非欄位映射）。
 
@@ -59,7 +59,7 @@ CSV 全部以 `str` 讀入（`csv_reader.py`：`csv.reader`，從不用會做型
 | K | `PRSN_ID` | TEXT，hex32 | — | → PRSN_ID |
 | L | `CLIENT_IP` | TEXT IP | 必要（缺值→exit 2）；聚合鍵 | → CLIENT IP |
 | M | `PATIENT_ID_AES` | TEXT，hex32（已加密） | — | → PATIENT ID AES |
-| N | `BIRTHDAY` | TEXT，`YYYYMMDD`(8)，如 `19560711` | — | → records.csv state（**交付不輸出**，見 §4.1） |
+| N | `BIRTHDAY` | TEXT，`YYYYMMDD`(8)，如 `19560711` | — | → BIRTHDAY |
 
 **csv_reader / transform 實際執行的驗證**（`src/report_export/csv_reader.py`、
 `transform.py`）：
@@ -116,8 +116,8 @@ last_batch_seq=M\tsha256=<hex>`（涵蓋表頭+全部資料列的 sha256）—�
 
 ### 4.1 Sheet 1「調閱紀錄」（1 表頭 + 完整 state N 列；舊列在前、本次新批次接在最後）
 
-表頭字面（A1:H1）：`DATE, TIME, CLIENT IP, SERVER IP, HOSP_ID, HOSP_ABBR,
-PRSN_ID, PATIENT ID AES`
+表頭字面（A1:I1）：`DATE, TIME, CLIENT IP, SERVER IP, HOSP_ID, HOSP_ABBR,
+PRSN_ID, BIRTHDAY, PATIENT ID AES`
 
 | 欄 | 標題 | 來源 | 值型別 | 工具寫入 number_format | 模板 調閱紀錄 實測 |
 |----|------|------|--------|--------------------------|---------------------|
@@ -128,13 +128,11 @@ PRSN_ID, PATIENT ID AES`
 | E | `HOSP_ID` | `HOSP_ID` | `str` | `@` | `@`（一致） |
 | F | `HOSP_ABBR` | `HOSP_ABBR`（未命中為 `""`） | `str` | `@` | `General` |
 | G | `PRSN_ID` | `PRSN_ID` | `str` | `@` | `General` |
-| H | `PATIENT ID AES` | `PATIENT_ID_AES` | `str` | `@` | `General` |
-
-> **BIRTHDAY 不進交付**：BIRTHDAY 雖完整保留於 records.csv state（見 §3），
-> 但**不投影至交付 xlsx**；原 H 欄移除、PATIENT ID AES 左移為 H。
+| H | `BIRTHDAY` | `BIRTHDAY` | `str` | `@` | `General` |
+| I | `PATIENT ID AES` | `PATIENT_ID_AES` | `str` | `@` | `General` |
 
 **黃底（最新批次高亮）**：`batch_id == max(BATCH_ID in 完整 state)` 的列，
-A:H 八格整列套用 `PatternFill(fill_type='solid', fgColor='FFFFFF00')`；
+A:I 九格整列套用 `PatternFill(fill_type='solid', fgColor='FFFFFF00')`；
 其餘列**不設 fill**。每次執行都由完整 state **重新計算整表**，因此天然
 具備「每次執行僅標本次新增」的 per-run 重置語意（不是記憶體 delta、不是
 累加標記）。
@@ -179,7 +177,7 @@ left/right/top=Side('thin'))`；各欄寬依現有資料＋表頭字串顯示寬
 |------|------|------|
 | `HOSP_ID` | TEXT | **前導零顯著**：93,781 列主檔中 531 列鍵值以 `0` 開頭（如 `0937010019`）。若被當數字讀入，前導零會被靜默丟棄 → 主檔查表 miss → HOSP_ABBR 錯誤地解析為空，即使主檔其實有該鍵。 |
 | `PRSN_ID` / `PATIENT_ID_AES` | TEXT | hex32 不透明識別碼，可能含前導零的 hex 位元；本質非算術量，任何情況都不該數值化。 |
-| `BIRTHDAY` | TEXT | **不是**前導零理由（來源 `紀錄匯入` sheet 實測以 `int` 儲存，19 列全為 19xx、永不以 0 開頭）。真正理由是**防止被強制轉型為數字或日期序列**，並對齊模板 `調閱紀錄` 本身即以文字形式儲存 BIRTHDAY 的既有語意。（本欄僅存於 records.csv state；交付 xlsx 已不輸出 BIRTHDAY，見 §4.1。） |
+| `BIRTHDAY` | TEXT | **不是**前導零理由（來源 `紀錄匯入` sheet 實測以 `int` 儲存，19 列全為 19xx、永不以 0 開頭）。真正理由是**防止被強制轉型為數字或日期序列**，並對齊模板 `調閱紀錄` 本身即以文字形式儲存 BIRTHDAY 的既有語意。 |
 | `CLIENT_IP` / `REQUEST_ID` | TEXT | 內含點號／連字號，本質非數值，即使無前導零疑慮也理當存文字。 |
 | `DATE` / `TIME` | `datetime` | 全交付檔**唯二**的 datetime 型別欄。A、B 存同一個 Python `datetime` 物件（含 microsecond），差異僅 `number_format`——刻意如此設計，讓 `A2.value == B2.value` 成為**保證**的往返不變量，而非兩次獨立解析可能各自漂移的結果。 |
 | `WEEKLY ACCESS` / `TOTAL ACCESS` | `int`（`type='n'`，`General`） | 全交付檔**唯二**的整數型別欄；由 Python 於 `aggregate.build()` 算妥，非公式。`WEEKLY ACCESS` 於本週 0 存取時改 render 為 `-`（`type='s'`，`@`）——模型欄位本身仍是 `int`（`weekly_access=0`），是否顯示 `-` 純屬 xlsx_writer 的呈現層決策。 |

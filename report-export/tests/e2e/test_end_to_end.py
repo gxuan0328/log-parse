@@ -103,8 +103,6 @@ _ANCHOR_COUNTS: tuple[int, ...] = (1, 1, 1, 1, 1, 1, 1, 7, 1, 1)
 #: design.md §3.7.3/§3.7.4 REQ1d anchors: round(display_width * 1.2, 2)
 #: for the E2E-1 anchor state, both sheets (see the docstring on
 #: `_assert_column_widths` for the formula).
-#: BIRTHDAY (formerly column H) is no longer projected to the deliverable
-#: (design.md §3.1.2); PATIENT ID AES closes the sheet at column H (was I).
 _RECORDS_SHEET_WIDTHS: dict[str, float] = {
     "A": 12.0,
     "B": 9.6,
@@ -113,7 +111,8 @@ _RECORDS_SHEET_WIDTHS: dict[str, float] = {
     "E": 12.0,
     "F": 12.0,
     "G": 38.4,
-    "H": 38.4,
+    "H": 9.6,
+    "I": 38.4,
 }
 _AGGREGATE_SHEET_WIDTHS: dict[str, float] = {
     "A": 16.8,
