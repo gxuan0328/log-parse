@@ -166,7 +166,7 @@ scratch 則相反、已被 `.gitignore` 排除，見
 |------|------|
 | [`docs/design.md`](docs/design.md) | 設計規格：系統概觀、架構、模組規格（資料模型、管線階段、CLI 契約）、橫切關注（冪等性、錯誤處理、日誌、並行、效能、安全、Docker）、能力矩陣、邊界案例、測試策略、已知限制。 |
 | [`docs/usage.md`](docs/usage.md) | **CLI 使用參考**：CLI 語法/選項/範例、stdout/stderr/結束碼、Docker 每週執行、host 權限說明、NAS 鎖注意事項、交付檔名規則、復原程序、參考主檔更新程序。 |
-| [`docs/data-fidelity.md`](docs/data-fidelity.md) | 型別/格式契約逐欄對照表（輸入 14 欄 → state 10 欄 → 交付 9+5 欄）、TEXT/datetime/int 型別理由、落地錨點、openpyxl round-trip 行為、機器託管檔案警告。 |
+| [`docs/data-fidelity.md`](docs/data-fidelity.md) | 型別/格式契約逐欄對照表（輸入 14 欄 → state 10 欄 → 交付 8+5 欄）、TEXT/datetime/int 型別理由、落地錨點、openpyxl round-trip 行為、機器託管檔案警告。 |
 
 ---
 

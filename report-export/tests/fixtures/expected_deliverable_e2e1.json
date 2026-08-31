@@ -65,15 +65,6 @@
         }
       },
       {
-        "value": "BIRTHDAY",
-        "data_type": "s",
-        "number_format": "General",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFE2EFDA"
-        }
-      },
-      {
         "value": "PATIENT ID AES",
         "data_type": "s",
         "number_format": "General",
@@ -140,15 +131,6 @@
       },
       {
         "value": "21B026FA29B9A716C23AEB10D3F04A63",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
-        "value": "19560711",
         "data_type": "s",
         "number_format": "@",
         "fill": {
@@ -231,15 +213,6 @@
         }
       },
       {
-        "value": "19511201",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
         "value": "9AEE975389D653BA1E9728DA96AA7598",
         "data_type": "s",
         "number_format": "@",
@@ -306,15 +279,6 @@
       },
       {
         "value": "65530033359CFF810BB7399398FF07A6",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
-        "value": "19540218",
         "data_type": "s",
         "number_format": "@",
         "fill": {
@@ -397,15 +361,6 @@
         }
       },
       {
-        "value": "19511110",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
         "value": "C0735A60C3A825951E820BCFE92E45A9",
         "data_type": "s",
         "number_format": "@",
@@ -472,15 +427,6 @@
       },
       {
         "value": "D70C625F40A40B4AE2594472240AE1AE",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
-        "value": "19540915",
         "data_type": "s",
         "number_format": "@",
         "fill": {
@@ -563,15 +509,6 @@
         }
       },
       {
-        "value": "19490102",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
         "value": "ED1557363E5A3397F5E4F55C71F53DB7",
         "data_type": "s",
         "number_format": "@",
@@ -638,15 +575,6 @@
       },
       {
         "value": "532C7831A878042974B519EC7FD79778",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
-        "value": "19590611",
         "data_type": "s",
         "number_format": "@",
         "fill": {
@@ -729,15 +657,6 @@
         }
       },
       {
-        "value": "19560711",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
         "value": "2EDEBACB75D9FA547F2018E13E695AF1",
         "data_type": "s",
         "number_format": "@",
@@ -804,15 +723,6 @@
       },
       {
         "value": "65B891B1B206050758738D8C8AD94662",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
-        "value": "19560711",
         "data_type": "s",
         "number_format": "@",
         "fill": {
@@ -895,15 +805,6 @@
         }
       },
       {
-        "value": "19640408",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
         "value": "FC96A159DFDFC172978F6E0385F2194F",
         "data_type": "s",
         "number_format": "@",
@@ -978,15 +879,6 @@
         }
       },
       {
-        "value": "19560711",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
         "value": "2EDEBACB75D9FA547F2018E13E695AF1",
         "data_type": "s",
         "number_format": "@",
@@ -1053,15 +945,6 @@
       },
       {
         "value": "65B891B1B206050758738D8C8AD94662",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
-        "value": "19560711",
         "data_type": "s",
         "number_format": "@",
         "fill": {
@@ -1144,15 +1027,6 @@
         }
       },
       {
-        "value": "19560711",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
         "value": "2EDEBACB75D9FA547F2018E13E695AF1",
         "data_type": "s",
         "number_format": "@",
@@ -1227,15 +1101,6 @@
         }
       },
       {
-        "value": "19560711",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
         "value": "2EDEBACB75D9FA547F2018E13E695AF1",
         "data_type": "s",
         "number_format": "@",
@@ -1302,15 +1167,6 @@
       },
       {
         "value": "65B891B1B206050758738D8C8AD94662",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
-        "value": "19560711",
         "data_type": "s",
         "number_format": "@",
         "fill": {
@@ -1385,15 +1241,6 @@
       },
       {
         "value": "6D684B205D082296D5B125E48F1B21A7",
-        "data_type": "s",
-        "number_format": "@",
-        "fill": {
-          "patternType": "solid",
-          "fgColor": "FFFFFF00"
-        }
-      },
-      {
-        "value": "19380228",
         "data_type": "s",
         "number_format": "@",
         "fill": {

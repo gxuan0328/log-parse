@@ -46,6 +46,12 @@ logger = logging.getLogger(__name__)
 _SHEET_RECORDS: Final[str] = "調閱紀錄"
 _SHEET_AGGREGATE: Final[str] = "院所分析"
 
+#: design.md §3.1.2: BIRTHDAY is deliberately ABSENT from the delivered
+#: workbook. The plaintext date-of-birth is still ingested (csv_reader),
+#: transformed (transform), and persisted VERBATIM into the machine-owned
+#: records.csv state (state.py / models.StateRecord.birthday) -- only this
+#: final Excel projection drops it. PATIENT ID AES therefore closes the
+#: 調閱紀錄 sheet at column H (it was column I while BIRTHDAY occupied H).
 _RECORDS_HEADER: Final[tuple[str, ...]] = (
     "DATE",
     "TIME",
@@ -54,7 +60,6 @@ _RECORDS_HEADER: Final[tuple[str, ...]] = (
     "HOSP_ID",
     "HOSP_ABBR",
     "PRSN_ID",
-    "BIRTHDAY",
     "PATIENT ID AES",
 )
 #: design.md §3.1.3/§3.7.4 REQ3: the old single COUNT column split into
@@ -178,13 +183,15 @@ def _write_record_row(
     time_cell.number_format = _TIME_NUMBER_FORMAT
     row_cells = [date_cell, time_cell]
 
+    # record.birthday is intentionally NOT projected here (design.md
+    # §3.1.2): it remains in state/records.csv but never reaches the
+    # deliverable, so PATIENT ID AES shifts left one column (I -> H).
     text_values = (
         record.client_ip,
         record.server_ip,
         record.hosp_id,
         record.hosp_abbr,
         record.prsn_id,
-        record.birthday,
         record.patient_id_aes,
     )
     for column, value in enumerate(text_values, start=3):

@@ -114,6 +114,10 @@ E=`@`，其餘文字欄為 `General`，靠**值為字串型別（type='s'）**�
 化。本工具刻意對全部文字欄寫 `@`（主動硬化），比模板更穩健（見
 §3.7）。
 
+> **交付分流**：上表為**模板**實測，模板 `調閱紀錄` 本身含 BIRTHDAY（H 欄）。
+> 本工具的**交付 xlsx 不輸出 BIRTHDAY**（見 §3.1.2）；此欄仍完整保留於
+> records.csv state。
+
 #### 1.5.5 填色（實測）
 
 `調閱紀錄` 表頭 A1 為 solid、theme=9、tint≈0.7999816…（淺綠）；資料列
@@ -128,7 +132,7 @@ A2 `fill_type=None`（無填色）——theme9/tint0.8 solid fill 屬**表頭**�
 
 #### 1.5.7 BIRTHDAY 型別
 
-`紀錄匯入` N 欄（BIRTHDAY）以 **int 儲存**（type='n'，值如 19560711），且 19 列全為 19xx，**永不以 0 開頭**。故 BIRTHDAY 需 TEXT 的真正理由是「**避免被當數字/日期強制轉型**、對齊模板 `調閱紀錄` H 的文字輸出」，**不是**「前導零顯著」。前導零顯著僅適用於 HOSP_ID（531 個前導零鍵、代表值 0937010019）。
+`紀錄匯入` N 欄（BIRTHDAY）以 **int 儲存**（type='n'，值如 19560711），且 19 列全為 19xx，**永不以 0 開頭**。故 BIRTHDAY 需 TEXT 的真正理由是「**避免被當數字/日期強制轉型**、對齊模板 `調閱紀錄` H 的文字輸出」，**不是**「前導零顯著」。前導零顯著僅適用於 HOSP_ID（531 個前導零鍵、代表值 0937010019）。（註：本工具**交付 xlsx 已不輸出 BIRTHDAY**，此型別說明適用於 records.csv state 儲存與模板對照；見 §3.1.2。）
 
 #### 1.5.8 HOSP_ID對照表（實測）
 
@@ -227,13 +231,13 @@ state 存原始 app_time 字串避免浮點漂移、`PYTHONHASHSEED=0`）｜最�
 | K | PRSN_ID | TEXT hex32 | → PRSN_ID |
 | L | CLIENT_IP | TEXT IP | → CLIENT IP（聚合鍵） |
 | M | PATIENT_ID_AES | TEXT hex32（加密） | → PATIENT ID AES |
-| N | BIRTHDAY | **TEXT** `YYYYMMDD`(8) 如 `19560711` | → BIRTHDAY |
+| N | BIRTHDAY | **TEXT** `YYYYMMDD`(8) 如 `19560711` | → records.csv state（**交付 xlsx 不輸出**，見 §3.1.2） |
 
 > 驗證：22 列 STATUS = NORMAL 16 / ORPHAN 1 / UNVERIFIED 5；22 列 REQUEST_ID 全唯一。dash（`-`）APP_TIME 僅出現於非 NORMAL 列 → **先過濾 NORMAL 再解析 APP_TIME** 可避開全部 dash 解析錯誤。
 >
 > **TEXT 理由分類（資料保真）**：HOSP_ID = 前導零顯著（531 鍵）。PRSN_ID / PATIENT_ID_AES = hex32，可含前導零 hex 位、須 TEXT。BIRTHDAY = **防數值/日期強制轉型**（YYYYMMDD 永為 19xx/20xx、無前導零；模板 紀錄匯入 N 為 int），對齊模板 調閱紀錄 之字串輸出。CLIENT_IP / REQUEST_ID 含點/破折號、本質非數值，仍以 TEXT 儲存。
 
-#### 3.1.2 調閱紀錄輸出（9 欄，交付 sheet 1；表頭精確字面 A1:I1）
+#### 3.1.2 調閱紀錄輸出（8 欄，交付 sheet 1；表頭精確字面 A1:H1）
 
 | 欄 | 標題(精確) | 來源 | 交付值型別 | 模板 調閱紀錄 實測 numFmt | 工具寫入 numFmt（設計/硬化） |
 |----|-----------|------|-----------|---------------------------|------------------------------|
@@ -244,12 +248,15 @@ state 存原始 app_time 字串避免浮點漂移、`PYTHONHASHSEED=0`）｜最�
 | E | `HOSP_ID` | HOSP_ID(J) | TEXT | `@` | `@` |
 | F | `HOSP_ABBR` | 主檔查表(HOSP_ID)；未命中→`""` | TEXT | `General` | `@` |
 | G | `PRSN_ID` | PRSN_ID(K) | TEXT | `General` | `@` |
-| H | `BIRTHDAY` | BIRTHDAY(N) | TEXT | `General` | `@` |
-| I | `PATIENT ID AES` | PATIENT_ID_AES(M) | TEXT | `General` | `@` |
+| H | `PATIENT ID AES` | PATIENT_ID_AES(M) | TEXT | `General` | `@` |
+
+> **BIRTHDAY 不進交付**：輸入 N 欄（BIRTHDAY）雖被讀入並完整寫入 records.csv
+> state，但**刻意不投影至交付 xlsx**——原 H 欄移除，PATIENT ID AES 左移為 H。
+> state 保真不受影響（見 §3.4／資料保真 §3）。
 
 > **模板 vs 工具寫入**：模板僅 E=`@`、DATE/TIME 為日期/時間格式、其餘為 `General`（靠 type='s' 字串保存文字）；「全 `@`」屬 `格式轉換` sheet。本工具刻意對全部文字欄寫 `@` 為主動硬化——即使某環境重算或另存，字串欄仍鎖定文字語意，不數值化。
 >
-> **核心保真**：A、B 同存一個完整 `datetime`（含毫秒，如 `datetime(2026,7,5,16,3,34,359000)`），差異僅 number_format。必須指派 `datetime.datetime` 物件（非 `date`）才能保留亞秒序列。C–I 以 Python `str` 指派（openpyxl 寫 type='s'）+ number_format `@` 雙保險。
+> **核心保真**：A、B 同存一個完整 `datetime`（含毫秒，如 `datetime(2026,7,5,16,3,34,359000)`），差異僅 number_format。必須指派 `datetime.datetime` 物件（非 `date`）才能保留亞秒序列。C–H 以 Python `str` 指派（openpyxl 寫 type='s'）+ number_format `@` 雙保險。
 
 #### 3.1.3 院所分析輸出（5 欄，交付 sheet 2；表頭 A1:E1）
 
@@ -326,8 +333,9 @@ key_len_hist, dup_keys, blank_abbr, tool_version}`）→ **fail-loud 驗證
 
 落地驗證：source-log 22 列 REQUEST_ID 全唯一，標準 UUID(36) 不透明鍵
 （如 `40000930-0002-7a00-b63f-84710c7967bb`），天然去重鍵。**交付欄約
-束**：交付「調閱紀錄」9 欄**不含 REQUEST_ID**（模板 sheet 結構如
-此）；state 層把 REQUEST_ID 當**內部隱藏鍵**保留（records.csv 第 2
+束**：交付「調閱紀錄」8 欄**不含 REQUEST_ID**（REQUEST_ID 依模板
+sheet 結構排除；BIRTHDAY 為本工具主動剔除，見 §3.1.2）；state 層把
+REQUEST_ID 當**內部隱藏鍵**保留（records.csv 第 2
 欄），交付投影時剔除。
 
 #### 3.4.2 演算法（`dedup.apply(new_rows, existing_request_ids)`）
@@ -371,9 +379,10 @@ key_len_hist, dup_keys, blank_abbr, tool_version}`）→ **fail-loud 驗證
 BATCH_ID, REQUEST_ID, APP_TIME_ISO, CLIENT_IP, SERVER_IP, HOSP_ID, HOSP_ABBR, PRSN_ID, BIRTHDAY, PATIENT_ID_AES
 ```
 
-- **10 存欄 → 9 交付欄映射**：移除 `BATCH_ID`+`REQUEST_ID`（內部
-  鍵）、將 `APP_TIME_ISO` 展開為 `DATE`+`TIME`（同值兩格式），即得交
-  付 9 欄——state 保留 REQUEST_ID 為內部鍵、交付僅顯 9 欄。
+- **10 存欄 → 8 交付欄映射**：移除 `BATCH_ID`+`REQUEST_ID`（內部
+  鍵）與 `BIRTHDAY`（交付不輸出，見 §3.1.2）、將 `APP_TIME_ISO` 展開為
+  `DATE`+`TIME`（同值兩格式），即得交付 8 欄——state 仍保留 REQUEST_ID
+  與 BIRTHDAY，交付僅顯 8 欄。
 - `BATCH_ID`：整數序（字串儲存），**由 1 起算**（第 n 次 ingest =
   `n`）。用途：使「最新批次黃底」可由持久化 state 推導
   （`batch_id == max(BATCH_ID)`），令交付檔可由 state 重生（見
@@ -486,20 +495,20 @@ Excel/LibreOffice 版本開啟皆正確、無需重算、無 spill 相容風險�
 
 #### 3.7.3 Sheet 1「調閱紀錄」（1 表頭 + 完整 state N 列，依 state 順序：舊列在前、最新批次 append 在後）
 
-表頭 A1:I1 精確字面：`DATE, TIME, CLIENT IP, SERVER IP, HOSP_ID,
-HOSP_ABBR, PRSN_ID, BIRTHDAY, PATIENT ID AES`。逐欄（實測可還原）：
+表頭 A1:H1 精確字面：`DATE, TIME, CLIENT IP, SERVER IP, HOSP_ID,
+HOSP_ABBR, PRSN_ID, PATIENT ID AES`。逐欄（實測可還原）：
 
 - **A(DATE)**：`cell.value = datetime.datetime(...)`（含
   microsecond）；`cell.number_format = 'yyyy\-mm\-dd;@'` →
   data_type='d'、is_date=True。
 - **B(TIME)**：`cell.value = <與 A 同一 datetime 物件>`；
   `cell.number_format = 'h:mm:ss;@'`。**A、B 同值、僅格式不同**。
-- **C–I（文字欄）**：`cell.value = <str>`；`cell.number_format =
+- **C–H（文字欄）**：`cell.value = <str>`；`cell.number_format =
   '@'`（硬化；見 §1.5.4）。HOSP_ABBR 未命中寫 `""`（回讀為 None，測
   試須斷言「空或 None」）。
 - **黃底（最新批次；每執行重置）**：`PatternFill(fill_type='solid',
   fgColor='FFFFFF00')`（明確 8 碼 ARGB、FF 全不透明；6 碼會被存為
-  alpha=00）。**僅** `batch_id == max(BATCH_ID)` 之列，對 A:I 9 格全
+  alpha=00）。**僅** `batch_id == max(BATCH_ID)` 之列，對 A:H 8 格全
   上黃底；其餘列**不設 fill**（每執行由完整 state 重建整表 → 天然
   per-run 重置語意）。
 
@@ -576,7 +585,7 @@ int）；未命中 HOSP_ABBR 回讀「空或 None」；WEEKLY/TOTAL 皆為 int
 `border.left/right/top.style=='thin'`；黃底列同時具備 fill
 `FFFFFF00`、四面 thin 框線、置中對齊（三者互不排斥）；各欄寬等於
 §3.7.3 公式之預期值（E2E-1 錨點：調閱紀錄 A=12.0 B=9.6 C=16.8 D=12.0
-E=12.0 F=12.0 G=38.4 H=9.6 I=38.4；院所分析 A=16.8 B=12.0 C=12.0
+E=12.0 F=12.0 G=38.4 H=38.4；院所分析 A=16.8 B=12.0 C=12.0
 D=15.6 E=14.4——D=15.6 係因表頭「WEEKLY ACCESS」顯示寬度 13 主導單位
 數資料，正是「表頭納入 max」設計理由的具體例證）。
 
@@ -1018,7 +1027,7 @@ round-trip 行為、機器託管檔案警告，見 [`data-fidelity.md`](data-fid
 3. **未命中 HOSP_ID** → HOSP_ABBR `""`（IFERROR）；累計 unmapped WARN；不失敗；交付檔回讀該格為 None。
 4. **重複匯入（REQUEST_ID 已在 state）** → 每筆 WARN（REQUEST_ID + 行號）+SKIP；退出碼 0；完全冪等（交付檔等價，黃底落現有最新批次）。
 5. **批次內重複 REQUEST_ID** → 保留首見、後續 WARN+skip。
-6. **前導零/文字保留**：HOSP_ID `0937010019`、BIRTHDAY `19560711`、PRSN_ID、PATIENT_ID_AES 全程 TEXT（csv→state csv→xlsx `@`）；回讀仍為 str。
+6. **前導零/文字保留**：HOSP_ID `0937010019`、PRSN_ID、PATIENT_ID_AES 全程 TEXT（csv→state csv→xlsx `@`）；回讀仍為 str。BIRTHDAY `19560711` 同存為 TEXT，但**僅至 state csv 為止**——交付 xlsx 不輸出此欄（見 §3.1.2）。
 7. **毫秒時間戳**：`…34.359`→`datetime(…,359000)`，相容無毫秒；TIME 顯示僅到秒。
 8. **NORMAL 列 APP_TIME=`-`/不可解析** → 契約違反 → exit 2（只報行號/欄名）。實測 dash APP_TIME 僅出現於非 NORMAL 列。
 9. **ORPHAN 列（row7）** APP_TIME 有效但 API 欄 dash → 因非 NORMAL 被過濾；其 CLIENT IP（10.243.129.44）不得灌入聚合（該 IP TOTAL ACCESS=1；WEEKLY ACCESS 視其是否在最新批次而定，E2E-1 單一批次時亦=1）。
