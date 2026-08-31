@@ -57,8 +57,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host while keeping a real external IP). `tests/run_tests.sh` (global fixture
   export + J29), `tests/fixtures/test_hosts.conf` (new), `Makefile`
   (`samples-regen` uses the fixture), `docs/usage.md`/`usage.zh-TW.md`, and
-  `docs/design.md`/`design.zh-TW.md` updated. Tests: 367 -> 368 (J29 added; the
-  fixture keeps every other baseline unchanged).
+  `docs/design.md`/`design.zh-TW.md` updated. `conf/test_hosts.conf` also
+  carries a commented reference inventory of the 12 concrete internal hosts the
+  `/16` stands in for — documentation only (stripped at load, so the active
+  policy stays the 2 entries), giving operators the exact list without expanding
+  the maintained config. Tests: 367 -> 368 (J29 added; the fixture keeps every
+  other baseline unchanged).
 - **`report-export` deliverable drops the `BIRTHDAY` column.** The weekly
   連線紀錄 workbook's 調閱紀錄 sheet no longer emits the plaintext
   date-of-birth: the column is removed and `PATIENT ID AES` shifts left from
